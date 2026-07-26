@@ -1,5 +1,5 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { Animated, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Animated, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { useAppTheme } from '../../store/ThemeContext';
 
@@ -86,7 +86,8 @@ export function HomeToolbar({
       </View>
 
       {loading && (
-        <View style={[styles.notice, { backgroundColor: colors.elevated }]}>
+        <View style={[styles.notice, styles.loadingNotice, { backgroundColor: colors.elevated }]}>
+          <ActivityIndicator color={colors.text} size="small" />
           <Text style={[styles.noticeText, { color: colors.text }]}>蔵書を読み込んでいます</Text>
         </View>
       )}
@@ -195,6 +196,7 @@ const styles = StyleSheet.create({
     minHeight: 44,
     paddingHorizontal: 12,
   },
+  loadingNotice: { alignItems: 'center', flexDirection: 'row', gap: 10 },
   noticeText: { fontSize: 13, fontWeight: '700' },
   searchRow: { alignItems: 'center', flexDirection: 'row', gap: 6, marginTop: 8 },
   search: {

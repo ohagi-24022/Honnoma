@@ -80,10 +80,6 @@ export default function WishlistScreen() {
     return [...orderedItems, ...newItems];
   }, [editMode, editOrderIds, items]);
   const highPriorityCount = useMemo(() => items.filter((item) => item.score >= 90).length, [items]);
-  const averageScore = useMemo(() => {
-    if (items.length === 0) return 0;
-    return Math.round(items.reduce((sum, item) => sum + item.score, 0) / items.length);
-  }, [items]);
   useScrollToTop(tabScrollToTopRef);
   const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     scrollYRef.current = event.nativeEvent.contentOffset.y;
@@ -450,7 +446,6 @@ export default function WishlistScreen() {
           <View style={styles.statRow}>
             <StatBox label="候補" value={`${items.length}`} />
             <StatBox label="最優先" value={`${highPriorityCount}`} />
-            <StatBox label="平均" value={items.length > 0 ? `${averageScore}点` : '-'} />
           </View>
         </View>
       ) : null}

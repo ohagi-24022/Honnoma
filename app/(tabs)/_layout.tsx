@@ -90,7 +90,7 @@ export default function TabLayout() {
             </View>
           ),
           tabBarItemStyle: {
-            marginTop: -18,
+            marginTop: -14,
           },
         }}
       />

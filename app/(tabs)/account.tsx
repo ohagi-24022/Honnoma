@@ -1,5 +1,5 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { getAppIconName, setAlternateAppIcon, supportsAlternateIcons } from 'expo-alternate-app-icons';
+import Constants from 'expo-constants';
 import { Link, router, useLocalSearchParams, useNavigation } from 'expo-router';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import {
@@ -37,16 +37,30 @@ type AppIconOption = {
 };
 
 const APP_ICON_OPTIONS: AppIconOption[] = [
-  { label: '?', name: null, image: require('../../assets/app-icons/blue.png'), tone: '??' },
-  { label: '?', name: 'Green', image: require('../../assets/ios-alternate-icons/green.png'), tone: '?' },
-  { label: '?', name: 'Gold', image: require('../../assets/ios-alternate-icons/gold.png'), tone: '?' },
-  { label: '???', name: 'Rose', image: require('../../assets/ios-alternate-icons/rose.png'), tone: '??' },
-  { label: '????', name: 'Brown', image: require('../../assets/ios-alternate-icons/brown.png'), tone: '?' },
-  { label: '????', name: 'Teal', image: require('../../assets/ios-alternate-icons/teal.png'), tone: '??' },
-  { label: '?', name: 'Purple', image: require('../../assets/ios-alternate-icons/purple.png'), tone: '?' },
-  { label: '???', name: 'Gray', image: require('../../assets/ios-alternate-icons/gray.png'), tone: '?' },
-  { label: '?', name: 'Yellow', image: require('../../assets/ios-alternate-icons/yellow.png'), tone: '?' },
+  { label: '\u9752', name: null, image: require('../../assets/app-icons/blue.png'), tone: '\u6a19\u6e96' },
+  { label: '\u7dd1', name: 'Green', image: require('../../assets/ios-alternate-icons/green.png'), tone: '\u68ee' },
+  { label: '\u91d1', name: 'Gold', image: require('../../assets/ios-alternate-icons/gold.png'), tone: '\u91d1' },
+  { label: '\u30ed\u30fc\u30ba', name: 'Rose', image: require('../../assets/ios-alternate-icons/rose.png'), tone: '\u6de1\u6843' },
+  { label: '\u30d6\u30e9\u30a6\u30f3', name: 'Brown', image: require('../../assets/ios-alternate-icons/brown.png'), tone: '\u7d19' },
+  { label: '\u30c6\u30a3\u30fc\u30eb', name: 'Teal', image: require('../../assets/ios-alternate-icons/teal.png'), tone: '\u9752\u7dd1' },
+  { label: '\u7d2b', name: 'Purple', image: require('../../assets/ios-alternate-icons/purple.png'), tone: '\u7d2b' },
+  { label: '\u30b0\u30ec\u30fc', name: 'Gray', image: require('../../assets/ios-alternate-icons/gray.png'), tone: '\u7070' },
+  { label: '\u9ec4', name: 'Yellow', image: require('../../assets/ios-alternate-icons/yellow.png'), tone: '\u9ec4' },
 ];
+
+type AlternateAppIconsModule = {
+  getAppIconName: () => string | null;
+  setAlternateAppIcon: (name: string | null) => Promise<string | null>;
+  supportsAlternateIcons: boolean;
+};
+
+async function loadAlternateAppIcons(): Promise<AlternateAppIconsModule | null> {
+  try {
+    return await import('expo-alternate-app-icons');
+  } catch {
+    return null;
+  }
+}
 
 export default function AccountScreen() {
   const params = useLocalSearchParams<{ from?: string }>();
@@ -60,6 +74,8 @@ export default function AccountScreen() {
   const [error, setError] = useState<string | null>(null);
   const [accountDeleting, setAccountDeleting] = useState(false);
   const [activeIconName, setActiveIconName] = useState<string | null>(null);
+  const [alternateIconModule, setAlternateIconModule] = useState<AlternateAppIconsModule | null>(null);
+  const [alternateIconsChecked, setAlternateIconsChecked] = useState(false);
   const [iconChanging, setIconChanging] = useState<string | null>(null);
   const goBack = useCallback(() => {
     router.replace(params.from === 'home' ? '/(tabs)' : '/(tabs)/settings');
@@ -116,20 +132,36 @@ export default function AccountScreen() {
   }, [loadLogs]);
 
   useEffect(() => {
-    if (Platform.OS !== 'ios' || !supportsAlternateIcons) return;
-    setActiveIconName(getAppIconName());
+    if (Platform.OS !== 'ios' || Constants.appOwnership === 'expo') {
+      setAlternateIconsChecked(true);
+      return;
+    }
+
+    let mounted = true;
+    void loadAlternateAppIcons().then((module) => {
+      if (!mounted) return;
+      setAlternateIconModule(module);
+      if (module?.supportsAlternateIcons) {
+        setActiveIconName(module.getAppIconName());
+      }
+      setAlternateIconsChecked(true);
+    });
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   const changeAppIcon = useCallback(async (iconName: string | null) => {
     if (Platform.OS !== 'ios') return;
-    if (!supportsAlternateIcons) {
+    if (!alternateIconModule?.supportsAlternateIcons) {
       Alert.alert('??????????????', 'iOS????????????????????');
       return;
     }
     if (activeIconName === iconName) return;
     setIconChanging(iconName ?? 'default');
     try {
-      const nextIconName = await setAlternateAppIcon(iconName);
+      const nextIconName = await alternateIconModule.setAlternateAppIcon(iconName);
       setActiveIconName(nextIconName);
     } catch (changeError) {
       Alert.alert(
@@ -139,7 +171,7 @@ export default function AccountScreen() {
     } finally {
       setIconChanging(null);
     }
-  }, [activeIconName]);
+  }, [activeIconName, alternateIconModule]);
 
 
   const submitAccountDeletion = () => {
@@ -205,7 +237,7 @@ export default function AccountScreen() {
         </Text>
       </View>
 
-      {Platform.OS === 'ios' ? (
+      {Platform.OS === 'ios' && Constants.appOwnership !== 'expo' ? (
         <View style={[styles.iconPickerSection, { backgroundColor: colors.elevated }]}>
           <View style={styles.headerRow}>
             <View>
@@ -221,7 +253,7 @@ export default function AccountScreen() {
               return (
                 <Pressable
                   accessibilityLabel={`${option.label}???????????`}
-                  disabled={changing}
+                  disabled={changing || !alternateIconModule?.supportsAlternateIcons}
                   key={option.name ?? 'default'}
                   onPress={() => void changeAppIcon(option.name)}
                   style={[
@@ -240,7 +272,7 @@ export default function AccountScreen() {
               );
             })}
           </ScrollView>
-          {!supportsAlternateIcons ? (
+          {alternateIconsChecked && !alternateIconModule?.supportsAlternateIcons ? (
             <Text style={[styles.copy, { color: colors.muted }]}>?????????????????????iOS??????????????????????</Text>
           ) : null}
         </View>

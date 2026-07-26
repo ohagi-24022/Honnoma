@@ -1,6 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useRouter } from 'expo-router';
-import { Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { SeriesPublicationInfo } from '../../lib/bookApis';
 import { SeriesGroup } from '../../lib/seriesSelectors';
@@ -148,11 +148,11 @@ export function SeriesCard({
                   refreshDisabled && styles.disabled,
                 ]}
               >
-                <Ionicons
-                  color={colors.text}
-                  name={refreshing ? 'hourglass-outline' : 'refresh'}
-                  size={17}
-                />
+                {refreshing ? (
+                  <ActivityIndicator color={colors.text} size="small" />
+                ) : (
+                  <Ionicons color={colors.text} name="refresh" size={17} />
+                )}
             </TouchableOpacity>
           </View>
         </View>

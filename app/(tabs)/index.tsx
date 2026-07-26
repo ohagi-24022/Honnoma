@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useScrollToTop } from '@react-navigation/native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Animated,
   FlatList,
@@ -761,11 +762,11 @@ export default function HomeScreen() {
                           refreshingSeriesTitle !== null && styles.disabledButton,
                         ]}
                       >
-                        <Ionicons
-                          color={colors.text}
-                          name={refreshingSeriesTitle === item.title ? 'hourglass-outline' : 'refresh'}
-                          size={16}
-                        />
+                        {refreshingSeriesTitle === item.title ? (
+                          <ActivityIndicator color={colors.text} size="small" />
+                        ) : (
+                          <Ionicons color={colors.text} name="refresh" size={16} />
+                        )}
                     </TouchableOpacity>
                   </View>
                 </View>
