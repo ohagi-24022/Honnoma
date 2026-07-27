@@ -7,6 +7,7 @@ import { BookCover } from './BookCover';
 
 type RankingCardProps = {
   added?: boolean;
+  disabledAddLabel?: string;
   expanded?: boolean;
   index: number;
   onAddWishlist?: () => void;
@@ -17,6 +18,7 @@ type RankingCardProps = {
 
 export function RankingCard({
   added = false,
+  disabledAddLabel,
   expanded = false,
   index,
   onAddWishlist,
@@ -26,6 +28,9 @@ export function RankingCard({
 }: RankingCardProps) {
   const { colors } = useAppTheme();
   const compact = variant === 'compact';
+  const addDisabled = added || !!disabledAddLabel;
+  const compactAddLabel = disabledAddLabel ?? (added ? '追加済み' : '欲しいに追加');
+  const wideAddLabel = disabledAddLabel ?? (added ? '済み' : '追加');
   const Container = onPress ? Pressable : View;
   const handleAddWishlist = (event: GestureResponderEvent) => {
     event.stopPropagation();
@@ -80,35 +85,43 @@ export function RankingCard({
           </Text>
         ) : null}
       </View>
-      {compact && expanded && onAddWishlist ? (
+      {compact && expanded && (onAddWishlist || disabledAddLabel) ? (
         <Pressable
-          accessibilityLabel={added ? `${row.title}は欲しいに追加済み` : `${row.title}を欲しいに追加`}
-          disabled={added}
+          accessibilityLabel={
+            addDisabled
+              ? `${row.title}${disabledAddLabel ? 'は所持済み' : 'は欲しいに追加済み'}`
+              : `${row.title}を欲しいに追加`
+          }
+          disabled={addDisabled}
           onPress={handleAddWishlist}
           style={[
             styles.compactAddButton,
-            { backgroundColor: added ? colors.elevated : colors.text, borderColor: colors.border },
+            { backgroundColor: addDisabled ? colors.elevated : colors.text, borderColor: colors.border },
           ]}
         >
-          <Ionicons color={added ? colors.muted : colors.background} name={added ? 'checkmark' : 'add'} size={15} />
-          <Text style={[styles.compactAddText, { color: added ? colors.muted : colors.background }]}>
-            {added ? '追加済み' : '欲しいに追加'}
+          <Ionicons color={addDisabled ? colors.muted : colors.background} name={addDisabled ? 'checkmark' : 'add'} size={15} />
+          <Text style={[styles.compactAddText, { color: addDisabled ? colors.muted : colors.background }]}>
+            {compactAddLabel}
           </Text>
         </Pressable>
       ) : null}
-      {!compact && onAddWishlist ? (
+      {!compact && (onAddWishlist || disabledAddLabel) ? (
         <Pressable
-          accessibilityLabel={added ? `${row.title}は欲しいに追加済み` : `${row.title}を欲しいに追加`}
-          disabled={added}
+          accessibilityLabel={
+            addDisabled
+              ? `${row.title}${disabledAddLabel ? 'は所持済み' : 'は欲しいに追加済み'}`
+              : `${row.title}を欲しいに追加`
+          }
+          disabled={addDisabled}
           onPress={handleAddWishlist}
           style={[
             styles.wideAddButton,
-            { backgroundColor: added ? colors.elevated : colors.text, borderColor: colors.border },
+            { backgroundColor: addDisabled ? colors.elevated : colors.text, borderColor: colors.border },
           ]}
         >
-          <Ionicons color={added ? colors.muted : colors.background} name={added ? 'checkmark' : 'add'} size={16} />
-          <Text style={[styles.wideAddText, { color: added ? colors.muted : colors.background }]}>
-            {added ? '済み' : '追加'}
+          <Ionicons color={addDisabled ? colors.muted : colors.background} name={addDisabled ? 'checkmark' : 'add'} size={16} />
+          <Text style={[styles.wideAddText, { color: addDisabled ? colors.muted : colors.background }]}>
+            {wideAddLabel}
           </Text>
         </Pressable>
       ) : null}

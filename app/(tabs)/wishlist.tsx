@@ -1,6 +1,7 @@
 import { useScrollToTop } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as WebBrowser from 'expo-web-browser';
+import { Linking } from 'react-native';
 import { useMemo, useRef, useState } from 'react';
 import {
   Alert,
@@ -17,6 +18,7 @@ import {
 import { BookCover } from '../../src/components/BookCover';
 import { buildPurchaseUrl, searchSeriesCandidates, SeriesSearchCandidate } from '../../src/lib/bookApis';
 import { normalizeSeriesKey } from '../../src/lib/series';
+import { useAppSettings } from '../../src/store/AppSettingsContext';
 import { useLibrary } from '../../src/store/LibraryContext';
 import { useAppTheme } from '../../src/store/ThemeContext';
 import { useWishlist, WishlistItem } from '../../src/store/WishlistContext';
@@ -44,6 +46,7 @@ function normalizeTitleForCover(value?: string) {
 
 export default function WishlistScreen() {
   const { colors } = useAppTheme();
+  const { openExternalPurchaseLinks } = useAppSettings();
   const { books } = useLibrary();
   const { addItem, deleteItem, items, updateItem } = useWishlist();
   const [title, setTitle] = useState('');
@@ -66,6 +69,15 @@ export default function WishlistScreen() {
   const tabScrollToTopRef = useRef({
     scrollToTop: () => scrollRef.current?.scrollTo({ y: 0, animated: true }),
   });
+
+  const openPurchaseCandidate = async (item: WishlistItem) => {
+    const purchaseUrl = item.purchaseUrl ?? buildPurchaseUrl(item.title);
+    if (openExternalPurchaseLinks) {
+      await Linking.openURL(purchaseUrl);
+    } else {
+      await WebBrowser.openBrowserAsync(purchaseUrl);
+    }
+  };
 
   const trimmedTitle = title.trim();
   const topItems = useMemo(() => items.slice(0, 5), [items]);
@@ -580,7 +592,7 @@ export default function WishlistScreen() {
 
               <View style={styles.actions}>
                 <Pressable
-                  onPress={() => void WebBrowser.openBrowserAsync(item.purchaseUrl ?? buildPurchaseUrl(item.title))}
+                  onPress={() => void openPurchaseCandidate(item)}
                   style={[styles.smallButton, { borderColor: colors.border }]}
                 >
                   <Ionicons color={colors.text} name="open-outline" size={16} />

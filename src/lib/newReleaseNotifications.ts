@@ -447,6 +447,19 @@ export async function getNewReleaseDiagnostics(userId: string) {
   };
 }
 
+export async function hasEnabledNewReleasePushToken(userId: string) {
+  if (!supabase) return false;
+
+  const { data, error } = await supabase
+    .from('push_tokens')
+    .select('expo_push_token')
+    .eq('user_id', userId)
+    .eq('enabled', true)
+    .limit(1);
+  if (error) return false;
+  return (data?.length ?? 0) > 0;
+}
+
 export async function disableNewReleaseNotifications(userId: string) {
   if (!supabase) return;
 

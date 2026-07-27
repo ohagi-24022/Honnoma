@@ -9,6 +9,7 @@ import {
   useState,
 } from 'react';
 
+import { hasEnabledNewReleasePushToken } from '../lib/newReleaseNotifications';
 import { normalizeSeriesKey } from '../lib/series';
 import { supabase } from '../lib/supabase';
 import { isMissingSupabaseRelationError } from '../lib/supabaseErrors';
@@ -17,15 +18,21 @@ import { useAuth } from './AuthContext';
 const LEGACY_STORAGE_KEY = 'booknest.app-settings.v1';
 const DEVICE_STORAGE_KEY = 'booknest.device-settings.v1';
 const GUEST_USER_STORAGE_KEY = 'booknest.user-settings.guest.v1';
+const NEW_RELEASE_NOTIFICATION_STORAGE_KEY_PREFIX = 'booknest.new-release-notifications';
 
 type UserSettings = {
   favoriteSeriesKeys: string[];
-  newReleaseNotifications: boolean;
+};
+
+type LegacyUserSettings = UserSettings & {
+  newReleaseNotifications?: boolean;
 };
 
 type DeviceSettings = {
+  newReleaseNotifications: boolean;
   openExternalPurchaseLinks: boolean;
   showPublishedLatestVolume: boolean;
+  trackPurchasePrices: boolean;
 };
 
 type AppSettings = UserSettings & DeviceSettings;
@@ -38,17 +45,19 @@ type AppSettingsContextValue = AppSettings & {
   setNewReleaseNotifications: (value: boolean) => void;
   setOpenExternalPurchaseLinks: (value: boolean) => void;
   setShowPublishedLatestVolume: (value: boolean) => void;
+  setTrackPurchasePrices: (value: boolean) => void;
   toggleFavoriteSeries: (seriesTitle: string) => void;
 };
 
 const defaultUserSettings: UserSettings = {
   favoriteSeriesKeys: [],
-  newReleaseNotifications: false,
 };
 
 const defaultDeviceSettings: DeviceSettings = {
+  newReleaseNotifications: false,
   openExternalPurchaseLinks: false,
   showPublishedLatestVolume: false,
+  trackPurchasePrices: false,
 };
 
 const defaultSettings: AppSettings = {
@@ -68,7 +77,9 @@ const AppSettingsContext = createContext<AppSettingsContextValue | null>(null);
 
 export function AppSettingsProvider({ children }: PropsWithChildren) {
   const { user } = useAuth();
-  const userStorageKey = user ? `booknest.user-settings.${user.id}.v1` : GUEST_USER_STORAGE_KEY;
+  const userId = user?.id ?? null;
+  const userStorageKey = userId ? `booknest.user-settings.${userId}.v1` : GUEST_USER_STORAGE_KEY;
+  const newReleaseNotificationStorageKey = `${NEW_RELEASE_NOTIFICATION_STORAGE_KEY_PREFIX}.${userId ?? 'guest'}.v1`;
   const [userSettings, setUserSettings] = useState<UserSettings>(defaultUserSettings);
   const [deviceSettings, setDeviceSettings] = useState<DeviceSettings>(defaultDeviceSettings);
   const [hydrated, setHydrated] = useState(false);
@@ -78,18 +89,19 @@ export function AppSettingsProvider({ children }: PropsWithChildren) {
     let cancelled = false;
     hydratedStorageKeyRef.current = null;
     setHydrated(false);
-    setUserSettings(defaultUserSettings);
 
     Promise.all([
       AsyncStorage.getItem(userStorageKey),
       AsyncStorage.getItem(DEVICE_STORAGE_KEY),
       AsyncStorage.getItem(LEGACY_STORAGE_KEY),
       AsyncStorage.getItem(GUEST_USER_STORAGE_KEY),
-      user && supabase
+      AsyncStorage.getItem(newReleaseNotificationStorageKey),
+      userId ? hasEnabledNewReleasePushToken(userId) : Promise.resolve(false),
+      userId && supabase
         ? supabase
             .from('favorite_series')
             .select('series_key, series_title')
-            .eq('user_id', user.id)
+            .eq('user_id', userId)
             .then(({ data, error }) => {
               if (error) {
                 if (isMissingSupabaseRelationError(error)) return [];
@@ -104,12 +116,12 @@ export function AppSettingsProvider({ children }: PropsWithChildren) {
             })
         : Promise.resolve([]),
     ])
-      .then(([storedUserSettings, storedDeviceSettings, legacySettings, guestUserSettings, remoteFavoriteKeys]) => {
+      .then(([storedUserSettings, storedDeviceSettings, legacySettings, guestUserSettings, storedNewReleaseNotification, remoteNewReleaseNotifications, remoteFavoriteKeys]) => {
         if (cancelled) return;
         const parsedUserSettings = storedUserSettings
-          ? (JSON.parse(storedUserSettings) as Partial<UserSettings>)
-          : legacySettings && !user
-            ? (JSON.parse(legacySettings) as Partial<UserSettings>)
+          ? (JSON.parse(storedUserSettings) as Partial<LegacyUserSettings>)
+          : legacySettings && !userId
+            ? (JSON.parse(legacySettings) as Partial<LegacyUserSettings>)
             : {};
         const parsedGuestUserSettings = guestUserSettings
           ? (JSON.parse(guestUserSettings) as Partial<UserSettings>)
@@ -122,9 +134,23 @@ export function AppSettingsProvider({ children }: PropsWithChildren) {
         const localFavoriteKeys = Array.isArray(parsedUserSettings.favoriteSeriesKeys)
           ? normalizeFavoriteKeys(parsedUserSettings.favoriteSeriesKeys)
           : [];
-        const guestFavoriteKeys = user && Array.isArray(parsedGuestUserSettings.favoriteSeriesKeys)
+        const storedNewReleaseNotifications =
+          storedNewReleaseNotification === 'true'
+            ? true
+            : storedNewReleaseNotification === 'false'
+              ? false
+              : undefined;
+        const guestFavoriteKeys = userId && Array.isArray(parsedGuestUserSettings.favoriteSeriesKeys)
           ? normalizeFavoriteKeys(parsedGuestUserSettings.favoriteSeriesKeys)
           : [];
+
+        const resolvedNewReleaseNotifications = remoteNewReleaseNotifications
+          ? true
+          : typeof parsedDeviceSettings.newReleaseNotifications === 'boolean'
+            ? parsedDeviceSettings.newReleaseNotifications
+            : storedNewReleaseNotifications !== undefined
+              ? storedNewReleaseNotifications
+              : parsedUserSettings.newReleaseNotifications;
 
         setUserSettings({
           ...defaultUserSettings,
@@ -134,6 +160,9 @@ export function AppSettingsProvider({ children }: PropsWithChildren) {
         setDeviceSettings({
           ...defaultDeviceSettings,
           ...parsedDeviceSettings,
+          ...(resolvedNewReleaseNotifications !== undefined
+            ? { newReleaseNotifications: resolvedNewReleaseNotifications }
+            : {}),
         });
       })
       .finally(() => {
@@ -145,13 +174,14 @@ export function AppSettingsProvider({ children }: PropsWithChildren) {
     return () => {
       cancelled = true;
     };
-  }, [user, userStorageKey]);
+  }, [newReleaseNotificationStorageKey, userId, userStorageKey]);
 
   useEffect(() => {
     if (!hydrated || hydratedStorageKeyRef.current !== userStorageKey) return;
     AsyncStorage.setItem(userStorageKey, JSON.stringify(userSettings));
+    AsyncStorage.setItem(newReleaseNotificationStorageKey, String(deviceSettings.newReleaseNotifications));
     AsyncStorage.setItem(DEVICE_STORAGE_KEY, JSON.stringify(deviceSettings));
-  }, [deviceSettings, hydrated, userSettings, userStorageKey]);
+  }, [deviceSettings, hydrated, newReleaseNotificationStorageKey, userSettings, userStorageKey]);
 
   const value = useMemo(
     () => ({
@@ -176,7 +206,14 @@ export function AppSettingsProvider({ children }: PropsWithChildren) {
         });
       },
       setNewReleaseNotifications: (newReleaseNotifications: boolean) =>
-        setUserSettings((current) => ({ ...current, newReleaseNotifications })),
+        setDeviceSettings((current) => {
+          const next = { ...current, newReleaseNotifications };
+          if (hydratedStorageKeyRef.current === userStorageKey) {
+            void AsyncStorage.setItem(DEVICE_STORAGE_KEY, JSON.stringify(next));
+            void AsyncStorage.setItem(newReleaseNotificationStorageKey, String(newReleaseNotifications));
+          }
+          return next;
+        }),
       setFavoriteSeries: (seriesTitle: string, favorite: boolean) => {
         const seriesKey = normalizeSeriesKey(seriesTitle);
         if (!seriesKey) return;
@@ -192,6 +229,8 @@ export function AppSettingsProvider({ children }: PropsWithChildren) {
         setDeviceSettings((current) => ({ ...current, openExternalPurchaseLinks })),
       setShowPublishedLatestVolume: (showPublishedLatestVolume: boolean) =>
         setDeviceSettings((current) => ({ ...current, showPublishedLatestVolume })),
+      setTrackPurchasePrices: (trackPurchasePrices: boolean) =>
+        setDeviceSettings((current) => ({ ...current, trackPurchasePrices })),
       toggleFavoriteSeries: (seriesTitle: string) => {
         const seriesKey = normalizeSeriesKey(seriesTitle);
         setUserSettings((current) => ({
@@ -202,7 +241,7 @@ export function AppSettingsProvider({ children }: PropsWithChildren) {
         }));
       },
     }),
-    [deviceSettings, hydrated, userSettings],
+    [deviceSettings, hydrated, newReleaseNotificationStorageKey, userSettings, userStorageKey],
   );
 
   return <AppSettingsContext.Provider value={value}>{children}</AppSettingsContext.Provider>;

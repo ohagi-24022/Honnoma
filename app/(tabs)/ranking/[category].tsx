@@ -63,6 +63,10 @@ export default function RankingCategoryScreen() {
       ),
     [books],
   );
+  const ownedSeriesKeys = useMemo(
+    () => new Set(buildSeriesGroups(books).map((group) => normalizeLooseSeriesKey(group.title))),
+    [books],
+  );
   const rows = useMemo(
     () =>
       buildRankingRows(category, category === 'favorite' ? globalFavoriteRows : globalRows, items).map((row) => {
@@ -182,25 +186,30 @@ export default function RankingCategoryScreen() {
               pageCount={pageCount}
               onChange={setPage}
             />
-            {pageRows.map((row, index) => (
-              <RankingCard
-                key={`${category}-${row.title}-${(page - 1) * PAGE_SIZE + index}`}
-                added={addedTitles.has(normalizeRankingTitle(row.title))}
-                index={(page - 1) * PAGE_SIZE + index}
-                onAddWishlist={
-                  category === 'personal'
-                    ? undefined
-                    : () =>
-                        addItem({
-                          title: row.title,
-                          score: row.score ?? 75,
-                          coverUrl: row.coverUrl,
-                          purchaseUrl: buildPurchaseUrl(row.title),
-                        })
-                }
-                row={row}
-              />
-            ))}
+            {pageRows.map((row, index) => {
+              const owned = category !== 'personal' && isOwnedSeriesTitle(row.title, ownedSeriesKeys);
+              const canAddWishlist = category !== 'personal' && !owned;
+              return (
+                <RankingCard
+                  key={`${category}-${row.title}-${(page - 1) * PAGE_SIZE + index}`}
+                  added={addedTitles.has(normalizeRankingTitle(row.title))}
+                  disabledAddLabel={owned ? '所持済み' : undefined}
+                  index={(page - 1) * PAGE_SIZE + index}
+                  onAddWishlist={
+                    canAddWishlist
+                      ? () =>
+                          addItem({
+                            title: row.title,
+                            score: row.score ?? 75,
+                            coverUrl: row.coverUrl,
+                            purchaseUrl: buildPurchaseUrl(row.title),
+                          })
+                      : undefined
+                  }
+                  row={row}
+                />
+              );
+            })}
             <Pagination
               page={page}
               pageCount={pageCount}
@@ -267,6 +276,14 @@ function normalizeRankingTitle(value: string) {
 
 function normalizeLooseSeriesKey(value: string) {
   return normalizeSeriesKey(value).replace(/[!！?？。．.・･]/g, '');
+}
+
+
+function isOwnedSeriesTitle(title: string, ownedSeriesKeys: Set<string>) {
+  const key = normalizeLooseSeriesKey(title);
+  if (!key) return false;
+  if (ownedSeriesKeys.has(key)) return true;
+  return [...ownedSeriesKeys].some((ownedKey) => ownedKey.includes(key) || key.includes(ownedKey));
 }
 
 function resolveLocalSeriesCover(title: string, covers: Map<string, LocalSeriesCover>) {

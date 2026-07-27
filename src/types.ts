@@ -9,6 +9,10 @@ export type Book = {
   volumeNumber?: number;
   author?: string;
   publisher?: string;
+  purchasePrice?: number | null;
+  listPrice?: number | null;
+  priceSource?: 'rakuten' | 'google' | 'manual' | null;
+  priceFetchedAt?: string | null;
   thumbnailUrl?: string;
   status: ReadingStatus;
   createdAt: string;

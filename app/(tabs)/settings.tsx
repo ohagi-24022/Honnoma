@@ -1,7 +1,7 @@
 import { useScrollToTop } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Link } from 'expo-router';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -44,12 +44,15 @@ export default function SettingsScreen() {
   const { configured, initializing, user, signIn, signOut, signUp } = useAuth();
   const { books, localImportCount, migrateLocalBooks, seriesGroups } = useLibrary();
   const {
+    hydrated: appSettingsHydrated,
     newReleaseNotifications,
     setNewReleaseNotifications,
     openExternalPurchaseLinks,
     setOpenExternalPurchaseLinks,
     showPublishedLatestVolume,
     setShowPublishedLatestVolume,
+    trackPurchasePrices,
+    setTrackPurchasePrices,
   } = useAppSettings();
   const { colors, mode, setMode } = useAppTheme();
   const [email, setEmail] = useState('');
@@ -58,7 +61,16 @@ export default function SettingsScreen() {
   const [migrationSubmitting, setMigrationSubmitting] = useState(false);
   const [notificationDebugSubmitting, setNotificationDebugSubmitting] = useState(false);
   const [notificationSubmitting, setNotificationSubmitting] = useState(false);
+  const [pendingNewReleaseSwitchValue, setPendingNewReleaseSwitchValue] = useState<boolean | null>(null);
   const [operationDiagnosticsSubmitting, setOperationDiagnosticsSubmitting] = useState(false);
+  const displayedNewReleaseNotifications = pendingNewReleaseSwitchValue ?? newReleaseNotifications;
+
+  useEffect(() => {
+    if (pendingNewReleaseSwitchValue === null) return;
+    if (newReleaseNotifications === pendingNewReleaseSwitchValue) {
+      setPendingNewReleaseSwitchValue(null);
+    }
+  }, [newReleaseNotifications, pendingNewReleaseSwitchValue]);
 
   const submitAuth = async (authMode: 'signIn' | 'signUp') => {
     if (!email.trim() || !password) {
@@ -105,7 +117,7 @@ export default function SettingsScreen() {
     }
   };
 
-  const escapeCsvValue = (value?: string | number) => {
+  const escapeCsvValue = (value?: string | number | null) => {
     const text = value === undefined || value === null ? '' : String(value);
     return `"${text.replace(/"/g, '""')}"`;
   };
@@ -118,6 +130,10 @@ export default function SettingsScreen() {
       'isbn',
       'author',
       'publisher',
+      'purchasePrice',
+      'listPrice',
+      'priceSource',
+      'priceFetchedAt',
       'status',
       'createdAt',
     ];
@@ -129,6 +145,10 @@ export default function SettingsScreen() {
         book.isbn,
         book.author,
         book.publisher,
+        book.purchasePrice,
+        book.listPrice,
+        book.priceSource,
+        book.priceFetchedAt,
         book.status,
         book.createdAt,
       ]
@@ -150,7 +170,9 @@ export default function SettingsScreen() {
   };
 
   const toggleNewReleaseNotifications = async (enabled: boolean) => {
+    setPendingNewReleaseSwitchValue(enabled);
     if (!user) {
+      setPendingNewReleaseSwitchValue(null);
       Alert.alert(
         'ログインが必要です',
         '新刊通知はクラウド側でシリーズを定期確認するため、ログイン後に利用できます。',
@@ -161,14 +183,20 @@ export default function SettingsScreen() {
     setNotificationSubmitting(true);
     try {
       if (enabled) {
-        await syncNewReleaseSubscriptions(user.id, seriesGroups);
         setNewReleaseNotifications(true);
         try {
-          await enableNewReleaseNotifications(user.id, seriesGroups);
+          await syncNewReleaseSubscriptions(user.id, seriesGroups);
+        } catch (subscriptionError) {
           Alert.alert(
-            '新刊通知を有効にしました',
-            '大本の通知をONにしました。シリーズごとの通知ON/OFFは本棚のシリーズカードから変更できます。',
+            '通知設定をONにしました',
+            `シリーズ通知の同期に失敗しました。設定はONのまま保存しました。\n${
+              subscriptionError instanceof Error ? subscriptionError.message : '本棚を更新してからもう一度お試しください。'
+            }`,
           );
+          return;
+        }
+        try {
+          await enableNewReleaseNotifications(user.id, seriesGroups);
         } catch (tokenError) {
           Alert.alert(
             'シリーズ通知設定を表示しました',
@@ -178,8 +206,17 @@ export default function SettingsScreen() {
           );
         }
       } else {
-        await disableNewReleaseNotifications(user.id);
         setNewReleaseNotifications(false);
+        try {
+          await disableNewReleaseNotifications(user.id);
+        } catch (disableError) {
+          Alert.alert(
+            '通知設定をOFFにしました',
+            `端末通知の無効化に失敗しました。設定はOFFのまま保存しました。\n${
+              disableError instanceof Error ? disableError.message : 'しばらくしてからもう一度お試しください。'
+            }`,
+          );
+        }
       }
     } catch (error) {
       Alert.alert(
@@ -307,18 +344,16 @@ export default function SettingsScreen() {
                   { backgroundColor: colors.surface, borderColor: colors.border },
                 ]}
               >
-                <View style={styles.accountIcon}>
+                <View style={[styles.accountIcon, { backgroundColor: colors.surface }]}>
                   <Ionicons color={colors.text} name="person-circle-outline" size={22} />
                 </View>
                 <View style={styles.rowText}>
-                  <View style={styles.linkTitleRow}>
-                    <Ionicons color={colors.muted} name="chevron-forward" size={16} />
-                    <Text style={[styles.rowTitle, { color: colors.text }]}>マイページ</Text>
-                  </View>
+                  <Text style={[styles.rowTitle, { color: colors.text }]}>マイページ</Text>
                   <Text style={[styles.rowCopy, { color: colors.muted }]}>
                     通知履歴、支出サマリー、アカウント情報を確認できます。
                   </Text>
                 </View>
+                <Ionicons color={colors.muted} name="chevron-forward" size={18} />
               </Pressable>
             </Link>
             <Pressable disabled={authSubmitting} style={[styles.neutralButton, { borderColor: colors.border }]} onPress={submitSignOut}>
@@ -440,35 +475,51 @@ export default function SettingsScreen() {
       </View>
 
       <View style={[styles.section, { borderBottomColor: colors.border }]}>
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>バックアップ</Text>
-        <Text style={[styles.rowCopy, { color: colors.muted }]}>
-          蔵書データをCSVまたはJSONとして共有できます。機種変更前や手元の控えに使えます。
-        </Text>
-        <View style={styles.authButtons}>
-          <Pressable
-            disabled={books.length === 0}
-            onPress={() => void exportCsv()}
-            style={[
-              styles.neutralButton,
-              styles.authButton,
-              { borderColor: colors.border },
-              books.length === 0 && styles.disabledButton,
-            ]}
-          >
-            <Text style={[styles.neutralButtonText, { color: colors.text }]}>CSV出力</Text>
-          </Pressable>
-          <Pressable
-            disabled={books.length === 0}
-            onPress={() => void exportJson()}
-            style={[
-              styles.neutralButton,
-              styles.authButton,
-              { borderColor: colors.border },
-              books.length === 0 && styles.disabledButton,
-            ]}
-          >
-            <Text style={[styles.neutralButtonText, { color: colors.text }]}>JSON出力</Text>
-          </Pressable>
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>クラウド同期</Text>
+        <View style={styles.row}>
+          <View style={[styles.accountIcon, { backgroundColor: colors.surface }]}>
+            <Ionicons color={colors.text} name={user ? "cloud-done-outline" : "cloud-upload-outline"} size={21} />
+          </View>
+          <View style={styles.rowText}>
+            <Text style={[styles.rowTitle, { color: colors.text }]}>
+              {user ? '蔵書データはアカウントに同期されています' : 'ログインすると本棚を復元できます'}
+            </Text>
+            <Text style={[styles.rowCopy, { color: colors.muted }]}>
+              {user
+                ? '機種変更後も同じアカウントでログインすると、クラウド本棚を引き継げます。'
+                : '未ログインでも端末内には保存されます。アカウント作成後にクラウドへ移行できます。'}
+            </Text>
+          </View>
+        </View>
+        <View style={[styles.exportBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <Text style={[styles.rowTitle, { color: colors.text }]}>詳細データを書き出す</Text>
+          <Text style={[styles.rowCopy, { color: colors.muted }]}>CSV/JSONは確認用や開発時の控えとして使えます。</Text>
+          <View style={styles.authButtons}>
+            <Pressable
+              disabled={books.length === 0}
+              onPress={() => void exportCsv()}
+              style={[
+                styles.neutralButton,
+                styles.authButton,
+                { borderColor: colors.border },
+                books.length === 0 && styles.disabledButton,
+              ]}
+            >
+              <Text style={[styles.neutralButtonText, { color: colors.text }]}>CSV出力</Text>
+            </Pressable>
+            <Pressable
+              disabled={books.length === 0}
+              onPress={() => void exportJson()}
+              style={[
+                styles.neutralButton,
+                styles.authButton,
+                { borderColor: colors.border },
+                books.length === 0 && styles.disabledButton,
+              ]}
+            >
+              <Text style={[styles.neutralButtonText, { color: colors.text }]}>JSON出力</Text>
+            </Pressable>
+          </View>
         </View>
       </View>
 
@@ -478,22 +529,19 @@ export default function SettingsScreen() {
           <Pressable
             style={[
               styles.helpLink,
-              {
-                backgroundColor: colors.surface,
-                borderColor: colors.border,
-              },
+              { backgroundColor: colors.surface, borderColor: colors.border },
             ]}
           >
+            <View style={[styles.accountIcon, { backgroundColor: colors.surface }]}>
+              <Ionicons color={colors.text} name="help-circle-outline" size={21} />
+            </View>
             <View style={styles.rowText}>
-              <View style={styles.helpTitleRow}>
-                <Ionicons color={colors.muted} name="chevron-forward" size={16} />
-                <Text style={[styles.rowTitle, { color: colors.text }]}>蒐集架の使い方</Text>
-                <Ionicons color={colors.muted} name="help-circle-outline" size={17} />
-              </View>
+              <Text style={[styles.rowTitle, { color: colors.text }]}>蒐集架の使い方</Text>
               <Text style={[styles.helpCopy, { color: colors.muted }]} numberOfLines={2}>
                 登録、本棚、シリーズ編集などの操作を確認できます。
               </Text>
             </View>
+            <Ionicons color={colors.muted} name="chevron-forward" size={18} />
           </Pressable>
         </Link>
       </View>
@@ -526,11 +574,11 @@ export default function SettingsScreen() {
             </Text>
           </View>
           <Switch
-            disabled={notificationSubmitting || !configured}
+            disabled={!appSettingsHydrated || notificationSubmitting || !user}
             onValueChange={(value) => void toggleNewReleaseNotifications(value)}
             thumbColor="#ffffff"
             trackColor={{ false: '#d4d4d4', true: '#31c759' }}
-            value={newReleaseNotifications}
+            value={displayedNewReleaseNotifications}
           />
         </View>
         <Text style={[styles.rowCopy, { color: colors.muted }]}>
@@ -606,6 +654,18 @@ export default function SettingsScreen() {
             value={showPublishedLatestVolume}
           />
         </View>
+        <View style={styles.row}>
+          <View style={styles.rowText}>
+            <Text style={[styles.rowTitle, { color: colors.text }]}>購入価格を記録</Text>
+            <Text style={[styles.rowCopy, { color: colors.muted }]}>ONにすると、登録時とシリーズ詳細の編集で通常価格または中古価格を記録できます。</Text>
+          </View>
+          <Switch
+            onValueChange={setTrackPurchasePrices}
+            thumbColor="#ffffff"
+            trackColor={{ false: '#d4d4d4', true: '#31c759' }}
+            value={trackPurchasePrices}
+          />
+        </View>
         <View style={[styles.segmented, { backgroundColor: colors.elevated }]}>
           {themeOptions.map((option) => (
             <Pressable
@@ -630,18 +690,16 @@ export default function SettingsScreen() {
               { backgroundColor: colors.surface, borderColor: colors.border },
             ]}
           >
-            <View style={styles.accountIcon}>
+            <View style={[styles.accountIcon, { backgroundColor: colors.surface }]}>
               <Ionicons color={colors.text} name="document-text-outline" size={21} />
             </View>
             <View style={styles.rowText}>
-              <View style={styles.linkTitleRow}>
-                <Ionicons color={colors.muted} name="chevron-forward" size={16} />
-                <Text style={[styles.rowTitle, { color: colors.text }]}>プライバシーポリシー</Text>
-              </View>
+              <Text style={[styles.rowTitle, { color: colors.text }]}>プライバシーポリシー</Text>
               <Text style={[styles.rowCopy, { color: colors.muted }]} numberOfLines={2}>
                 取得する情報、通知、ランキング集計、外部サービス利用について確認できます。
               </Text>
             </View>
+            <Ionicons color={colors.muted} name="chevron-forward" size={18} />
           </Pressable>
         </Link>
       </View>
@@ -716,12 +774,20 @@ const styles = StyleSheet.create({
   },
   accountIcon: {
     alignItems: 'center',
-    height: 32,
+    borderRadius: 9,
+    height: 38,
     justifyContent: 'center',
-    width: 32,
+    width: 38,
   },
   pendingBox: {
     borderRadius: 8,
+    marginTop: 10,
+    padding: 12,
+  },
+  exportBox: {
+    borderRadius: 8,
+    borderWidth: 1,
+    marginTop: 14,
     padding: 12,
   },
   helpLink: {
@@ -735,6 +801,7 @@ const styles = StyleSheet.create({
   helpTitleRow: { alignItems: 'center', flexDirection: 'row', gap: 6 },
   linkTitleRow: { alignItems: 'center', flexDirection: 'row', gap: 4 },
   helpCopy: { fontSize: 13, lineHeight: 18, marginTop: 3 },
+  utilityLabel: { fontSize: 12, fontWeight: '800', marginTop: 14 },
   segmented: {
     borderRadius: 8,
     flexDirection: 'row',

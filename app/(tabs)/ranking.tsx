@@ -72,6 +72,10 @@ export default function RankingScreen() {
       ),
     [books],
   );
+  const ownedSeriesKeys = useMemo(
+    () => new Set(buildSeriesGroups(books).map((group) => normalizeLooseSeriesKey(group.title))),
+    [books],
+  );
   useScrollToTop(tabScrollToTopRef);
   const sections = useMemo(
     () =>
@@ -164,6 +168,7 @@ export default function RankingScreen() {
           addedTitles={addedTitles}
           description={section.description}
           expandedKey={expandedKey}
+          ownedSeriesKeys={ownedSeriesKeys}
           onAddWishlist={
             section.category === 'personal'
               ? undefined
@@ -286,6 +291,7 @@ function RankingShelf({
   onAddWishlist,
   onClearExpanded,
   onToggleExpanded,
+  ownedSeriesKeys,
   rows,
   title,
 }: {
@@ -296,6 +302,7 @@ function RankingShelf({
   onAddWishlist?: (row: ReturnType<typeof buildRankingRows>[number]) => void;
   onClearExpanded: () => void;
   onToggleExpanded: (key: string) => void;
+  ownedSeriesKeys: Set<string>;
   rows: ReturnType<typeof buildRankingRows>;
   title: string;
 }) {
@@ -338,13 +345,16 @@ function RankingShelf({
         >
           {topRows.map((row, index) => {
             const key = `${category}-${row.title}-${index}`;
+            const owned = !!onAddWishlist && isOwnedSeriesTitle(row.title, ownedSeriesKeys);
+            const canAddWishlist = !!onAddWishlist && !owned;
             return (
               <RankingCard
                 key={key}
                 added={addedTitles.has(normalizeRankingTitle(row.title))}
+                disabledAddLabel={owned ? '所持済み' : undefined}
                 expanded={expandedKey === key}
                 index={index}
-                onAddWishlist={onAddWishlist ? () => onAddWishlist(row) : undefined}
+                onAddWishlist={canAddWishlist ? () => onAddWishlist(row) : undefined}
                 onPress={onAddWishlist ? () => onToggleExpanded(key) : undefined}
                 row={row}
                 variant="compact"
@@ -374,6 +384,14 @@ function normalizeRankingTitle(value: string) {
 
 function normalizeLooseSeriesKey(value: string) {
   return normalizeSeriesKey(value).replace(/[!！?？。．.・･]/g, '');
+}
+
+
+function isOwnedSeriesTitle(title: string, ownedSeriesKeys: Set<string>) {
+  const key = normalizeLooseSeriesKey(title);
+  if (!key) return false;
+  if (ownedSeriesKeys.has(key)) return true;
+  return [...ownedSeriesKeys].some((ownedKey) => ownedKey.includes(key) || key.includes(ownedKey));
 }
 
 function resolveLocalSeriesCover(title: string, covers: Map<string, LocalSeriesCover>) {

@@ -66,7 +66,7 @@ export default function AccountScreen() {
   const params = useLocalSearchParams<{ from?: string }>();
   const navigation = useNavigation();
   const { user } = useAuth();
-  const { setNewReleaseNotifications } = useAppSettings();
+  const { setNewReleaseNotifications, trackPurchasePrices } = useAppSettings();
   const { books, seriesGroups } = useLibrary();
   const { colors } = useAppTheme();
   const [logs, setLogs] = useState<NewReleaseNotificationLog[]>([]);
@@ -94,7 +94,13 @@ export default function AccountScreen() {
 
   const expenseSummary = useMemo(() => {
     const totalBooks = books.length;
-    const estimatedTotal = totalBooks * ESTIMATED_BOOK_PRICE;
+    const pricedBooks = books.filter(
+      (book) => typeof book.purchasePrice === 'number' && Number.isFinite(book.purchasePrice) && book.purchasePrice >= 0,
+    );
+    const recordedTotal = pricedBooks.reduce((sum, book) => sum + (book.purchasePrice ?? 0), 0);
+    const unrecordedBooks = totalBooks - pricedBooks.length;
+    const estimatedUnrecordedTotal = unrecordedBooks * ESTIMATED_BOOK_PRICE;
+    const estimatedTotal = recordedTotal + estimatedUnrecordedTotal;
     const now = new Date();
     const thisMonthBooks = books.filter((book) => {
       const createdAt = new Date(book.createdAt);
@@ -107,10 +113,16 @@ export default function AccountScreen() {
     const mostCollectedSeries = [...seriesGroups].sort((left, right) => right.ownedCount - left.ownedCount)[0];
 
     return {
+      accountStatus: 'クラウド同期中',
       estimatedTotal,
+      estimatedUnrecordedTotal,
       mostCollectedSeries,
+      pricedBookCount: pricedBooks.length,
+      recordedTotal,
       thisMonthBooks,
       totalBooks,
+      totalSeries: seriesGroups.length,
+      unrecordedBooks,
     };
   }, [books, seriesGroups]);
 
@@ -155,7 +167,7 @@ export default function AccountScreen() {
   const changeAppIcon = useCallback(async (iconName: string | null) => {
     if (Platform.OS !== 'ios') return;
     if (!alternateIconModule?.supportsAlternateIcons) {
-      Alert.alert('??????????????', 'iOS????????????????????');
+      Alert.alert('アイコンを変更できません', 'iOSの開発ビルドまたは配布版で確認できます。');
       return;
     }
     if (activeIconName === iconName) return;
@@ -165,8 +177,8 @@ export default function AccountScreen() {
       setActiveIconName(nextIconName);
     } catch (changeError) {
       Alert.alert(
-        '???????????????',
-        changeError instanceof Error ? changeError.message : '????????????????????',
+        'アイコン変更に失敗しました',
+        changeError instanceof Error ? changeError.message : 'しばらくしてからもう一度お試しください。',
       );
     } finally {
       setIconChanging(null);
@@ -229,20 +241,108 @@ export default function AccountScreen() {
         style={[styles.screen, { backgroundColor: colors.background }]}
         contentContainerStyle={styles.content}
       >
-      <View style={[styles.section, { borderBottomColor: colors.border }]}>
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>マイページ</Text>
-        <Text style={[styles.email, { color: colors.text }]}>{user.email}</Text>
-        <Text style={[styles.copy, { color: colors.muted }]}>
-          通知は正午ごろにまとめて届きます。どのシリーズの新刊かは、この画面で確認できます。
-        </Text>
+      <View style={[styles.profileCard, { backgroundColor: colors.elevated }]}>
+        <View style={styles.profileHeader}>
+          <View style={[styles.profileIcon, { backgroundColor: colors.text }]}>
+            <Ionicons color={colors.background} name="person-outline" size={22} />
+          </View>
+          <View style={styles.profileText}>
+            <Text style={[styles.pageTitle, { color: colors.text }]}>マイページ</Text>
+            <Text style={[styles.email, { color: colors.muted }]} numberOfLines={1}>{user.email}</Text>
+          </View>
+        </View>
+        <View style={styles.summaryGrid}>
+          <SummaryTile label="登録冊数" value={`${expenseSummary.totalBooks}冊`} />
+          <SummaryTile label="シリーズ" value={`${expenseSummary.totalSeries}`} />
+          <SummaryTile label="保存状態" value={expenseSummary.accountStatus} />
+        </View>
+      </View>
+
+      {trackPurchasePrices ? (
+        <View style={[styles.expenseSection, { backgroundColor: colors.elevated }]}>
+          <View style={[styles.expenseIcon, { backgroundColor: colors.text }]}>
+            <Ionicons color={colors.background} name="wallet-outline" size={21} />
+          </View>
+          <View style={styles.expenseHeader}>
+            <View style={styles.expenseText}>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>購入・支出サマリー</Text>
+              <Text style={[styles.copy, { color: colors.muted }]}>
+                {expenseSummary.pricedBookCount > 0
+                  ? `購入価格を記録した${expenseSummary.pricedBookCount}冊は実額、未記録分は1冊${formatCurrency(ESTIMATED_BOOK_PRICE)}で補助計算しています。`
+                  : `巻の詳細から購入価格を記録すると、ここに実額で反映されます。未記録分は1冊${formatCurrency(ESTIMATED_BOOK_PRICE)}の概算です。`}
+              </Text>
+            </View>
+          </View>
+          <Text style={[styles.expenseAmount, { color: colors.text }]}>
+            {formatCurrency(expenseSummary.estimatedTotal)}
+          </Text>
+          <Text style={[styles.expenseBreakdown, { color: colors.muted }]}>
+            実額 {formatCurrency(expenseSummary.recordedTotal)} / 未記録概算 {formatCurrency(expenseSummary.estimatedUnrecordedTotal)}
+          </Text>
+          <View style={styles.summaryGrid}>
+            <SummaryTile label="価格記録" value={`${expenseSummary.pricedBookCount}冊`} />
+            <SummaryTile label="未記録" value={`${expenseSummary.unrecordedBooks}冊`} />
+            <SummaryTile label="今月追加" value={`${expenseSummary.thisMonthBooks}冊`} />
+          </View>
+          {expenseSummary.mostCollectedSeries ? (
+            <Text style={[styles.copy, { color: colors.muted }]}>
+              一番多いシリーズ: {expenseSummary.mostCollectedSeries.title} / {expenseSummary.mostCollectedSeries.ownedCount}冊
+            </Text>
+          ) : null}
+        </View>
+      ) : null}
+
+      <View style={[styles.panel, { backgroundColor: colors.elevated }]}>
+        <View style={styles.headerRow}>
+          <View style={styles.sectionHeadingText}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>新刊通知</Text>
+            <Text style={[styles.copy, { color: colors.muted }]}>通知の詳細はここで確認できます。</Text>
+          </View>
+          <Pressable
+            accessibilityLabel="新刊通知を更新"
+            onPress={() => void loadLogs()}
+            style={[styles.iconButton, { borderColor: colors.border, backgroundColor: colors.background }]}
+          >
+            {loading ? (
+              <ActivityIndicator color={colors.text} size="small" />
+            ) : (
+              <Ionicons color={colors.text} name="refresh" size={17} />
+            )}
+          </Pressable>
+        </View>
+
+        {error && <Text style={[styles.errorText, { color: colors.danger }]}>{error}</Text>}
+
+        {logs.length === 0 && !loading ? (
+          <View style={[styles.emptyBox, { backgroundColor: colors.background }]}>
+            <Ionicons color={colors.muted} name="notifications-outline" size={28} />
+            <Text style={[styles.emptyTitle, { color: colors.text }]}>通知はまだありません</Text>
+            <Text style={[styles.emptyCopy, { color: colors.muted }]}>通知ONのシリーズに新刊候補が見つかると、ここに表示されます。</Text>
+          </View>
+        ) : (
+          <View style={styles.logList}>
+            {logs.map((log) => (
+              <View key={log.id ?? `${log.seriesTitle}-${log.volumeNumber}-${log.createdAt}`} style={[styles.logCard, { borderColor: colors.border, backgroundColor: colors.background }]}>
+                <View style={styles.logIcon}>
+                  <Ionicons color="#facc15" name="notifications" size={18} />
+                </View>
+                <View style={styles.logBody}>
+                  <Text style={[styles.logTitle, { color: colors.text }]}>{log.seriesTitle}</Text>
+                  <Text style={[styles.copy, { color: colors.muted }]}>{log.volumeNumber ? `${log.volumeNumber}巻の新刊候補` : '新刊候補'}</Text>
+                  <Text style={[styles.meta, { color: colors.muted }]}>{formatDate(log.createdAt)} / {formatStatus(log.status)}</Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
       </View>
 
       {Platform.OS === 'ios' && Constants.appOwnership !== 'expo' ? (
-        <View style={[styles.iconPickerSection, { backgroundColor: colors.elevated }]}>
+        <View style={[styles.panel, { backgroundColor: colors.elevated }]}>
           <View style={styles.headerRow}>
             <View>
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>???????</Text>
-              <Text style={[styles.copy, { color: colors.muted }]}>?????????????????????????</Text>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>アプリアイコン</Text>
+              <Text style={[styles.copy, { color: colors.muted }]}>ホーム画面のアイコンを変更できます。</Text>
             </View>
             <Ionicons color={colors.muted} name="phone-portrait-outline" size={22} />
           </View>
@@ -252,7 +352,7 @@ export default function AccountScreen() {
               const changing = iconChanging === (option.name ?? 'default');
               return (
                 <Pressable
-                  accessibilityLabel={`${option.label}???????????`}
+                  accessibilityLabel={`${option.label}のアイコンに変更`}
                   disabled={changing || !alternateIconModule?.supportsAlternateIcons}
                   key={option.name ?? 'default'}
                   onPress={() => void changeAppIcon(option.name)}
@@ -273,79 +373,10 @@ export default function AccountScreen() {
             })}
           </ScrollView>
           {alternateIconsChecked && !alternateIconModule?.supportsAlternateIcons ? (
-            <Text style={[styles.copy, { color: colors.muted }]}>?????????????????????iOS??????????????????????</Text>
+            <Text style={[styles.copy, { color: colors.muted }]}>この環境ではアイコン変更を利用できません。iOSの開発ビルドまたは配布版で確認できます。</Text>
           ) : null}
         </View>
       ) : null}
-
-      <View style={[styles.expenseSection, { backgroundColor: colors.elevated }]}>
-        <View style={[styles.expenseIcon, { backgroundColor: colors.text }]}>
-          <Ionicons color={colors.background} name="wallet-outline" size={21} />
-        </View>
-        <View style={styles.expenseHeader}>
-          <View style={styles.expenseText}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>購入・支出サマリー</Text>
-            <Text style={[styles.copy, { color: colors.muted }]}>
-              価格記録を追加するまで、1冊{formatCurrency(ESTIMATED_BOOK_PRICE)}換算の概算です。
-            </Text>
-          </View>
-        </View>
-        <Text style={[styles.expenseAmount, { color: colors.text }]}>
-          {formatCurrency(expenseSummary.estimatedTotal)}
-        </Text>
-        <View style={styles.summaryGrid}>
-          <SummaryTile label="所持冊数" value={`${expenseSummary.totalBooks}冊`} />
-          <SummaryTile label="今月追加" value={`${expenseSummary.thisMonthBooks}冊`} />
-          <SummaryTile label="シリーズ" value={`${seriesGroups.length}件`} />
-        </View>
-        {expenseSummary.mostCollectedSeries ? (
-          <Text style={[styles.copy, { color: colors.muted }]}>
-            一番多いシリーズ: {expenseSummary.mostCollectedSeries.title} / {expenseSummary.mostCollectedSeries.ownedCount}冊
-          </Text>
-        ) : null}
-      </View>
-
-      <View style={styles.headerRow}>
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>新刊通知</Text>
-        <Pressable onPress={() => void loadLogs()} style={[styles.iconButton, { borderColor: colors.border }]}>
-          {loading ? (
-            <ActivityIndicator color={colors.text} size="small" />
-          ) : (
-            <Ionicons color={colors.text} name="refresh" size={17} />
-          )}
-        </Pressable>
-      </View>
-
-      {error && <Text style={[styles.errorText, { color: colors.danger }]}>{error}</Text>}
-
-      {logs.length === 0 && !loading ? (
-        <View style={[styles.emptyBox, { backgroundColor: colors.elevated }]}>
-          <Ionicons color={colors.muted} name="notifications-outline" size={28} />
-          <Text style={[styles.emptyTitle, { color: colors.text }]}>通知はまだありません</Text>
-          <Text style={[styles.emptyCopy, { color: colors.muted }]}>
-            通知ONのシリーズに新刊候補が見つかると、ここに詳細が表示されます。
-          </Text>
-        </View>
-      ) : (
-        <View style={styles.logList}>
-          {logs.map((log) => (
-            <View key={log.id ?? `${log.seriesTitle}-${log.volumeNumber}-${log.createdAt}`} style={[styles.logCard, { borderColor: colors.border }]}>
-              <View style={styles.logIcon}>
-                <Ionicons color="#facc15" name="notifications" size={18} />
-              </View>
-              <View style={styles.logBody}>
-                <Text style={[styles.logTitle, { color: colors.text }]}>{log.seriesTitle}</Text>
-                <Text style={[styles.copy, { color: colors.muted }]}>
-                  {log.volumeNumber ? `${log.volumeNumber}巻の新刊候補` : '新刊候補'}
-                </Text>
-                <Text style={[styles.meta, { color: colors.muted }]}>
-                  {formatDate(log.createdAt)} / {formatStatus(log.status)}
-                </Text>
-              </View>
-            </View>
-          ))}
-        </View>
-      )}
 
       <View style={[styles.dangerSection, { borderTopColor: colors.border }]}>
         <Text style={[styles.sectionTitle, { color: colors.text }]}>アカウント管理</Text>
@@ -400,13 +431,19 @@ function SummaryTile({ label, value }: { label: string; value: string }) {
 
 const styles = StyleSheet.create({
   screen: { flex: 1 },
-  content: { gap: 18, padding: 18, paddingBottom: 40 },
+  content: { gap: 14, padding: 18, paddingBottom: 40 },
   centerScreen: { alignItems: 'center', flex: 1, justifyContent: 'center', padding: 24 },
   section: { borderBottomWidth: 1, paddingBottom: 18 },
-  sectionTitle: { fontSize: 18, fontWeight: '800' },
-  email: { fontSize: 16, fontWeight: '800', marginTop: 10 },
+  profileCard: { borderRadius: 8, gap: 14, padding: 16 },
+  profileHeader: { alignItems: 'center', flexDirection: 'row', gap: 12 },
+  profileIcon: { alignItems: 'center', borderRadius: 10, height: 44, justifyContent: 'center', width: 44 },
+  profileText: { flex: 1, minWidth: 0 },
+  pageTitle: { fontSize: 22, fontWeight: '900', letterSpacing: 0 },
+  sectionTitle: { fontSize: 17, fontWeight: '900' },
+  sectionHeadingText: { flex: 1, minWidth: 0, paddingRight: 12 },
+  email: { fontSize: 13, fontWeight: '700', marginTop: 3 },
   copy: { fontSize: 13, lineHeight: 18, marginTop: 4 },
-  iconPickerSection: { borderRadius: 8, gap: 12, padding: 14 },
+  panel: { borderRadius: 8, gap: 12, padding: 14 },
   iconOptionList: { gap: 10, paddingRight: 4 },
   iconOption: { borderRadius: 8, borderWidth: 1, minHeight: 150, padding: 8, position: 'relative', width: 104 },
   iconPreview: { borderRadius: 18, height: 88, width: 88 },
@@ -429,8 +466,9 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
   expenseAmount: { fontSize: 30, fontWeight: '900', letterSpacing: 0 },
+  expenseBreakdown: { fontSize: 12, fontWeight: '700', marginTop: -6 },
   summaryGrid: { flexDirection: 'row', gap: 8 },
-  summaryTile: { alignItems: 'center', borderRadius: 8, flex: 1, gap: 3, minHeight: 58, justifyContent: 'center' },
+  summaryTile: { alignItems: 'center', borderRadius: 8, flex: 1, gap: 3, minHeight: 58, justifyContent: 'center', paddingHorizontal: 4 },
   summaryValue: { fontSize: 16, fontWeight: '900' },
   summaryLabel: { fontSize: 11, fontWeight: '800' },
   headerRow: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },

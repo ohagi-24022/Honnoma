@@ -18,6 +18,7 @@ import {
 import { BookCover } from '../../src/components/BookCover';
 import { isBookIsbnBarcode, lookupBookByIsbn } from '../../src/lib/bookApis';
 import { parseSeriesTitle } from '../../src/lib/series';
+import { useAppSettings } from '../../src/store/AppSettingsContext';
 import { useLibrary } from '../../src/store/LibraryContext';
 import { useAppTheme } from '../../src/store/ThemeContext';
 import { BookInput, ReadingStatus } from '../../src/types';
@@ -47,6 +48,7 @@ export default function ScanScreen() {
   useScrollToTop(tabScrollToTopRef);
   const [permission, requestPermission] = useCameraPermissions();
   const { addBook, deleteBook, findDuplicateBook } = useLibrary();
+  const { trackPurchasePrices } = useAppSettings();
   const { colors } = useAppTheme();
   const [isScanning, setIsScanning] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -68,6 +70,11 @@ export default function ScanScreen() {
   const [isbn, setIsbn] = useState('');
   const [thumbnailUrl, setThumbnailUrl] = useState('');
   const [status, setStatus] = useState<ReadingStatus>('unread');
+  const [purchaseMode, setPurchaseMode] = useState<'normal' | 'used'>('normal');
+  const [normalPurchasePrice, setNormalPurchasePrice] = useState<number | null>(null);
+  const [normalPriceSource, setNormalPriceSource] = useState<BookInput['priceSource']>(undefined);
+  const [normalPriceFetchedAt, setNormalPriceFetchedAt] = useState<string | undefined>(undefined);
+  const [usedPurchasePrice, setUsedPurchasePrice] = useState('');
 
   const onTitleChange = (value: string) => {
     setTitle(value);
@@ -87,7 +94,19 @@ export default function ScanScreen() {
     setIsbn(bookInput.isbn ?? '');
     setThumbnailUrl(bookInput.thumbnailUrl ?? '');
     setStatus(bookInput.status);
+    setNormalPurchasePrice(typeof bookInput.listPrice === 'number' ? bookInput.listPrice : null);
+    setNormalPriceSource(bookInput.priceSource);
+    setNormalPriceFetchedAt(bookInput.priceFetchedAt ?? undefined);
+    setPurchaseMode('normal');
+    setUsedPurchasePrice('');
     setShowConfirmation(true);
+  };
+
+  const selectedPurchasePrice = () => {
+    if (!trackPurchasePrices) return undefined;
+    if (purchaseMode === 'normal') return normalPurchasePrice ?? undefined;
+    const normalizedPrice = usedPurchasePrice.replace(/[^0-9]/g, '');
+    return normalizedPrice ? Number.parseInt(normalizedPrice, 10) : undefined;
   };
 
   const currentBookInput = (): BookInput => ({
@@ -98,6 +117,10 @@ export default function ScanScreen() {
     seriesTitle: seriesTitle.trim(),
     volumeNumber: volumeNumber ? Number.parseInt(volumeNumber, 10) : undefined,
     thumbnailUrl: thumbnailUrl || undefined,
+    purchasePrice: selectedPurchasePrice(),
+    listPrice: normalPurchasePrice ?? undefined,
+    priceSource: normalPriceSource ?? undefined,
+    priceFetchedAt: normalPurchasePrice ? normalPriceFetchedAt ?? new Date().toISOString() : undefined,
     status,
   });
 
@@ -110,6 +133,11 @@ export default function ScanScreen() {
     setIsbn('');
     setThumbnailUrl('');
     setStatus('unread');
+    setPurchaseMode('normal');
+    setNormalPurchasePrice(null);
+    setNormalPriceSource(undefined);
+    setNormalPriceFetchedAt(undefined);
+    setUsedPurchasePrice('');
     setShowConfirmation(false);
     setIsScanning(true);
     lastScanRef.current = { isbn: '', at: 0 };
@@ -407,6 +435,16 @@ export default function ScanScreen() {
                 <Text style={[styles.confirmationMeta, { color: colors.muted }]}>{publisher}</Text>
               )}
               {!!isbn && <Text style={[styles.confirmationIsbn, { color: colors.muted }]}>ISBN {isbn}</Text>}
+              {trackPurchasePrices && (
+                <PurchasePriceControls
+                  colors={colors}
+                  mode={purchaseMode}
+                  normalPrice={normalPurchasePrice}
+                  onModeChange={setPurchaseMode}
+                  onUsedPriceChange={setUsedPurchasePrice}
+                  usedPrice={usedPurchasePrice}
+                />
+              )}
               <View style={styles.confirmationActions}>
                 <Pressable
                   onPress={() => setShowConfirmation(false)}
@@ -508,6 +546,16 @@ export default function ScanScreen() {
             placeholderTextColor={colors.muted}
             style={[styles.input, { backgroundColor: colors.input, color: colors.text }]}
           />
+          {trackPurchasePrices && (
+            <PurchasePriceControls
+              colors={colors}
+              mode={purchaseMode}
+              normalPrice={normalPurchasePrice}
+              onModeChange={setPurchaseMode}
+              onUsedPriceChange={setUsedPurchasePrice}
+              usedPrice={usedPurchasePrice}
+            />
+          )}
           <View style={styles.statusRow}>
             {statusOptions.map((option) => (
               <Pressable
@@ -531,6 +579,55 @@ export default function ScanScreen() {
         </View>}
       </ScrollView>
     </KeyboardAvoidingView>
+  );
+}
+
+
+function PurchasePriceControls({
+  colors,
+  mode,
+  normalPrice,
+  onModeChange,
+  onUsedPriceChange,
+  usedPrice,
+}: {
+  colors: ReturnType<typeof useAppTheme>['colors'];
+  mode: 'normal' | 'used';
+  normalPrice: number | null;
+  onModeChange: (mode: 'normal' | 'used') => void;
+  onUsedPriceChange: (value: string) => void;
+  usedPrice: string;
+}) {
+  return (
+    <View style={styles.purchaseBox}>
+      <Text style={[styles.purchaseLabel, { color: colors.text }]}>購入価格</Text>
+      <View style={[styles.purchaseModeRow, { backgroundColor: colors.elevated }]}>
+        {([
+          ['normal', '通常'],
+          ['used', '中古'],
+        ] as const).map(([value, label]) => (
+          <Pressable
+            key={value}
+            onPress={() => onModeChange(value)}
+            style={[styles.purchaseModeButton, mode === value && { backgroundColor: colors.text }]}
+          >
+            <Text style={[styles.purchaseModeText, { color: mode === value ? colors.background : colors.muted }]}>{label}</Text>
+          </Pressable>
+        ))}
+      </View>
+      {mode === 'normal' ? (
+        <Text style={[styles.purchaseHint, { color: colors.muted }]}>通常価格: {normalPrice ? `¥${normalPrice.toLocaleString('ja-JP')}` : '取得できませんでした'}</Text>
+      ) : (
+        <TextInput
+          keyboardType="number-pad"
+          onChangeText={(value) => onUsedPriceChange(value.replace(/[^0-9]/g, ''))}
+          placeholder="中古価格"
+          placeholderTextColor={colors.muted}
+          style={[styles.input, styles.purchaseInput, { backgroundColor: colors.input, color: colors.text }]}
+          value={usedPrice}
+        />
+      )}
+    </View>
   );
 }
 
@@ -601,6 +698,13 @@ const styles = StyleSheet.create({
   confirmationMeta: { fontSize: 14, lineHeight: 20, marginTop: 6 },
   confirmationIsbn: { fontSize: 12, marginTop: 10 },
   confirmationActions: { flexDirection: 'row', gap: 8, marginTop: 16 },
+  purchaseBox: { gap: 8, marginTop: 12 },
+  purchaseLabel: { fontSize: 13, fontWeight: '800' },
+  purchaseModeRow: { borderRadius: 8, flexDirection: 'row', padding: 4 },
+  purchaseModeButton: { alignItems: 'center', borderRadius: 6, flex: 1, height: 34, justifyContent: 'center' },
+  purchaseModeText: { fontSize: 13, fontWeight: '800' },
+  purchaseHint: { fontSize: 12, lineHeight: 17 },
+  purchaseInput: { marginBottom: 0 },
   secondaryButton: {
     alignItems: 'center',
     borderRadius: 8,

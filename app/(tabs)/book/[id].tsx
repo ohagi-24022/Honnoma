@@ -188,7 +188,11 @@ export default function BookDetailsScreen() {
           onPress={() => void loadDetails(true)}
           style={[styles.refreshButton, { borderColor: colors.border }, loading && styles.disabled]}
         >
-          <Ionicons color={colors.text} name="refresh" size={17} />
+          {loading ? (
+            <ActivityIndicator color={colors.text} size="small" />
+          ) : (
+            <Ionicons color={colors.text} name="refresh" size={17} />
+          )}
         </Pressable>
       </View>
 

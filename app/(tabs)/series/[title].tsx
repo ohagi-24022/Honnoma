@@ -4,6 +4,7 @@ import * as WebBrowser from 'expo-web-browser';
 import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   FlatList,
   Linking,
@@ -48,7 +49,7 @@ export default function SeriesScreen() {
   const { addBook, getSeriesItems, bulkUpdateStatus, updateBook, renameSeries, deleteBook, repairBookMetadata } =
     useLibrary();
   const { addItem: addWishlistItem } = useWishlist();
-  const { isFavoriteSeries, migrateFavoriteSeries, openExternalPurchaseLinks, setFavoriteSeries, showPublishedLatestVolume } =
+  const { isFavoriteSeries, migrateFavoriteSeries, openExternalPurchaseLinks, setFavoriteSeries, showPublishedLatestVolume, trackPurchasePrices } =
     useAppSettings();
   const { colors } = useAppTheme();
   const listRef = useRef<FlatList<ShelfItem>>(null);
@@ -59,6 +60,8 @@ export default function SeriesScreen() {
   const [page, setPage] = useState(1);
   const [draftSeries, setDraftSeries] = useState('');
   const [draftVolume, setDraftVolume] = useState('');
+  const [draftPurchasePrice, setDraftPurchasePrice] = useState('');
+  const [bulkPurchasePrice, setBulkPurchasePrice] = useState('');
   const [renameOpen, setRenameOpen] = useState(false);
   const [draftSeriesTitle, setDraftSeriesTitle] = useState(seriesTitle);
   const [publicationInfo, setPublicationInfo] = useState<SeriesPublicationInfo | null>(null);
@@ -205,6 +208,7 @@ export default function SeriesScreen() {
     setEditingId(null);
     setDraftSeries('');
     setDraftVolume('');
+    setDraftPurchasePrice('');
   };
 
   const handleRowPress = (item: ShelfItem) => {
@@ -284,6 +288,23 @@ export default function SeriesScreen() {
     }
   };
 
+  const updateSelectedPurchasePrice = async () => {
+    const selected = new Set(selectedIds);
+    const normalizedPrice = bulkPurchasePrice.replace(/[^0-9]/g, '');
+    const nextPrice = normalizedPrice ? Number.parseInt(normalizedPrice, 10) : null;
+    const targets = ownedItems.filter((book) => selected.has(book.id));
+    if (targets.length === 0) return;
+
+    try {
+      await Promise.all(targets.map((book) => updateBook(book.id, { purchasePrice: nextPrice })));
+      setBulkPurchasePrice('');
+      setSelectedIds([]);
+      Alert.alert('購入価格を更新しました', `${targets.length}冊の購入価格を${nextPrice === null ? '未設定' : `¥${nextPrice.toLocaleString('ja-JP')}`}にしました。`);
+    } catch (error) {
+      Alert.alert('蒐集架', error instanceof Error ? error.message : '購入価格の更新に失敗しました。');
+    }
+  };
+
   const toggleAllSelected = () => {
     setSelectedIds(allSelected ? [] : ownedItems.map((book) => book.id));
   };
@@ -292,13 +313,18 @@ export default function SeriesScreen() {
     setEditingId(book.id);
     setDraftSeries(book.seriesTitle);
     setDraftVolume(book.volumeNumber ? String(book.volumeNumber) : '');
+    setDraftPurchasePrice(typeof book.purchasePrice === 'number' ? String(book.purchasePrice) : '');
   };
 
   const submitEdit = async (book: Book) => {
     try {
+      const normalizedPrice = draftPurchasePrice.replace(/[^0-9]/g, '');
       await updateBook(book.id, {
         seriesTitle: draftSeries.trim() || book.seriesTitle,
         volumeNumber: draftVolume ? Number.parseInt(draftVolume, 10) : undefined,
+        ...(trackPurchasePrices
+          ? { purchasePrice: normalizedPrice ? Number.parseInt(normalizedPrice, 10) : null }
+          : {}),
       });
       setEditingId(null);
     } catch (error) {
@@ -355,13 +381,24 @@ export default function SeriesScreen() {
     if (refreshingId) return;
     setRefreshingId(book.id);
     try {
-      const result = await repairBookMetadata(book.id);
+      const result = await repairBookMetadata(book.id, { updatePurchasePrice: trackPurchasePrices });
       const beforeCover = result.beforeThumbnailUrl ? 'あり' : 'なし';
       const afterCover = result.afterThumbnailUrl ? 'あり' : 'なし';
+      const formatPrice = (price?: number | null) =>
+        typeof price === 'number' ? `¥${price.toLocaleString('ja-JP')}` : '未設定';
+      const purchasePriceSummary = result.purchasePriceLookupAttempted
+        ? result.purchasePriceUpdated
+          ? `購入価格: ${formatPrice(result.beforePurchasePrice)} → ${formatPrice(result.afterPurchasePrice)}`
+          : typeof result.afterPurchasePrice === 'number'
+            ? `購入価格: ${formatPrice(result.afterPurchasePrice)}（維持）`
+            : '購入価格: 未取得'
+        : null;
       if (!__DEV__) {
         Alert.alert(
           '書籍情報を更新しました',
-          `表紙: ${beforeCover} → ${afterCover}\n出版社: ${result.publisher ?? '未取得'}`,
+          [`表紙: ${beforeCover} → ${afterCover}`, `出版社: ${result.publisher ?? '未取得'}`, purchasePriceSummary]
+            .filter(Boolean)
+            .join('\n'),
         );
         return;
       }
@@ -374,6 +411,7 @@ export default function SeriesScreen() {
           `シリーズ: ${result.seriesTitle ?? 'なし'}`,
           `巻数: ${result.volumeNumber ?? 'なし'}`,
           `出版社: ${result.publisher ?? 'なし'}`,
+          purchasePriceSummary,
           `表紙: ${beforeCover} → ${afterCover}`,
           result.afterThumbnailUrl ? `表紙URL: ${result.afterThumbnailUrl}` : '表紙URL: なし',
           ...(result.debugEntries?.length
@@ -451,6 +489,25 @@ export default function SeriesScreen() {
             >
               <Text style={[styles.statusTextButtonLabel, { color: '#ffffff' }]}>読了にする</Text>
             </Pressable>
+            {trackPurchasePrices && (
+              <View style={styles.bulkPriceRow}>
+                <TextInput
+                  keyboardType="number-pad"
+                  onChangeText={(value) => setBulkPurchasePrice(value.replace(/[^0-9]/g, ''))}
+                  placeholder="中古価格"
+                  placeholderTextColor={colors.muted}
+                  style={[styles.bulkPriceInput, { backgroundColor: colors.input, color: colors.text }]}
+                  value={bulkPurchasePrice}
+                />
+                <Pressable
+                  accessibilityLabel="選択した本の購入価格を一括設定"
+                  onPress={() => void updateSelectedPurchasePrice()}
+                  style={[styles.statusTextButton, { borderColor: colors.border }]}
+                >
+                  <Text style={[styles.statusTextButtonLabel, { color: colors.text }]}>価格設定</Text>
+                </Pressable>
+              </View>
+            )}
           </View>
         ) : (
           <Text style={[styles.statusHint, { color: colors.muted }]}>
@@ -601,7 +658,11 @@ export default function SeriesScreen() {
                         refreshingId === item.id && styles.disabledButton,
                       ]}
                     >
-                      <Ionicons color={colors.background} name={refreshingId === item.id ? 'hourglass-outline' : 'add'} size={20} />
+                      {refreshingId === item.id ? (
+                        <ActivityIndicator color={colors.background} size="small" />
+                      ) : (
+                        <Ionicons color={colors.background} name="add" size={20} />
+                      )}
                     </Pressable>
                     <Pressable
                       accessibilityLabel={`${item.title}を欲しいリストに追加`}
@@ -634,6 +695,16 @@ export default function SeriesScreen() {
                       placeholderTextColor={colors.muted}
                       style={[styles.editInput, { backgroundColor: colors.input, color: colors.text }]}
                     />
+                    {trackPurchasePrices && (
+                      <TextInput
+                        value={draftPurchasePrice}
+                        onChangeText={(value) => setDraftPurchasePrice(value.replace(/[^0-9]/g, ''))}
+                        keyboardType="number-pad"
+                        placeholder="購入価格"
+                        placeholderTextColor={colors.muted}
+                        style={[styles.editInput, { backgroundColor: colors.input, color: colors.text }]}
+                      />
+                    )}
                     <Pressable
                       accessibilityLabel={`${item.title}の編集内容を保存`}
                       onPress={() => submitEdit(item)}
@@ -668,7 +739,11 @@ export default function SeriesScreen() {
                       }}
                       style={[styles.iconActionButton, { borderColor: colors.border }, refreshingId === item.id && styles.disabledButton]}
                     >
-                      <Ionicons color={colors.text} name={refreshingId === item.id ? 'hourglass-outline' : 'refresh'} size={19} />
+                      {refreshingId === item.id ? (
+                        <ActivityIndicator color={colors.text} size="small" />
+                      ) : (
+                        <Ionicons color={colors.text} name="refresh" size={19} />
+                      )}
                     </Pressable>
                     <Pressable
                       accessibilityLabel={`${item.title}を削除`}
@@ -857,6 +932,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
   },
   statusTextButtonLabel: { fontSize: 12, fontWeight: '800' },
+  bulkPriceRow: { flexDirection: 'row', gap: 8, width: '100%' },
+  bulkPriceInput: { borderRadius: 8, flex: 1, fontSize: 13, fontWeight: '700', height: 36, paddingHorizontal: 10 },
   renameBox: { borderBottomWidth: 1, gap: 8, padding: 12 },
   rowTitle: { fontSize: 14, fontWeight: '800' },
   renameCopy: { fontSize: 12, lineHeight: 17 },

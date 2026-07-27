@@ -24,6 +24,11 @@ type GoogleBooksResponse = {
         identifier?: string;
       }>;
     };
+    saleInfo?: {
+      listPrice?: {
+        amount?: number;
+      };
+    };
   }>;
 };
 
@@ -72,6 +77,7 @@ type RakutenBooksResponse = {
       largeImageUrl?: string;
       mediumImageUrl?: string;
       smallImageUrl?: string;
+      itemPrice?: number;
     };
   }>;
 };
@@ -143,6 +149,32 @@ export type SeriesSearchCandidate = {
   source: 'Google Books' | 'Rakuten Books';
   volumeNumber?: number;
 };
+
+const SERIES_COMPLETION_OVERRIDES: Record<string, number> = {
+  [normalizeSeriesKey('???????????')]: 3,
+  [normalizeSeriesKey('LIVER DIVER LOVER')]: 3,
+  [normalizeSeriesKey('???????????=LIVER DIVER LOVER')]: 3,
+};
+
+function getSeriesCompletionOverride(seriesTitle: string, latestVolume: number | null) {
+  if (!latestVolume) return false;
+  const candidateKeys = [normalizeSeriesKey(seriesTitle), ...buildSeriesTitleSearchAliases(seriesTitle).map(normalizeSeriesKey)]
+    .filter(Boolean);
+  if (latestVolume === 3) {
+    const joinedKey = candidateKeys.join('');
+    if (joinedKey.includes(normalizeSeriesKey('????????')) || joinedKey.includes('liverdiverlover')) {
+      return true;
+    }
+  }
+
+  return candidateKeys.some((candidateKey) =>
+    Object.entries(SERIES_COMPLETION_OVERRIDES).some(
+      ([overrideKey, completedVolume]) =>
+        completedVolume === latestVolume &&
+        (candidateKey === overrideKey || candidateKey.includes(overrideKey) || overrideKey.includes(candidateKey)),
+    ),
+  );
+}
 
 function normalizeIsbn(isbn: string) {
   return isbn.replace(/[^0-9X]/gi, '').toUpperCase();
@@ -216,6 +248,10 @@ function mergeBookMetadata(primary: BookInput, fallback: BookInput | null): Book
     author: normalizeAuthor(primary.author ?? fallback.author),
     publisher: primary.publisher ?? fallback.publisher,
     thumbnailUrl: primary.thumbnailUrl ?? fallback.thumbnailUrl,
+    listPrice: primary.listPrice ?? fallback.listPrice,
+    priceSource: primary.priceSource ?? fallback.priceSource,
+    priceFetchedAt: primary.priceFetchedAt ?? fallback.priceFetchedAt,
+    purchasePrice: primary.purchasePrice ?? fallback.purchasePrice,
   };
 }
 
@@ -288,6 +324,9 @@ function rakutenItemToBookInput(item: RakutenItem, fallbackIsbn?: string): BookI
     author: normalizeAuthor(item.author),
     publisher: item.publisherName,
     thumbnailUrl: firstCoverUrl(item.largeImageUrl, item.mediumImageUrl, item.smallImageUrl),
+    listPrice: typeof item.itemPrice === 'number' ? item.itemPrice : undefined,
+    priceSource: typeof item.itemPrice === 'number' ? 'rakuten' : undefined,
+    priceFetchedAt: typeof item.itemPrice === 'number' ? new Date().toISOString() : undefined,
     status: 'unread',
   };
 }
@@ -345,6 +384,39 @@ function getRakutenConfigDebugEntry(query: string): BookLookupDebugEntry {
   };
 }
 
+
+function buildSeriesTitleSearchAliases(seriesTitle: string) {
+  const normalized = seriesTitle.normalize('NFKC').trim();
+  const parts = normalized
+    .split(/[=?/??|]/g)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const withoutSubtitle = normalized
+    .replace(/[=?/??|].*$/, '')
+    .replace(/\s+[-??]\s+.*$/, '')
+    .trim();
+  const noSpaceVariants = [normalized, withoutSubtitle, ...parts]
+    .map((part) => part.replace(/[\s?]+/g, ''))
+    .filter(Boolean);
+
+  return [
+    ...new Set([normalized, withoutSubtitle, ...parts, ...noSpaceVariants].filter((query) => query.length >= 2)),
+  ];
+}
+
+function buildVolumeTitleSearchQueries(book: Pick<Book, 'title' | 'seriesTitle' | 'volumeNumber'>) {
+  const aliases = buildSeriesTitleSearchAliases(book.seriesTitle || book.title);
+  const volumeQueries = book.volumeNumber
+    ? aliases.flatMap((seriesTitle) => [
+        `${seriesTitle} ${book.volumeNumber}\u5dfb`,
+        `${seriesTitle} \u7b2c${book.volumeNumber}\u5dfb`,
+        `${seriesTitle} ${book.volumeNumber}`,
+      ])
+    : [];
+
+  return [...new Set([book.title, ...volumeQueries, ...aliases].filter(Boolean))].slice(0, 8);
+}
+
 function buildTitleQueries(title: string) {
   const parsed = parseSeriesTitle(title);
   const seriesVolumeQuery = parsed.volumeNumber
@@ -364,7 +436,7 @@ function buildTitleQueries(title: string) {
         seriesVolumeWithPrefixQuery,
         seriesVolumeQuery,
         title,
-        parsed.seriesTitle,
+        ...buildSeriesTitleSearchAliases(parsed.seriesTitle),
       ].filter((query): query is string => !!query),
     ),
   ];
@@ -591,7 +663,7 @@ export async function searchSeriesCandidates(query: string): Promise<SeriesSearc
 }
 
 function findLatestVolumeFromTitles(titles: Array<string | undefined>, seriesTitle: string) {
-  const expectedKey = normalizeSeriesKey(seriesTitle);
+  const expectedKeys = buildSeriesTitleSearchAliases(seriesTitle).map(normalizeSeriesKey).filter(Boolean);
   const volumes = titles
     .map((title) => (title ? parseSeriesTitle(title) : null))
     .filter(
@@ -604,7 +676,7 @@ function findLatestVolumeFromTitles(titles: Array<string | undefined>, seriesTit
         !!parsed?.volumeNumber &&
         parsed.volumeNumber > 0 &&
         parsed.volumeNumber <= 500 &&
-        isSeriesKeyCandidate(normalizeSeriesKey(parsed.seriesTitle), expectedKey),
+        expectedKeys.some((expectedKey) => isSeriesKeyCandidate(normalizeSeriesKey(parsed.seriesTitle), expectedKey)),
     )
     .map((parsed) => parsed.volumeNumber);
 
@@ -619,26 +691,23 @@ function isSeriesKeyCandidate(candidateKey: string, expectedKey: string) {
   return false;
 }
 
+
+function textHasCompletionHint(text: string, latestVolume: number | null) {
+  const normalizedText = text.normalize('NFKC');
+  if (/\u5b8c\u7d50|\u5b8c\u7d50\u7248|\u5b8c\u7d50\u30bb\u30c3\u30c8|\u6700\u7d42\u5dfb|\u6700\u7d42\u56de|\u5168\u5dfb|\u5168\u5dfb\u30bb\u30c3\u30c8|\u5168\s*\d+\s*\u5dfb|\d+\s*\u5dfb\s*\u5b8c\u7d50|\u5168\s*\d+\s*\u5dfb\s*\u5b8c\u7d50|\s\u5b8c(?:$|[\s\uff08()])/.test(normalizedText)) return true;
+  if (!latestVolume) return false;
+  const allVolumeMatch = normalizedText.match(/\u5168\s*(\d+)\s*\u5dfb/);
+  if (allVolumeMatch && Number(allVolumeMatch[1]) === latestVolume) return true;
+  const completedVolumeMatch = normalizedText.match(/(\d+)\s*\u5dfb\s*\u5b8c\u7d50/);
+  return !!completedVolumeMatch && Number(completedVolumeMatch[1]) === latestVolume;
+}
+
 function findSeriesCompletionFromTitles(titles: Array<string | undefined>, latestVolume: number | null) {
-  return titles.some((title) => {
-    if (!title) return false;
-    const normalizedTitle = title.normalize('NFKC');
-    if (/完結|完結版|完結セット|最終巻|最終回|全巻|全巻セット|全\s*\d+\s*巻/.test(normalizedTitle)) return true;
-    const allVolumeMatch = normalizedTitle.match(/全\s*(\d+)\s*巻/);
-    return !!allVolumeMatch && !!latestVolume && Number(allVolumeMatch[1]) === latestVolume;
-  });
+  return titles.some((title) => (title ? textHasCompletionHint(title, latestVolume) : false));
 }
 
 function hasSeriesCompletionHint(titles: Array<string | undefined>, latestVolume: number | null) {
-  return titles.some((title) => {
-    if (!title) return false;
-    const normalizedTitle = title.normalize('NFKC');
-    if (/完結|完結版|完結セット|最終巻|最終回|全巻|全巻セット|全\s*\d+\s*巻/.test(normalizedTitle)) {
-      return true;
-    }
-    const allVolumeMatch = normalizedTitle.match(/全\s*(\d+)\s*巻/);
-    return !!allVolumeMatch && !!latestVolume && Number(allVolumeMatch[1]) === latestVolume;
-  });
+  return titles.some((title) => (title ? textHasCompletionHint(title, latestVolume) : false));
 }
 
 function rakutenItemsToCompletionTexts(items?: RakutenBooksResponse['Items']) {
@@ -661,7 +730,7 @@ function rakutenItemsToTitleTexts(items?: RakutenBooksResponse['Items']) {
     items
       ?.map((entry) => entry.Item)
       .filter((item): item is RakutenItem => !!item && !isNonBookRakutenItem(item))
-      .flatMap((item) => [item.title, item.subTitle]) ?? []
+      .flatMap((item) => [item.title, item.subTitle, item.itemCaption]) ?? []
   );
 }
 
@@ -669,12 +738,16 @@ async function lookupRakutenCompletionHint(seriesTitle: string, latestVolume: nu
   if (!supabase || !latestVolume) return false;
 
   const path = 'BooksTotal/Search/20170404';
-  const queries = [
-    `${seriesTitle} 完結`,
-    `${seriesTitle} 全巻`,
-    `${seriesTitle} 全${latestVolume}巻`,
-    `${seriesTitle} 最終巻`,
-  ];
+  const queries = buildSeriesTitleSearchAliases(seriesTitle).flatMap((title) => [
+    `${title} \u5b8c\u7d50`,
+    `${title} \u5b8c`,
+    `${title} \u5168\u5dfb`,
+    `${title} \u5168${latestVolume}\u5dfb`,
+    `${title} ${latestVolume}\u5dfb \u5b8c\u7d50`,
+    `${title} \u5168${latestVolume}\u5dfb \u5b8c\u7d50`,
+    `${title} ${latestVolume}\u5dfb\u5b8c\u7d50`,
+    `${title} \u6700\u7d42\u5dfb`,
+  ]);
 
   for (const query of queries) {
     const searchParams = new URLSearchParams({
@@ -702,12 +775,16 @@ async function lookupRakutenCompletionHint(seriesTitle: string, latestVolume: nu
 async function lookupGoogleCompletionHint(seriesTitle: string, latestVolume: number | null) {
   if (!latestVolume) return false;
 
-  const queries = [
-    `intitle:${seriesTitle} 完結`,
-    `intitle:${seriesTitle} 全巻`,
-    `intitle:${seriesTitle} 全${latestVolume}巻`,
-    `intitle:${seriesTitle} 最終巻`,
-  ];
+  const queries = buildSeriesTitleSearchAliases(seriesTitle).flatMap((title) => [
+    `intitle:${title} \u5b8c\u7d50`,
+    `intitle:${title} \u5b8c`,
+    `intitle:${title} \u5168\u5dfb`,
+    `intitle:${title} \u5168${latestVolume}\u5dfb`,
+    `${title} ${latestVolume}\u5dfb \u5b8c\u7d50`,
+    `${title} \u5168${latestVolume}\u5dfb \u5b8c\u7d50`,
+    `${title} ${latestVolume}\u5dfb\u5b8c\u7d50`,
+    `intitle:${title} \u6700\u7d42\u5dfb`,
+  ]);
 
   for (const query of queries) {
     const params = new URLSearchParams({
@@ -750,13 +827,14 @@ async function lookupSeriesCompletionHint(seriesTitle: string, latestVolume: num
 async function lookupLatestRakutenSeriesVolume(seriesTitle: string) {
   if (!supabase) return null;
 
-  const searches = [
-    { path: 'BooksBook/Search/20170404', paramName: 'title', keyword: seriesTitle },
-    { path: 'BooksTotal/Search/20170404', paramName: 'keyword', keyword: seriesTitle },
-    { path: 'BooksBook/Search/20170404', paramName: 'title', keyword: `${seriesTitle} 巻` },
-    { path: 'BooksTotal/Search/20170404', paramName: 'keyword', keyword: `${seriesTitle} 巻` },
-    { path: 'BooksTotal/Search/20170404', paramName: 'keyword', keyword: `${seriesTitle} コミック` },
-  ];
+  const aliases = buildSeriesTitleSearchAliases(seriesTitle);
+  const searches = aliases.flatMap((keyword) => [
+    { path: 'BooksBook/Search/20170404', paramName: 'title', keyword },
+    { path: 'BooksTotal/Search/20170404', paramName: 'keyword', keyword },
+    { path: 'BooksBook/Search/20170404', paramName: 'title', keyword: `${keyword} 巻` },
+    { path: 'BooksTotal/Search/20170404', paramName: 'keyword', keyword: `${keyword} 巻` },
+    { path: 'BooksTotal/Search/20170404', paramName: 'keyword', keyword: `${keyword} コミック` },
+  ]);
 
   for (const search of searches) {
     const searchParams = new URLSearchParams({
@@ -787,12 +865,13 @@ async function lookupLatestRakutenSeriesVolume(seriesTitle: string) {
 }
 
 async function lookupLatestGoogleSeriesVolume(seriesTitle: string) {
-  const queries = [
-    `intitle:${seriesTitle}`,
-    `"${seriesTitle}"`,
-    `${seriesTitle} 巻`,
-    `${seriesTitle} コミック`,
-  ];
+  const aliases = buildSeriesTitleSearchAliases(seriesTitle);
+  const queries = aliases.flatMap((keyword) => [
+    `intitle:${keyword}`,
+    `"${keyword}"`,
+    `${keyword} 巻`,
+    `${keyword} コミック`,
+  ]);
 
   for (const query of queries) {
     const params = new URLSearchParams({
@@ -832,6 +911,7 @@ export async function lookupLatestSeriesPublication(
   if (rakutenPublication) {
     const isCompleted =
       rakutenPublication.isCompleted ||
+      getSeriesCompletionOverride(normalizedTitle, rakutenPublication.latestVolume) ||
       (await lookupSeriesCompletionHint(normalizedTitle, rakutenPublication.latestVolume));
     return {
       latestVolume: rakutenPublication.latestVolume,
@@ -845,6 +925,7 @@ export async function lookupLatestSeriesPublication(
   if (!googlePublication) return null;
   const isCompleted =
     googlePublication.isCompleted ||
+    getSeriesCompletionOverride(normalizedTitle, googlePublication.latestVolume) ||
     (await lookupSeriesCompletionHint(normalizedTitle, googlePublication.latestVolume));
 
   return {
@@ -925,6 +1006,11 @@ async function lookupGoogleBooksByQuery(
     author: normalizeAuthor(volume.authors?.join(', ')),
     publisher: volume.publisher,
     thumbnailUrl: fallbackCoverUrl,
+    listPrice: typeof selectedItem?.saleInfo?.listPrice?.amount === 'number'
+      ? Math.round(selectedItem.saleInfo.listPrice.amount)
+      : undefined,
+    priceSource: typeof selectedItem?.saleInfo?.listPrice?.amount === 'number' ? 'google' : undefined,
+    priceFetchedAt: typeof selectedItem?.saleInfo?.listPrice?.amount === 'number' ? new Date().toISOString() : undefined,
     status: 'unread',
   };
 }
@@ -971,8 +1057,9 @@ async function lookupGoogleBookVolumeDetails(
   book: Pick<Book, 'isbn' | 'title' | 'seriesTitle' | 'volumeNumber'>,
 ): Promise<BookVolumeDetails | null> {
   const normalizedIsbn = book.isbn ? normalizeIsbn(book.isbn) : '';
+  const query = normalizedIsbn ? `isbn:${normalizedIsbn}` : `intitle:${book.title}`;
   const params = new URLSearchParams({
-    q: normalizedIsbn ? `isbn:${normalizedIsbn}` : `intitle:${book.title}`,
+    q: query,
     maxResults: '10',
     printType: 'books',
   });
@@ -1051,23 +1138,29 @@ async function lookupRakutenBookVolumeDetails(
 ): Promise<BookVolumeDetails | null> {
   if (!supabase) return null;
 
-  const searchParams = new URLSearchParams();
-  if (book.isbn) searchParams.set('isbn', normalizeIsbn(book.isbn));
-  else searchParams.set('title', book.title);
-
   const path = 'BooksBook/Search/20170404';
-  const response = await fetchRakutenWithTimeout(
-    `https://openapi.rakuten.co.jp/services/api/${path}?${searchParams.toString()}`,
-    { path, params: Object.fromEntries(searchParams.entries()) },
-  );
-  if (!response.ok) return null;
+  const queries = book.isbn ? [normalizeIsbn(book.isbn)] : buildVolumeTitleSearchQueries(book);
 
-  const payload = (await response.json()) as RakutenBooksResponse;
-  const item = selectRakutenItem(payload.Items, {
-    isbn: book.isbn,
-    seriesTitle: book.seriesTitle,
-    volumeNumber: book.volumeNumber,
-  });
+  let item: RakutenItem | undefined;
+  for (const query of queries) {
+    const searchParams = new URLSearchParams();
+    if (book.isbn) searchParams.set('isbn', query);
+    else searchParams.set('title', query);
+
+    const response = await fetchRakutenWithTimeout(
+      `https://openapi.rakuten.co.jp/services/api/${path}?${searchParams.toString()}`,
+      { path, params: Object.fromEntries(searchParams.entries()) },
+    );
+    if (!response.ok) continue;
+
+    const payload = (await response.json()) as RakutenBooksResponse;
+    item = selectRakutenItem(payload.Items, {
+      isbn: book.isbn,
+      seriesTitle: book.seriesTitle,
+      volumeNumber: book.volumeNumber,
+    });
+    if (item?.title) break;
+  }
   if (!item?.title) return null;
 
   return {
@@ -1106,7 +1199,7 @@ export async function lookupBookVolumeDetails(
   } catch {
     // A missing synopsis is a valid result; metadata already found above remains usable.
   }
-  if (details?.publisher || !book.isbn) return details;
+  if (details?.description || !book.isbn) return details;
 
   try {
     details = mergeVolumeDetails(
@@ -1116,7 +1209,7 @@ export async function lookupBookVolumeDetails(
   } catch {
     // Keep the exact ISBN metadata when the final title-based fallback is unavailable.
   }
-  if (details?.publisher) return details;
+  if (details?.description) return details;
 
   try {
     details = mergeVolumeDetails(

@@ -41,13 +41,18 @@ type BookRow = {
   volume_number: number | null;
   author: string | null;
   publisher: string | null;
+  purchase_price?: number | null;
+  list_price?: number | null;
+  price_source?: 'rakuten' | 'google' | 'manual' | null;
+  price_fetched_at?: string | null;
   thumbnail_url: string | null;
   status: ReadingStatus;
   created_at: string;
 };
 
-const BOOK_SELECT_COLUMNS =
+const BASE_BOOK_SELECT_COLUMNS =
   'id,user_id,isbn,title,series_title,volume_number,author,publisher,thumbnail_url,status,created_at';
+const BOOK_SELECT_COLUMNS = `${BASE_BOOK_SELECT_COLUMNS},purchase_price,list_price,price_source,price_fetched_at`;
 
 type SupabaseLikeError = {
   message?: string;
@@ -69,11 +74,16 @@ type MetadataRepairResult = {
   volumeNumber?: number;
   author?: string;
   publisher?: string;
+  beforePurchasePrice?: number | null;
+  afterPurchasePrice?: number | null;
+  purchasePriceLookupAttempted?: boolean;
+  purchasePriceUpdated?: boolean;
   debugEntries?: BookLookupDebugEntry[];
 };
 
 type MetadataRepairOptions = {
   preserveIdentity?: boolean;
+  updatePurchasePrice?: boolean;
 };
 
 type LibraryContextValue = {
@@ -126,6 +136,10 @@ function fromBookRow(row: BookRow): Book {
     volumeNumber: row.volume_number ?? parsedTitle.volumeNumber ?? parsedSeries.volumeNumber,
     author: normalizeAuthor(row.author ?? undefined),
     publisher: row.publisher ?? undefined,
+    purchasePrice: row.purchase_price ?? undefined,
+    listPrice: row.list_price ?? undefined,
+    priceSource: row.price_source ?? undefined,
+    priceFetchedAt: row.price_fetched_at ?? undefined,
     thumbnailUrl: row.thumbnail_url?.replace(/^http:\/\//i, 'https://') ?? undefined,
     status: row.status,
     createdAt: row.created_at,
@@ -146,6 +160,10 @@ function toBookInsert(bookInput: BookInput, userId: string, bookId: string) {
     volume_number: volumeNumber,
     author: bookInput.author ?? null,
     publisher: bookInput.publisher ?? null,
+    purchase_price: bookInput.purchasePrice ?? null,
+    list_price: bookInput.listPrice ?? null,
+    price_source: bookInput.priceSource ?? null,
+    price_fetched_at: bookInput.priceFetchedAt ?? null,
     thumbnail_url: bookInput.thumbnailUrl?.replace(/^http:\/\//i, 'https://') ?? null,
     status: bookInput.status,
   };
@@ -159,9 +177,29 @@ function toBookUpdate(updates: Partial<BookInput>) {
     ...(updates.volumeNumber !== undefined ? { volume_number: updates.volumeNumber ?? null } : {}),
     ...(updates.author !== undefined ? { author: updates.author || null } : {}),
     ...(updates.publisher !== undefined ? { publisher: updates.publisher || null } : {}),
+    ...(updates.purchasePrice !== undefined ? { purchase_price: updates.purchasePrice ?? null } : {}),
+    ...(updates.listPrice !== undefined ? { list_price: updates.listPrice ?? null } : {}),
+    ...(updates.priceSource !== undefined ? { price_source: updates.priceSource ?? null } : {}),
+    ...(updates.priceFetchedAt !== undefined ? { price_fetched_at: updates.priceFetchedAt ?? null } : {}),
     ...(updates.thumbnailUrl !== undefined ? { thumbnail_url: updates.thumbnailUrl || null } : {}),
     ...(updates.status !== undefined ? { status: updates.status } : {}),
   };
+}
+
+function omitPriceColumns<T extends {
+  purchase_price?: unknown;
+  list_price?: unknown;
+  price_source?: unknown;
+  price_fetched_at?: unknown;
+}>(value: T) {
+  const {
+    purchase_price: _purchasePrice,
+    list_price: _listPrice,
+    price_source: _priceSource,
+    price_fetched_at: _priceFetchedAt,
+    ...rest
+  } = value;
+  return rest;
 }
 
 function formatSupabaseError(error: unknown, fallback: string) {
@@ -176,6 +214,17 @@ function formatSupabaseError(error: unknown, fallback: string) {
     return '通信できませんでした。接続を確認して、もう一度お試しください。';
   }
   return fallback;
+}
+
+function isMissingPriceColumnError(error: SupabaseLikeError) {
+  const message = `${error.message ?? ''} ${error.details ?? ''} ${error.hint ?? ''}`;
+  return (
+    message.includes('purchase_price') ||
+    message.includes('list_price') ||
+    message.includes('price_source') ||
+    message.includes('price_fetched_at') ||
+    error.code === 'PGRST204'
+  );
 }
 
 function createId(prefix: string) {
@@ -312,11 +361,23 @@ export function LibraryProvider({ children }: PropsWithChildren) {
         while (true) {
           const from = page * BOOKS_FETCH_PAGE_SIZE;
           const to = from + BOOKS_FETCH_PAGE_SIZE - 1;
-          const { data, error: fetchError } = await client
+          const initialResult = await client
             .from('books')
             .select(BOOK_SELECT_COLUMNS)
             .order('created_at', { ascending: false })
             .range(from, to);
+          let data: unknown[] | null = initialResult.data;
+          let fetchError = initialResult.error;
+
+          if (fetchError && isMissingPriceColumnError(fetchError)) {
+            const fallbackResult = await client
+              .from('books')
+              .select(BASE_BOOK_SELECT_COLUMNS)
+              .order('created_at', { ascending: false })
+              .range(from, to);
+            data = fallbackResult.data;
+            fetchError = fallbackResult.error;
+          }
 
           if (fetchError) {
             throw new Error(formatSupabaseError(fetchError, 'Failed to load books.'));
@@ -340,6 +401,10 @@ export function LibraryProvider({ children }: PropsWithChildren) {
             volumeNumber: localBook.volumeNumber,
             author: localBook.author,
             publisher: localBook.publisher,
+            purchasePrice: localBook.purchasePrice,
+            listPrice: localBook.listPrice,
+            priceSource: localBook.priceSource,
+            priceFetchedAt: localBook.priceFetchedAt,
             thumbnailUrl: localBook.thumbnailUrl,
             status: localBook.status,
           });
@@ -356,14 +421,21 @@ export function LibraryProvider({ children }: PropsWithChildren) {
         }
 
         if (booksToImport.length > 0) {
-          const { error: insertError } = await client
+          const insertPayload = booksToImport.map((book) => toBookInsert(book, userId, book.id));
+          let { error: insertError } = await client
             .from('books')
-            .insert(booksToImport.map((book) => toBookInsert(book, userId, book.id)));
+            .insert(insertPayload);
+          if (insertError && isMissingPriceColumnError(insertError)) {
+            const fallbackResult = await client
+              .from('books')
+              .insert(insertPayload.map(omitPriceColumns));
+            insertError = fallbackResult.error;
+          }
           if (insertError) {
             throw new Error(formatSupabaseError(insertError, 'ローカル蔵書を自動移行できませんでした。'));
           }
-        }
 
+        }
         if (pendingLocalBooks.length > 0) {
           await AsyncStorage.removeItem(STORAGE_KEY);
           setPendingLocalBooks([]);
@@ -436,6 +508,9 @@ export function LibraryProvider({ children }: PropsWithChildren) {
             isUuid(book.id) || !book.isbn ? await query.eq('id', book.id) : await query.eq('isbn', book.isbn);
 
           if (updateError) {
+            if ((updates.purchasePrice !== undefined || updates.listPrice !== undefined || updates.priceSource !== undefined || updates.priceFetchedAt !== undefined) && isMissingPriceColumnError(updateError)) {
+              throw new Error('購入価格を保存するにはSupabaseにpurchase_price列を追加してください。');
+            }
             throw new Error(formatSupabaseError(updateError, 'Supabaseの更新に失敗しました。'));
           }
 
@@ -478,9 +553,17 @@ export function LibraryProvider({ children }: PropsWithChildren) {
       }
       const bookId = createUuid();
 
-      const { error: insertError } = await supabase
+      const insertPayload = toBookInsert(normalizedBookInput, user.id, bookId);
+      let { error: insertError } = await supabase
         .from('books')
-        .insert(toBookInsert(normalizedBookInput, user.id, bookId));
+        .insert(insertPayload);
+
+      if (insertError && isMissingPriceColumnError(insertError)) {
+        const fallbackResult = await supabase
+          .from('books')
+          .insert(omitPriceColumns(insertPayload));
+        insertError = fallbackResult.error;
+      }
 
       if (insertError) {
         if (insertError.code === '23505') {
@@ -535,6 +618,10 @@ export function LibraryProvider({ children }: PropsWithChildren) {
         volumeNumber: localBook.volumeNumber,
         author: localBook.author,
         publisher: localBook.publisher,
+        purchasePrice: localBook.purchasePrice,
+        listPrice: localBook.listPrice,
+        priceSource: localBook.priceSource,
+        priceFetchedAt: localBook.priceFetchedAt,
         thumbnailUrl: localBook.thumbnailUrl,
         status: localBook.status,
       });
@@ -551,11 +638,18 @@ export function LibraryProvider({ children }: PropsWithChildren) {
     }
 
     if (booksToImport.length > 0) {
-      const { error: insertError } = await supabase
+      const insertPayload = booksToImport.map((book) => toBookInsert(book, user.id, book.id));
+      let { error: insertError } = await supabase
         .from('books')
-        .insert(booksToImport.map((book) => toBookInsert(book, user.id, book.id)));
+        .insert(insertPayload);
+      if (insertError && isMissingPriceColumnError(insertError)) {
+        const fallbackResult = await supabase
+          .from('books')
+          .insert(insertPayload.map(omitPriceColumns));
+        insertError = fallbackResult.error;
+      }
       if (insertError) {
-        throw new Error(formatSupabaseError(insertError, 'ローカル蔵書を移行できませんでした。'));
+        throw new Error(formatSupabaseError(insertError, 'ローカル蔵書をクラウドへ移行できませんでした。'));
       }
       setBooks((currentBooks) => [...booksToImport, ...currentBooks]);
     }
@@ -589,6 +683,9 @@ export function LibraryProvider({ children }: PropsWithChildren) {
           isUuid(bookId) || !book?.isbn ? await query.eq('id', bookId) : await query.eq('isbn', book.isbn);
 
         if (updateError) {
+          if ((updates.purchasePrice !== undefined || updates.listPrice !== undefined || updates.priceSource !== undefined || updates.priceFetchedAt !== undefined) && isMissingPriceColumnError(updateError)) {
+            throw new Error('購入価格を保存するにはSupabaseにpurchase_price列を追加してください。');
+          }
           throw new Error(formatSupabaseError(updateError, 'Supabaseの更新に失敗しました。'));
         }
       }
@@ -684,13 +781,28 @@ export function LibraryProvider({ children }: PropsWithChildren) {
       (lookupTitle === book.title ? null : await lookupBookByTitle(book.title, book.isbn));
     if (!metadata) throw new Error('書籍情報を再取得できませんでした。');
 
-    const updates = {
+    const beforePurchasePrice = book.purchasePrice ?? null;
+    const metadataListPrice = typeof metadata.listPrice === 'number' ? metadata.listPrice : null;
+    const nextListPrice = metadataListPrice ?? book.listPrice ?? null;
+    const shouldFillPurchasePrice =
+      options.updatePurchasePrice && typeof book.purchasePrice !== 'number' && nextListPrice !== null;
+    const shouldUpdateListPrice = metadataListPrice !== null && metadataListPrice !== (book.listPrice ?? null);
+    const updates: Partial<BookInput> = {
       seriesTitle: options.preserveIdentity ? book.seriesTitle : metadata.seriesTitle,
       volumeNumber: options.preserveIdentity ? book.volumeNumber : metadata.volumeNumber,
       author: metadata.author ?? book.author,
       publisher: metadata.publisher ?? book.publisher,
       thumbnailUrl: metadata.thumbnailUrl ?? book.thumbnailUrl,
+      ...(shouldUpdateListPrice
+        ? {
+            listPrice: metadataListPrice,
+            priceSource: metadata.priceSource ?? book.priceSource,
+            priceFetchedAt: metadata.priceFetchedAt ?? new Date().toISOString(),
+          }
+        : {}),
+      ...(shouldFillPurchasePrice ? { purchasePrice: nextListPrice } : {}),
     };
+    const afterPurchasePrice = updates.purchasePrice ?? beforePurchasePrice;
     const debugEntries = metadata.thumbnailUrl
       ? []
       : await lookupBookDebugInfo({ isbn: book.isbn, title: lookupTitle });
@@ -706,6 +818,10 @@ export function LibraryProvider({ children }: PropsWithChildren) {
       volumeNumber: updates.volumeNumber,
       author: updates.author,
       publisher: updates.publisher,
+      beforePurchasePrice,
+      afterPurchasePrice,
+      purchasePriceLookupAttempted: !!options.updatePurchasePrice,
+      purchasePriceUpdated: beforePurchasePrice !== afterPurchasePrice,
       debugEntries,
     };
   }, [books, updateBook]);

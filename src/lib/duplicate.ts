@@ -14,6 +14,20 @@ export function normalizeBookInput(bookInput: BookInput): BookInput {
     seriesTitle: bookInput.seriesTitle || parsed.seriesTitle,
     volumeNumber: bookInput.volumeNumber ?? parsed.volumeNumber,
     author: normalizeAuthor(bookInput.author),
+    purchasePrice:
+      typeof bookInput.purchasePrice === 'number' && Number.isFinite(bookInput.purchasePrice) && bookInput.purchasePrice >= 0
+        ? Math.round(bookInput.purchasePrice)
+        : bookInput.purchasePrice === null
+          ? null
+          : undefined,
+    listPrice:
+      typeof bookInput.listPrice === 'number' && Number.isFinite(bookInput.listPrice) && bookInput.listPrice >= 0
+        ? Math.round(bookInput.listPrice)
+        : bookInput.listPrice === null
+          ? null
+          : undefined,
+    priceSource: bookInput.priceSource ?? undefined,
+    priceFetchedAt: bookInput.priceFetchedAt ?? undefined,
     thumbnailUrl: bookInput.thumbnailUrl?.replace(/^http:\/\//i, 'https://'),
   };
 }
