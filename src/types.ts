@@ -1,14 +1,19 @@
 export type ReadingStatus = 'unread' | 'reading' | 'read';
+export type BookVolumeKind = 'main' | 'extra';
 
 export type Book = {
   id: string;
   userId: string;
   isbn?: string;
   title: string;
+  titleReading?: string | null;
   seriesTitle: string;
+  seriesReading?: string | null;
   volumeNumber?: number;
+  volumeKind?: BookVolumeKind;
   author?: string;
   publisher?: string;
+  publishedDate?: string | null;
   purchasePrice?: number | null;
   listPrice?: number | null;
   priceSource?: 'rakuten' | 'google' | 'manual' | null;

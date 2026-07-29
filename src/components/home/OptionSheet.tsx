@@ -19,6 +19,7 @@ type OptionSheetProps = {
   onClose: () => void;
   selectedValue?: string;
   selectedValues?: string[];
+  selectedDirection?: 'asc' | 'desc';
   variant?: 'check' | 'list';
 };
 
@@ -33,6 +34,7 @@ export function OptionSheet({
   onClose,
   selectedValue,
   selectedValues,
+  selectedDirection = 'asc',
   variant = 'check',
 }: OptionSheetProps) {
   const { colors } = useAppTheme();
@@ -74,7 +76,13 @@ export function OptionSheet({
                     </View>
                   ) : (
                     <View style={styles.listIndicator}>
-                      {selected && <Ionicons color={colors.text} name="checkmark" size={19} />}
+                      {selected && (
+                        <Ionicons
+                          color={colors.text}
+                          name={selectedDirection === 'asc' ? 'arrow-down' : 'arrow-up'}
+                          size={18}
+                        />
+                      )}
                     </View>
                   )}
                   <Text style={[styles.optionText, { color: colors.text }]}>{option.label}</Text>

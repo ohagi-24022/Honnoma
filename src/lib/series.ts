@@ -12,12 +12,37 @@ const VOLUME_PATTERNS = [
 const EDITION_SUFFIX_PATTERN =
   /(?:モノクロ版|カラー版|デジタル版|電子版|ジャンプコミックスDIGITAL|ジャンプコミックス|コミックス?|漫画|マンガ|文庫版?|新装版|完全版|愛蔵版|特装版|限定版)\s*$/i;
 
+
+function hasJapaneseText(value: string) {
+  return /[぀-ヿ㐀-鿿]/.test(value);
+}
+
+function parseAliasedSeriesTitle(normalized: string) {
+  const parts = normalized
+    .split(/[=＝]/g)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (parts.length < 2) return null;
+
+  const preferredSeriesTitle = parts.find(hasJapaneseText) ?? parts[0];
+  const trailingVolume = parts
+    .map((part) => part.match(/(?:^|[^0-9])([0-9]{1,3})\s*$/)?.[1])
+    .find((value): value is string => !!value);
+
+  return {
+    seriesTitle: preferredSeriesTitle,
+    volumeNumber: trailingVolume ? Number.parseInt(trailingVolume, 10) : undefined,
+  };
+}
+
 export function parseSeriesTitle(title: string) {
   const normalized = title.normalize('NFKC').replace(/\s+/g, ' ').trim();
-  let volumeNumber: number | undefined;
-  let seriesTitle = normalized;
+  const aliasedTitle = parseAliasedSeriesTitle(normalized);
+  let volumeNumber = aliasedTitle?.volumeNumber;
+  let seriesTitle = aliasedTitle?.seriesTitle ?? normalized;
 
   for (const pattern of VOLUME_PATTERNS) {
+    if (volumeNumber) break;
     const match = normalized.match(pattern);
     if (!match?.[1]) continue;
 

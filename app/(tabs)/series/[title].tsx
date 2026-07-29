@@ -40,6 +40,13 @@ function isOwnedBook(item: ShelfItem): item is Book {
   return !item.isMissing;
 }
 
+function compareSeriesItems(left: ShelfItem, right: ShelfItem) {
+  const leftExtra = isOwnedBook(left) && left.volumeKind === 'extra';
+  const rightExtra = isOwnedBook(right) && right.volumeKind === 'extra';
+  if (leftExtra !== rightExtra) return leftExtra ? 1 : -1;
+  return (left.volumeNumber ?? 0) - (right.volumeNumber ?? 0) || left.createdAt.localeCompare(right.createdAt);
+}
+
 export default function SeriesScreen() {
   const params = useLocalSearchParams<{ title: string }>();
   const navigation = useNavigation();
@@ -60,11 +67,16 @@ export default function SeriesScreen() {
   const [page, setPage] = useState(1);
   const [draftSeries, setDraftSeries] = useState('');
   const [draftVolume, setDraftVolume] = useState('');
+  const [draftVolumeKind, setDraftVolumeKind] = useState<'main' | 'extra'>('main');
   const [draftPurchasePrice, setDraftPurchasePrice] = useState('');
   const [bulkPurchasePrice, setBulkPurchasePrice] = useState('');
   const [renameOpen, setRenameOpen] = useState(false);
   const [draftSeriesTitle, setDraftSeriesTitle] = useState(seriesTitle);
   const [publicationInfo, setPublicationInfo] = useState<SeriesPublicationInfo | null>(null);
+  const [bulkFillOpen, setBulkFillOpen] = useState(false);
+  const [bulkFillTargetVolume, setBulkFillTargetVolume] = useState('');
+  const [bulkFillRunning, setBulkFillRunning] = useState(false);
+  const [bulkFillProgress, setBulkFillProgress] = useState<{ current: number; total: number } | null>(null);
 
   const baseItems = useMemo(() => getSeriesItems(seriesTitle), [getSeriesItems, seriesTitle]);
   const items = useMemo(() => {
@@ -72,11 +84,12 @@ export default function SeriesScreen() {
 
     const existingVolumes = new Set(
       baseItems
+        .filter((item) => item.isMissing || item.volumeKind !== 'extra')
         .map((item) => item.volumeNumber)
         .filter((volume): volume is number => typeof volume === 'number'),
     );
     const ownedVolumes = baseItems
-      .filter(isOwnedBook)
+      .filter((item) => isOwnedBook(item) && item.volumeKind !== 'extra')
       .map((item) => item.volumeNumber)
       .filter((volume): volume is number => typeof volume === 'number');
     const ownedLatestVolume = ownedVolumes.length > 0 ? Math.max(...ownedVolumes) : 0;
@@ -97,9 +110,7 @@ export default function SeriesScreen() {
       });
     }
 
-    return [...baseItems, ...trailingMissing].sort(
-      (left, right) => (left.volumeNumber ?? 0) - (right.volumeNumber ?? 0),
-    );
+    return [...baseItems, ...trailingMissing].sort(compareSeriesItems);
   }, [baseItems, publicationInfo, seriesTitle, showPublishedLatestVolume, user?.id]);
   const pageCount = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
   const pageItems = useMemo(() => items.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE), [items, page]);
@@ -117,6 +128,19 @@ export default function SeriesScreen() {
   const selectedCount = selectedIds.length;
   const allSelected = ownedItems.length > 0 && selectedCount === ownedItems.length;
   const favorite = isFavoriteSeries(seriesTitle);
+  const latestKnownMainVolume = Math.max(
+    0,
+    ...items
+      .filter((item) => !item.isMissing && item.volumeKind !== 'extra')
+      .map((item) => item.volumeNumber)
+      .filter((volume): volume is number => typeof volume === 'number'),
+    publicationInfo?.latestVolume ?? 0,
+  );
+  const bulkFillTarget = Number.parseInt(bulkFillTargetVolume.replace(/[^0-9]/g, ''), 10);
+  const bulkFillMissingTargets = items
+    .filter((item): item is MissingBook => item.isMissing === true)
+    .filter((item) => typeof item.volumeNumber === 'number' && item.volumeNumber <= (Number.isFinite(bulkFillTarget) ? bulkFillTarget : 0))
+    .sort(compareSeriesItems);
   const resetSeriesView = useCallback((animated = false) => {
     shouldKeepBottomRef.current = false;
     setPage(1);
@@ -208,6 +232,7 @@ export default function SeriesScreen() {
     setEditingId(null);
     setDraftSeries('');
     setDraftVolume('');
+    setDraftVolumeKind('main');
     setDraftPurchasePrice('');
   };
 
@@ -247,6 +272,7 @@ export default function SeriesScreen() {
         title: trustedMetadata?.title ?? item.title,
         seriesTitle: item.seriesTitle,
         volumeNumber: item.volumeNumber,
+        volumeKind: 'main',
         author: trustedMetadata?.author,
         publisher: trustedMetadata?.publisher,
         thumbnailUrl: trustedMetadata?.thumbnailUrl,
@@ -265,6 +291,80 @@ export default function SeriesScreen() {
       Alert.alert('追加できませんでした', error instanceof Error ? error.message : 'もう一度お試しください。');
     } finally {
       setRefreshingId(null);
+    }
+  };
+
+  const addMissingVolumesAsOwnedQueue = async () => {
+    const targetVolume = Number.parseInt(bulkFillTargetVolume.replace(/[^0-9]/g, ''), 10);
+    if (!Number.isFinite(targetVolume) || targetVolume <= 0) {
+      Alert.alert('追加する範囲を入力してください', '「何巻まで所持しているか」を数字で入力してください。');
+      return;
+    }
+
+    const targets = bulkFillMissingTargets;
+    if (targets.length === 0) {
+      Alert.alert('追加対象がありません', '指定した範囲内に未登録の通常巻はありません。');
+      return;
+    }
+
+    setBulkFillRunning(true);
+    setBulkFillProgress({ current: 0, total: targets.length });
+    let addedCount = 0;
+    let skippedCount = 0;
+    try {
+      for (const [index, item] of targets.entries()) {
+        setBulkFillProgress({ current: index + 1, total: targets.length });
+        const metadata = await lookupBookByTitle(`${item.seriesTitle} ${item.volumeNumber}巻`);
+        const metadataMatchesExpected =
+          !!metadata &&
+          metadata.volumeNumber === item.volumeNumber &&
+          normalizeSeriesKey(metadata.seriesTitle || item.seriesTitle) === normalizeSeriesKey(item.seriesTitle);
+        const trustedMetadata = metadataMatchesExpected ? metadata : null;
+        const bookInput: BookInput = {
+          isbn: trustedMetadata?.isbn,
+          title: trustedMetadata?.title ?? item.title,
+          seriesTitle: item.seriesTitle,
+          volumeNumber: item.volumeNumber,
+          volumeKind: 'main',
+          author: trustedMetadata?.author,
+          publisher: trustedMetadata?.publisher,
+          publishedDate: trustedMetadata?.publishedDate,
+          thumbnailUrl: trustedMetadata?.thumbnailUrl,
+          listPrice: trustedMetadata?.listPrice,
+          priceSource: trustedMetadata?.priceSource,
+          priceFetchedAt: trustedMetadata?.priceFetchedAt,
+          status: 'unread',
+        };
+
+        try {
+          await addBook(bookInput);
+          addedCount += 1;
+        } catch (addError) {
+          const addErrorMessage = addError instanceof Error ? addError.message : '';
+          if (bookInput.isbn && /ISBN|already/i.test(addErrorMessage)) {
+            await addBook({ ...bookInput, isbn: undefined });
+            addedCount += 1;
+          } else if (addErrorMessage.includes('同じシリーズ') || addErrorMessage.includes('登録') || /already/i.test(addErrorMessage)) {
+            skippedCount += 1;
+          } else {
+            throw addError;
+          }
+        }
+      }
+
+      setBulkFillOpen(false);
+      setBulkFillTargetVolume('');
+      Alert.alert(
+        '未登録巻を追加しました',
+        skippedCount > 0
+          ? `${addedCount}冊を追加しました。${skippedCount}冊は登録済みのためスキップしました。`
+          : `${addedCount}冊を追加しました。`,
+      );
+    } catch (error) {
+      Alert.alert('未登録巻を追加しました', error instanceof Error ? error.message : '??????????????????????');
+    } finally {
+      setBulkFillRunning(false);
+      setBulkFillProgress(null);
     }
   };
 
@@ -313,6 +413,7 @@ export default function SeriesScreen() {
     setEditingId(book.id);
     setDraftSeries(book.seriesTitle);
     setDraftVolume(book.volumeNumber ? String(book.volumeNumber) : '');
+    setDraftVolumeKind(book.volumeKind ?? 'main');
     setDraftPurchasePrice(typeof book.purchasePrice === 'number' ? String(book.purchasePrice) : '');
   };
 
@@ -322,6 +423,7 @@ export default function SeriesScreen() {
       await updateBook(book.id, {
         seriesTitle: draftSeries.trim() || book.seriesTitle,
         volumeNumber: draftVolume ? Number.parseInt(draftVolume, 10) : undefined,
+        volumeKind: draftVolumeKind,
         ...(trackPurchasePrices
           ? { purchasePrice: normalizedPrice ? Number.parseInt(normalizedPrice, 10) : null }
           : {}),
@@ -339,6 +441,7 @@ export default function SeriesScreen() {
       migrateFavoriteSeries(seriesTitle, nextTitle);
       if (user) {
         const latestVolume = ownedItems
+          .filter((item) => item.volumeKind !== 'extra')
           .map((item) => item.volumeNumber)
           .filter((volume): volume is number => typeof volume === 'number')
           .sort((left, right) => right - left)[0];
@@ -456,6 +559,22 @@ export default function SeriesScreen() {
           <Ionicons color={colors.text} name="create-outline" size={19} />
         </Pressable>
         <Pressable
+          accessibilityLabel="未登録巻をまとめて追加"
+          disabled={bulkFillRunning}
+          onPress={() => {
+            setBulkFillTargetVolume((current) => current || (latestKnownMainVolume > 0 ? String(latestKnownMainVolume) : ''));
+            setBulkFillOpen((current) => !current);
+          }}
+          style={[styles.bulkFillShortcutButton, { borderColor: colors.border }, bulkFillRunning && styles.disabledButton]}
+        >
+          {bulkFillRunning ? (
+            <ActivityIndicator color={colors.text} size="small" />
+          ) : (
+            <Ionicons color={colors.text} name="albums-outline" size={17} />
+          )}
+          <Text style={[styles.bulkFillShortcutLabel, { color: colors.text }]}>未登録巻を追加</Text>
+        </Pressable>
+        <Pressable
           accessibilityLabel={allSelected ? '選択をすべて解除' : '全巻を選択'}
           disabled={ownedItems.length === 0}
           onPress={toggleAllSelected}
@@ -541,6 +660,58 @@ export default function SeriesScreen() {
         </View>
       )}
 
+      {bulkFillOpen && (
+        <View style={[styles.bulkFillBox, { borderBottomColor: colors.border }]}>
+          <View style={styles.bulkFillHeader}>
+            <View style={styles.bulkFillTitleWrap}>
+              <Text style={[styles.rowTitle, { color: colors.text }]}>未登録巻をまとめて追加</Text>
+              <Text style={[styles.renameCopy, { color: colors.muted }]}>
+                指定した巻までの未登録巻を、1冊ずつ順番に取得して追加します。APIを一気に呼ばないため、初回登録向けです。
+              </Text>
+            </View>
+            <Pressable
+              accessibilityLabel="一括追加パネルを閉じる"
+              disabled={bulkFillRunning}
+              onPress={() => setBulkFillOpen(false)}
+              style={[styles.smallIconButton, { borderColor: colors.border }, bulkFillRunning && styles.disabledButton]}
+            >
+              <Ionicons color={colors.text} name="close" size={18} />
+            </Pressable>
+          </View>
+          <View style={styles.renameRow}>
+            <TextInput
+              value={bulkFillTargetVolume}
+              onChangeText={(value) => setBulkFillTargetVolume(value.replace(/[^0-9]/g, ''))}
+              keyboardType="number-pad"
+              placeholder={latestKnownMainVolume > 0 ? `${latestKnownMainVolume}巻まで` : '何巻まで'}
+              placeholderTextColor={colors.muted}
+              style={[styles.renameInput, { backgroundColor: colors.input, color: colors.text }]}
+            />
+            <Pressable
+              accessibilityLabel="未登録巻を順番に追加"
+              disabled={bulkFillRunning || bulkFillMissingTargets.length === 0}
+              onPress={() => void addMissingVolumesAsOwnedQueue()}
+              style={[
+                styles.bulkFillButton,
+                { backgroundColor: colors.text },
+                (bulkFillRunning || bulkFillMissingTargets.length === 0) && styles.disabledButton,
+              ]}
+            >
+              {bulkFillRunning ? (
+                <ActivityIndicator color={colors.background} size="small" />
+              ) : (
+                <Text style={[styles.bulkFillButtonText, { color: colors.background }]}>追加</Text>
+              )}
+            </Pressable>
+          </View>
+          <Text style={[styles.bulkFillMeta, { color: colors.muted }]}>
+            {bulkFillRunning && bulkFillProgress
+              ? `${bulkFillProgress.current} / ${bulkFillProgress.total}冊を処理中`
+              : `追加予定: ${bulkFillMissingTargets.length}冊`}
+          </Text>
+        </View>
+      )}
+
       <FlatList
         key={normalizeSeriesKey(seriesTitle)}
         ref={listRef}
@@ -620,6 +791,11 @@ export default function SeriesScreen() {
                     {item.volumeNumber ? `${item.volumeNumber}巻` : '巻数なし'}
                     {missing ? ' / 未所持' : ''}
                   </Text>
+                  {isOwnedBook(item) && item.volumeKind === 'extra' && (
+                    <View style={[styles.statusPill, { backgroundColor: colors.elevated }]}>
+                      <Text style={[styles.statusPillText, { color: colors.muted }]}>関連巻</Text>
+                    </View>
+                  )}
                   {isOwnedBook(item) && (
                     <View style={[styles.statusPill, { backgroundColor: colors.elevated }]}>
                       <Text style={[styles.statusPillText, { color: colors.text }]}>{statusLabels[item.status]}</Text>
@@ -687,14 +863,32 @@ export default function SeriesScreen() {
                       placeholderTextColor={colors.muted}
                       style={[styles.editInput, { backgroundColor: colors.input, color: colors.text }]}
                     />
-                    <TextInput
-                      value={draftVolume}
-                      onChangeText={setDraftVolume}
-                      keyboardType="number-pad"
-                      placeholder="巻"
-                      placeholderTextColor={colors.muted}
-                      style={[styles.editInput, { backgroundColor: colors.input, color: colors.text }]}
-                    />
+                    {draftVolumeKind === 'main' && (
+                      <TextInput
+                        value={draftVolume}
+                        onChangeText={setDraftVolume}
+                        keyboardType="number-pad"
+                        placeholder="巻"
+                        placeholderTextColor={colors.muted}
+                        style={[styles.editInput, { backgroundColor: colors.input, color: colors.text }]}
+                      />
+                    )}
+                    <View style={[styles.volumeKindRow, { backgroundColor: colors.elevated }]}>
+                      {([
+                        ['main', '通常巻'],
+                        ['extra', '関連巻'],
+                      ] as const).map(([value, label]) => (
+                        <Pressable
+                          key={value}
+                          onPress={() => setDraftVolumeKind(value)}
+                          style={[styles.volumeKindButton, draftVolumeKind === value && { backgroundColor: colors.text }]}
+                        >
+                          <Text style={[styles.volumeKindText, { color: draftVolumeKind === value ? colors.background : colors.muted }]}>
+                            {label}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </View>
                     {trackPurchasePrices && (
                       <TextInput
                         value={draftPurchasePrice}
@@ -883,6 +1077,25 @@ const styles = StyleSheet.create({
     padding: 12,
   },
   bulkText: { flex: 1, fontSize: 13, fontWeight: '700' },
+  bulkFillShortcutButton: {
+    alignItems: 'center',
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 4,
+    height: 38,
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+  },
+  bulkFillShortcutLabel: { fontSize: 11, fontWeight: '900' },
+  smallIconButton: {
+    alignItems: 'center',
+    borderRadius: 8,
+    borderWidth: 1,
+    height: 34,
+    justifyContent: 'center',
+    width: 36,
+  },
   disabledButton: { opacity: 0.35 },
   iconActionButton: {
     alignItems: 'center',
@@ -935,6 +1148,12 @@ const styles = StyleSheet.create({
   bulkPriceRow: { flexDirection: 'row', gap: 8, width: '100%' },
   bulkPriceInput: { borderRadius: 8, flex: 1, fontSize: 13, fontWeight: '700', height: 36, paddingHorizontal: 10 },
   renameBox: { borderBottomWidth: 1, gap: 8, padding: 12 },
+  bulkFillBox: { borderBottomWidth: 1, gap: 8, padding: 12 },
+  bulkFillHeader: { alignItems: 'flex-start', flexDirection: 'row', gap: 8 },
+  bulkFillTitleWrap: { flex: 1, gap: 4 },
+  bulkFillButton: { alignItems: 'center', borderRadius: 8, height: 40, justifyContent: 'center', minWidth: 74, paddingHorizontal: 12 },
+  bulkFillButtonText: { fontSize: 13, fontWeight: '900' },
+  bulkFillMeta: { fontSize: 12, fontWeight: '800' },
   rowTitle: { fontSize: 14, fontWeight: '800' },
   renameCopy: { fontSize: 12, lineHeight: 17 },
   renameRow: { flexDirection: 'row', gap: 8 },
@@ -1042,6 +1261,9 @@ const styles = StyleSheet.create({
   statusPillText: { fontSize: 11, fontWeight: '800' },
   credits: { fontSize: 12, lineHeight: 17, marginTop: 4 },
   editBox: { gap: 8, marginTop: 10 },
+  volumeKindRow: { borderRadius: 8, flexDirection: 'row', marginBottom: 8, padding: 4 },
+  volumeKindButton: { alignItems: 'center', borderRadius: 6, flex: 1, height: 34, justifyContent: 'center' },
+  volumeKindText: { fontSize: 13, fontWeight: '800' },
   editInput: {
     borderRadius: 8,
     height: 40,

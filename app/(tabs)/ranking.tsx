@@ -323,11 +323,11 @@ function RankingShelf({
             </View>
             {rows.length > 10 ? (
               <Pressable
-                accessibilityLabel={`${title}??????`}
+                accessibilityLabel={`${title}をもっと見る`}
                 onPress={() => router.push(`/(tabs)/ranking/${category}`)}
                 style={styles.moreHeaderButton}
               >
-                <Text style={[styles.moreHeaderText, { color: colors.primary }]}>?????</Text>
+                <Text style={[styles.moreHeaderText, { color: colors.primary }]}>もっと見る</Text>
               </Pressable>
             ) : null}
           </View>

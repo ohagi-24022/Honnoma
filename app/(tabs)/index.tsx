@@ -49,6 +49,7 @@ type HomeFilter =
   | 'ongoing'
   | `author:${string}`
   | `publisher:${string}`;
+type SortDirection = 'asc' | 'desc';
 type SeriesSort = 'title' | 'recent' | 'missing' | 'unread' | 'completion' | 'favorite' | 'author' | 'publisher';
 type BookSort = 'recent' | 'title' | 'series' | 'volume' | 'status' | 'favorite' | 'author' | 'publisher';
 type SeriesDisplayMode = 'detail' | 'cover' | 'title';
@@ -99,6 +100,59 @@ const bookSortOptions: Array<{ label: string; value: BookSort }> = [
 const readingStatusOrder: Record<ReadingStatus, number> = { reading: 0, unread: 1, read: 2 };
 const readingFilters: ReadingStatus[] = ['unread', 'reading', 'read'];
 
+const defaultSeriesSortDirections: Record<SeriesSort, SortDirection> = {
+  title: 'asc',
+  recent: 'desc',
+  missing: 'desc',
+  unread: 'desc',
+  completion: 'desc',
+  favorite: 'desc',
+  author: 'asc',
+  publisher: 'asc',
+};
+
+const defaultBookSortDirections: Record<BookSort, SortDirection> = {
+  recent: 'desc',
+  title: 'asc',
+  series: 'asc',
+  volume: 'asc',
+  status: 'asc',
+  favorite: 'desc',
+  author: 'asc',
+  publisher: 'asc',
+};
+
+function applySortDirection(value: number, direction: SortDirection) {
+  return direction === 'asc' ? value : -value;
+}
+
+
+
+const japaneseSortCollator = new Intl.Collator('ja-JP', {
+  ignorePunctuation: true,
+  numeric: true,
+  sensitivity: 'base',
+  usage: 'sort',
+});
+
+function toHiraganaSortText(value: string) {
+  return value.replace(/[\u30a1-\u30f6]/g, (character) => String.fromCharCode(character.charCodeAt(0) - 0x60));
+}
+
+function buildJapaneseSortKey(value?: string) {
+  if (!value) return '\uffff';
+  return toHiraganaSortText(value.normalize('NFKC').trim().toLowerCase())
+    .replace(/^[\s!-/:-@[-`{-~\u300c\u300d\u300e\u300f\u3010\u3011\uff08\uff09()\uff3b\uff3d\[\]\u30fb\uff65]+/g, '')
+    .replace(/\s+/g, ' ');
+}
+
+function compareText(left: string | undefined, right: string | undefined) {
+  const leftKey = buildJapaneseSortKey(left);
+  const rightKey = buildJapaneseSortKey(right);
+  return japaneseSortCollator.compare(leftKey, rightKey) || japaneseSortCollator.compare(left ?? '', right ?? '');
+}
+
+
 function getActiveFilters(filters: HomeFilter[]) {
   return filters.includes('all') ? [] : filters;
 }
@@ -148,6 +202,33 @@ function normalizeText(value: string) {
   return value.normalize('NFKC').toLowerCase();
 }
 
+function getSeriesReadingSortText(books: Book[], seriesTitle: string) {
+  const targetSeriesKey = normalizeSeriesKey(seriesTitle);
+  const reading = books
+    .filter((book) => normalizeSeriesKey(book.seriesTitle) === targetSeriesKey)
+    .sort(
+      (left, right) =>
+        Number(left.volumeKind === 'extra') - Number(right.volumeKind === 'extra') ||
+        Number(left.volumeNumber !== 1) - Number(right.volumeNumber !== 1) ||
+        (left.volumeNumber ?? Number.MAX_SAFE_INTEGER) - (right.volumeNumber ?? Number.MAX_SAFE_INTEGER),
+    )
+    .find((book) => book.seriesReading || book.titleReading);
+  return reading?.seriesReading ?? reading?.titleReading ?? seriesTitle;
+}
+
+
+function findReadingRepairTarget(books: Book[], seriesTitle: string) {
+  const targetSeriesKey = normalizeSeriesKey(seriesTitle);
+  return books
+    .filter((book) => normalizeSeriesKey(book.seriesTitle) === targetSeriesKey && book.volumeKind !== 'extra')
+    .sort(
+      (left, right) =>
+        Number(left.volumeNumber !== 1) - Number(right.volumeNumber !== 1) ||
+        (left.volumeNumber ?? Number.MAX_SAFE_INTEGER) - (right.volumeNumber ?? Number.MAX_SAFE_INTEGER) ||
+        left.createdAt.localeCompare(right.createdAt),
+    )[0];
+}
+
 function findRepresentativeRefreshTarget(books: Book[], seriesTitle: string) {
   const targetSeriesKey = normalizeSeriesKey(seriesTitle);
   return books
@@ -159,6 +240,8 @@ function findRepresentativeRefreshTarget(books: Book[], seriesTitle: string) {
         left.createdAt.localeCompare(right.createdAt),
     )[0];
 }
+
+
 
 function getNextSeriesDisplayMode(mode: SeriesDisplayMode): SeriesDisplayMode {
   if (mode === 'detail') return 'cover';
@@ -178,7 +261,9 @@ export default function HomeScreen() {
   const [viewMode, setViewMode] = useState<'series' | 'books'>('series');
   const [seriesDisplayMode, setSeriesDisplayMode] = useState<SeriesDisplayMode>('detail');
   const [seriesSort, setSeriesSort] = useState<SeriesSort>('title');
+  const [seriesSortDirection, setSeriesSortDirection] = useState<SortDirection>(defaultSeriesSortDirections.title);
   const [bookSort, setBookSort] = useState<BookSort>('recent');
+  const [bookSortDirection, setBookSortDirection] = useState<SortDirection>(defaultBookSortDirections.recent);
   const [query, setQuery] = useState('');
   const [openMenu, setOpenMenu] = useState<'filter' | 'sort' | 'author' | 'publisher' | null>(null);
   const [toolbarHeight, setToolbarHeight] = useState(152);
@@ -196,6 +281,8 @@ export default function HomeScreen() {
   const lastScrollYRef = useRef(0);
   const directionDistanceRef = useRef(0);
   const lastDirectionRef = useRef<1 | -1>(1);
+  const metadataRepairingRef = useRef(new Set<string>());
+  const metadataRepairFailedRef = useRef(new Set<string>());
   const favoriteSeriesKeySet = useMemo(() => new Set(visibleFavoriteSeriesKeys), [visibleFavoriteSeriesKeys]);
   const coverGridColumns = Math.max(3, Math.floor((windowWidth - 36 + 10) / 92));
   const coverTileWidth = (windowWidth - 36 - (coverGridColumns - 1) * 10) / coverGridColumns;
@@ -252,18 +339,26 @@ export default function HomeScreen() {
   }, []);
 
   useEffect(() => {
-    if (!user || !newReleaseNotifications) {
+    if (!user) {
       setNotificationSeriesKeys([]);
       return;
     }
+    if (!newReleaseNotifications) {
+      setNotificationSeriesKeys([]);
+      return;
+    }
+    if (loading || seriesGroups.length === 0) return;
 
     let cancelled = false;
     syncNewReleaseSubscriptions(user.id, seriesGroups)
       .then(() => getNewReleaseSubscriptions(user.id))
       .then((subscriptions) => {
         if (cancelled) return;
+        const currentSeriesKeys = new Set(seriesGroups.map((group) => normalizeSeriesKey(group.title)));
         setNotificationSeriesKeys(
-          subscriptions.filter((subscription) => subscription.enabled).map((subscription) => subscription.seriesKey),
+          subscriptions
+            .filter((subscription) => subscription.enabled && currentSeriesKeys.has(normalizeSeriesKey(subscription.seriesKey)))
+            .map((subscription) => normalizeSeriesKey(subscription.seriesKey)),
         );
       })
       .catch((notificationError) => {
@@ -277,7 +372,8 @@ export default function HomeScreen() {
     return () => {
       cancelled = true;
     };
-  }, [newReleaseNotifications, seriesGroups, user]);
+  }, [loading, newReleaseNotifications, seriesGroups, user]);
+
 
   useEffect(() => {
     if (!appSettingsHydrated || !user || !supabase) return;
@@ -311,10 +407,10 @@ export default function HomeScreen() {
 
   const metadataFilterOptions = useMemo(() => {
     const authors = [...new Set(seriesGroups.flatMap((group) => group.authors))]
-      .sort((left, right) => left.localeCompare(right))
+      .sort(compareText)
       .map((author) => ({ label: author, value: `author:${encodeURIComponent(author)}` as HomeFilter }));
     const publishers = [...new Set(seriesGroups.flatMap((group) => group.publishers))]
-      .sort((left, right) => left.localeCompare(right))
+      .sort(compareText)
       .map((publisher) => ({ label: publisher, value: `publisher:${encodeURIComponent(publisher)}` as HomeFilter }));
     return { authors, publishers };
   }, [seriesGroups]);
@@ -330,7 +426,8 @@ export default function HomeScreen() {
 
     return new Map<string, SeriesStats>(
       [...bySeries.entries()].map(([seriesKey, groupedBooks]) => {
-        const volumes = groupedBooks
+        const mainGroupedBooks = groupedBooks.filter((book) => book.volumeKind !== 'extra');
+        const volumes = mainGroupedBooks
           .map((book) => book.volumeNumber)
           .filter((volume): volume is number => !!volume);
         const latestVolume = volumes.length > 0 ? Math.max(...volumes) : undefined;
@@ -341,7 +438,7 @@ export default function HomeScreen() {
           (left, right) => left - right,
         );
         const denominator = Math.max(latestVolume ?? 0, publishedLatestVolume ?? 0);
-        const completionRate = denominator > 0 ? Math.round((groupedBooks.length / denominator) * 100) : 100;
+        const completionRate = denominator > 0 ? Math.round((mainGroupedBooks.length / denominator) * 100) : 100;
         return [seriesKey, { completionRate, internalMissingVolumes, missingVolumes, trailingUnownedVolumes }] as const;
       }),
     );
@@ -385,38 +482,33 @@ export default function HomeScreen() {
     });
 
     return filtered.sort((left, right) => {
-      if (seriesSort === 'recent') return right.latestAddedAt.localeCompare(left.latestAddedAt);
-      if (seriesSort === 'missing') {
-        return (
-          (seriesStats.get(normalizeSeriesKey(right.title))?.missingVolumes.length ?? 0) -
-            (seriesStats.get(normalizeSeriesKey(left.title))?.missingVolumes.length ?? 0) ||
-          left.title.localeCompare(right.title)
-        );
+      let comparison = 0;
+      if (seriesSort === 'recent') {
+        comparison = left.latestAddedAt.localeCompare(right.latestAddedAt);
+      } else if (seriesSort === 'missing') {
+        comparison =
+          (seriesStats.get(normalizeSeriesKey(left.title))?.missingVolumes.length ?? 0) -
+          (seriesStats.get(normalizeSeriesKey(right.title))?.missingVolumes.length ?? 0);
+      } else if (seriesSort === 'unread') {
+        comparison = left.unreadCount - right.unreadCount;
+      } else if (seriesSort === 'completion') {
+        comparison =
+          (seriesStats.get(normalizeSeriesKey(left.title))?.completionRate ?? 100) -
+          (seriesStats.get(normalizeSeriesKey(right.title))?.completionRate ?? 100);
+      } else if (seriesSort === 'favorite') {
+        comparison =
+          Number(favoriteSeriesKeySet.has(normalizeSeriesKey(left.title))) -
+          Number(favoriteSeriesKeySet.has(normalizeSeriesKey(right.title)));
+      } else if (seriesSort === 'author') {
+        comparison = compareText(left.authors[0], right.authors[0]);
+      } else if (seriesSort === 'publisher') {
+        comparison = compareText(left.publishers[0], right.publishers[0]);
+      } else {
+        comparison = compareText(getSeriesReadingSortText(books, left.title), getSeriesReadingSortText(books, right.title));
       }
-      if (seriesSort === 'unread') return right.unreadCount - left.unreadCount || left.title.localeCompare(right.title);
-      if (seriesSort === 'completion') {
-        return (
-          (seriesStats.get(normalizeSeriesKey(right.title))?.completionRate ?? 100) -
-            (seriesStats.get(normalizeSeriesKey(left.title))?.completionRate ?? 100) ||
-          left.title.localeCompare(right.title)
-        );
-      }
-      if (seriesSort === 'favorite') {
-        return (
-          Number(favoriteSeriesKeySet.has(normalizeSeriesKey(right.title))) -
-            Number(favoriteSeriesKeySet.has(normalizeSeriesKey(left.title))) ||
-          left.title.localeCompare(right.title)
-        );
-      }
-      if (seriesSort === 'author') {
-        return (left.authors[0] ?? '\uffff').localeCompare(right.authors[0] ?? '\uffff') || left.title.localeCompare(right.title);
-      }
-      if (seriesSort === 'publisher') {
-        return (left.publishers[0] ?? '\uffff').localeCompare(right.publishers[0] ?? '\uffff') || left.title.localeCompare(right.title);
-      }
-      return left.title.localeCompare(right.title);
+      return applySortDirection(comparison, seriesSortDirection) || compareText(left.title, right.title);
     });
-  }, [favoriteSeriesKeySet, filters, publicationCache, query, seriesGroups, seriesSort, seriesStats]);
+  }, [books, favoriteSeriesKeySet, filters, publicationCache, query, seriesGroups, seriesSort, seriesSortDirection, seriesStats]);
 
   const visibleBooks = useMemo(() => {
     const activeFilters = getActiveFilters(filters);
@@ -446,28 +538,29 @@ export default function HomeScreen() {
     });
 
     return filtered.sort((left, right) => {
-      if (bookSort === 'title') return left.title.localeCompare(right.title);
-      if (bookSort === 'series') {
-        return left.seriesTitle.localeCompare(right.seriesTitle) || (left.volumeNumber ?? 9999) - (right.volumeNumber ?? 9999);
+      let comparison = 0;
+      if (bookSort === 'title') {
+        comparison = compareText(left.titleReading ?? left.title, right.titleReading ?? right.title);
+      } else if (bookSort === 'series') {
+        comparison = compareText(left.seriesReading ?? left.seriesTitle, right.seriesReading ?? right.seriesTitle) || (left.volumeNumber ?? 0) - (right.volumeNumber ?? 0);
+      } else if (bookSort === 'volume') {
+        comparison = compareText(left.seriesReading ?? left.seriesTitle, right.seriesReading ?? right.seriesTitle) || (left.volumeNumber ?? 0) - (right.volumeNumber ?? 0);
+      } else if (bookSort === 'status') {
+        comparison = readingStatusOrder[left.status] - readingStatusOrder[right.status];
+      } else if (bookSort === 'favorite') {
+        comparison =
+          Number(favoriteSeriesKeySet.has(normalizeSeriesKey(left.seriesTitle))) -
+          Number(favoriteSeriesKeySet.has(normalizeSeriesKey(right.seriesTitle)));
+      } else if (bookSort === 'author') {
+        comparison = compareText(left.author, right.author);
+      } else if (bookSort === 'publisher') {
+        comparison = compareText(left.publisher, right.publisher);
+      } else {
+        comparison = left.createdAt.localeCompare(right.createdAt);
       }
-      if (bookSort === 'volume') {
-        return (left.volumeNumber ?? 9999) - (right.volumeNumber ?? 9999) || left.seriesTitle.localeCompare(right.seriesTitle);
-      }
-      if (bookSort === 'status') {
-        return readingStatusOrder[left.status] - readingStatusOrder[right.status] || left.title.localeCompare(right.title);
-      }
-      if (bookSort === 'favorite') {
-        return (
-          Number(favoriteSeriesKeySet.has(normalizeSeriesKey(right.seriesTitle))) -
-            Number(favoriteSeriesKeySet.has(normalizeSeriesKey(left.seriesTitle))) ||
-          right.createdAt.localeCompare(left.createdAt)
-        );
-      }
-      if (bookSort === 'author') return (left.author ?? '\uffff').localeCompare(right.author ?? '\uffff') || left.title.localeCompare(right.title);
-      if (bookSort === 'publisher') return (left.publisher ?? '\uffff').localeCompare(right.publisher ?? '\uffff') || left.title.localeCompare(right.title);
-      return right.createdAt.localeCompare(left.createdAt);
+      return applySortDirection(comparison, bookSortDirection) || compareText(left.titleReading ?? left.title, right.titleReading ?? right.title);
     });
-  }, [bookSort, books, favoriteSeriesKeySet, filters, publicationCache, query, seriesStats]);
+  }, [bookSort, bookSortDirection, books, favoriteSeriesKeySet, filters, publicationCache, query, seriesStats]);
 
   const selectedMetadataFilters = getSelectedMetadataFilters(filters);
   const selectedFilterLabel = useMemo(() => {
@@ -485,8 +578,8 @@ export default function HomeScreen() {
   }, [filters]);
   const selectedSortLabel =
     viewMode === 'series'
-      ? seriesSortOptions.find((option) => option.value === seriesSort)?.label ?? '名前順'
-      : bookSortOptions.find((option) => option.value === bookSort)?.label ?? '最近追加';
+      ? `${seriesSortOptions.find((option) => option.value === seriesSort)?.label ?? '名前順'} ${seriesSortDirection === 'asc' ? '↓' : '↑'}`
+      : `${bookSortOptions.find((option) => option.value === bookSort)?.label ?? '最近追加'} ${bookSortDirection === 'asc' ? '↓' : '↑'}`;
   const listVersion = `${books.length}-${seriesGroups.length}-${filters.join('|')}-${query}`;
 
   const setToolbarVisible = useCallback(
@@ -546,9 +639,33 @@ export default function HomeScreen() {
     setToolbarVisible(true);
   };
 
+  useEffect(() => {
+    if (loading || seriesSort !== 'title') return;
+    const targets = seriesGroups
+      .map((group) => findReadingRepairTarget(books, group.title))
+      .filter(
+        (book): book is Book =>
+          !!book &&
+          !book.seriesReading &&
+          !book.titleReading &&
+          !metadataRepairFailedRef.current.has(book.id),
+      )
+      .slice(0, 2);
+
+    targets.forEach((book) => {
+      if (metadataRepairingRef.current.has(book.id)) return;
+      metadataRepairingRef.current.add(book.id);
+      repairBookMetadata(book.id, { preserveIdentity: true })
+        .then(() => metadataRepairFailedRef.current.delete(book.id))
+        .catch(() => metadataRepairFailedRef.current.add(book.id))
+        .finally(() => metadataRepairingRef.current.delete(book.id));
+    });
+  }, [books, loading, repairBookMetadata, seriesGroups, seriesSort]);
+
   const refreshSeriesPublication = async (seriesTitle: string, ownedLatestVolume?: number) => {
     if (refreshingSeriesTitle) return;
     setRefreshingSeriesTitle(seriesTitle);
+    const cacheKey = normalizeSeriesKey(seriesTitle);
     const representativeTarget = findRepresentativeRefreshTarget(books, seriesTitle);
     const refreshRepresentativeCover = representativeTarget
       ? repairBookMetadata(representativeTarget.id, { preserveIdentity: true }).catch((metadataError) => {
@@ -560,11 +677,11 @@ export default function HomeScreen() {
       const result = await lookupLatestSeriesPublication(seriesTitle);
       await refreshRepresentativeCover;
       if (!result) {
-        Alert.alert('刊行巻数を取得できませんでした', '同じシリーズの巻数情報が見つかりませんでした。');
+        if (publicationCache[cacheKey]) return;
+        Alert.alert('\u520a\u884c\u5dfb\u6570\u3092\u53d6\u5f97\u3067\u304d\u307e\u305b\u3093\u3067\u3057\u305f', '\u5916\u90e8API\u304b\u3089\u540c\u3058\u30b7\u30ea\u30fc\u30ba\u306e\u5dfb\u6570\u60c5\u5831\u3092\u78ba\u8a8d\u3067\u304d\u307e\u305b\u3093\u3067\u3057\u305f\u3002\u5c11\u3057\u6642\u9593\u3092\u304a\u3044\u3066\u518d\u5ea6\u304a\u8a66\u3057\u304f\u3060\u3055\u3044\u3002');
         return;
       }
       const safeResult = { ...result, latestVolume: Math.max(result.latestVolume, ownedLatestVolume ?? 0) };
-      const cacheKey = normalizeSeriesKey(seriesTitle);
       setPublicationCache((current) => {
         const next = { ...current, [cacheKey]: safeResult };
         void AsyncStorage.setItem(SERIES_PUBLICATION_STORAGE_KEY, JSON.stringify(next));
@@ -572,9 +689,10 @@ export default function HomeScreen() {
       });
     } catch (refreshError) {
       await refreshRepresentativeCover;
+      if (publicationCache[cacheKey]) return;
       Alert.alert(
-        '更新できませんでした',
-        refreshError instanceof Error ? refreshError.message : '通信状態を確認して、もう一度お試しください。',
+        '\u66f4\u65b0\u3067\u304d\u307e\u305b\u3093\u3067\u3057\u305f',
+        refreshError instanceof Error ? refreshError.message : '\u901a\u4fe1\u72b6\u614b\u3092\u78ba\u8a8d\u3057\u3066\u3001\u3082\u3046\u4e00\u5ea6\u304a\u8a66\u3057\u304f\u3060\u3055\u3044\u3002',
       );
     } finally {
       setRefreshingSeriesTitle(null);
@@ -837,6 +955,7 @@ export default function HomeScreen() {
         }
         multiple={openMenu !== 'sort'}
         selectedValue={openMenu === 'sort' ? (viewMode === 'series' ? seriesSort : bookSort) : undefined}
+        selectedDirection={openMenu === 'sort' ? (viewMode === 'series' ? seriesSortDirection : bookSortDirection) : undefined}
         selectedValues={
           openMenu === 'sort'
             ? undefined
@@ -868,9 +987,23 @@ export default function HomeScreen() {
         onApply={closeMenu}
         onSelect={(value) => {
           if (openMenu === 'sort') {
-            if (viewMode === 'series') setSeriesSort(value as SeriesSort);
-            else setBookSort(value as BookSort);
-            closeMenu();
+            if (viewMode === 'series') {
+              const nextSort = value as SeriesSort;
+              if (nextSort === seriesSort) {
+                setSeriesSortDirection((current) => (current === 'asc' ? 'desc' : 'asc'));
+              } else {
+                setSeriesSort(nextSort);
+                setSeriesSortDirection(defaultSeriesSortDirections[nextSort]);
+              }
+            } else {
+              const nextSort = value as BookSort;
+              if (nextSort === bookSort) {
+                setBookSortDirection((current) => (current === 'asc' ? 'desc' : 'asc'));
+              } else {
+                setBookSort(nextSort);
+                setBookSortDirection(defaultBookSortDirections[nextSort]);
+              }
+            }
           } else if (openMenu === 'filter' && value === 'select-author') {
             setOpenMenu('author');
           } else if (openMenu === 'filter' && value === 'select-publisher') {

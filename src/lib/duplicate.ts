@@ -1,6 +1,7 @@
 import { Book, BookInput } from '../types';
 import { normalizeAuthor } from './bookMetadata';
 import { normalizeSeriesKey, parseSeriesTitle } from './series';
+import { normalizeVolumeKind } from './volumeKind';
 
 function normalizeIsbn(value?: string) {
   return value?.replace(/[^0-9X]/gi, '').toUpperCase();
@@ -13,6 +14,7 @@ export function normalizeBookInput(bookInput: BookInput): BookInput {
     ...bookInput,
     seriesTitle: bookInput.seriesTitle || parsed.seriesTitle,
     volumeNumber: bookInput.volumeNumber ?? parsed.volumeNumber,
+    volumeKind: normalizeVolumeKind(bookInput.volumeKind, bookInput.title),
     author: normalizeAuthor(bookInput.author),
     purchasePrice:
       typeof bookInput.purchasePrice === 'number' && Number.isFinite(bookInput.purchasePrice) && bookInput.purchasePrice >= 0

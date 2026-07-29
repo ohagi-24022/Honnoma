@@ -3,7 +3,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 
 const RAKUTEN_API_BASE_URL = 'https://openapi.rakuten.co.jp/services/api';
 const DEFAULT_REFERER = 'https://github.com/ohagi-24022/BookNest';
-const PROXY_VERSION = '2026-07-02-raw-tls';
+const PROXY_VERSION = '2026-07-29-envelope-status';
 const RAW_TLS_TIMEOUT_MS = 10_000;
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
@@ -12,7 +12,7 @@ const SUPABASE_SERVICE_ROLE_KEY =
   JSON.parse(Deno.env.get('SUPABASE_SECRET_KEYS') ?? '{}').default;
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
-const RATE_LIMIT_MAX_REQUESTS = 60;
+const RATE_LIMIT_MAX_REQUESTS = Number(Deno.env.get('RAKUTEN_PROXY_RATE_LIMIT_MAX_REQUESTS') ?? '120');
 
 declare const Deno: {
   env: {
@@ -60,14 +60,11 @@ Deno.serve(async (request: Request) => {
         provider: 'Rakuten Books',
         status: 'error',
       });
-      return jsonResponse(
-        {
-          ok: false,
-          status: 429,
-          body: { error: 'RATE_LIMITED', message: 'Too many Rakuten Books requests. Please try again later.' },
-        },
-        429,
-      );
+      return jsonResponse({
+        ok: false,
+        status: 429,
+        body: { error: 'RATE_LIMITED', message: 'Too many Rakuten Books requests. Please try again later.' },
+      });
     }
 
     if (!appId || !accessKey) {
@@ -78,14 +75,11 @@ Deno.serve(async (request: Request) => {
         provider: 'Rakuten Books',
         status: 'error',
       });
-      return jsonResponse(
-        {
-          ok: false,
-          status: 500,
-          body: { error: 'RAKUTEN_APP_ID and RAKUTEN_ACCESS_KEY are required.' },
-        },
-        500,
-      );
+      return jsonResponse({
+        ok: false,
+        status: 500,
+        body: { error: 'RAKUTEN_APP_ID and RAKUTEN_ACCESS_KEY are required.' },
+      });
     }
 
     const payload = (await request.json()) as RakutenProxyRequest;
@@ -98,14 +92,11 @@ Deno.serve(async (request: Request) => {
         provider: 'Rakuten Books',
         status: 'error',
       });
-      return jsonResponse(
-        {
-          ok: false,
-          status: 400,
-          body: { error: 'Invalid Rakuten API path.' },
-        },
-        400,
-      );
+      return jsonResponse({
+        ok: false,
+        status: 400,
+        body: { error: 'Invalid Rakuten API path.' },
+      });
     }
 
     const params = new URLSearchParams(payload.params ?? {});
@@ -139,19 +130,16 @@ Deno.serve(async (request: Request) => {
       // Keep non-JSON error bodies visible to the app debug modal.
     }
 
-    return jsonResponse(
-      {
-        ok: response.status >= 200 && response.status < 300,
-        status: response.status,
-        body,
-        proxy: {
-          version: PROXY_VERSION,
-          transport: 'raw-tls',
-          refererConfigured: Boolean(referer),
-        },
+    return jsonResponse({
+      ok: response.status >= 200 && response.status < 300,
+      status: response.status,
+      body,
+      proxy: {
+        version: PROXY_VERSION,
+        transport: 'raw-tls',
+        refererConfigured: Boolean(referer),
       },
-      response.status,
-    );
+    });
   } catch (error) {
     await writeOperationLog({
       metadata: { error: error instanceof Error ? error.message : 'Unknown error' },
@@ -159,19 +147,16 @@ Deno.serve(async (request: Request) => {
       provider: 'Rakuten Books',
       status: 'error',
     });
-    return jsonResponse(
-      {
-        ok: false,
-        status: 500,
-        body: { error: error instanceof Error ? error.message : 'Unknown error' },
-        proxy: {
-          version: PROXY_VERSION,
-          transport: 'raw-tls',
-          refererConfigured: false,
-        },
+    return jsonResponse({
+      ok: false,
+      status: 500,
+      body: { error: error instanceof Error ? error.message : 'Unknown error' },
+      proxy: {
+        version: PROXY_VERSION,
+        transport: 'raw-tls',
+        refererConfigured: false,
       },
-      500,
-    );
+    });
   }
 });
 

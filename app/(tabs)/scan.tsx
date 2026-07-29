@@ -1,7 +1,7 @@
 import { useIsFocused, useScrollToTop } from '@react-navigation/native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useRouter } from 'expo-router';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
   KeyboardAvoidingView,
@@ -17,11 +17,13 @@ import {
 
 import { BookCover } from '../../src/components/BookCover';
 import { isBookIsbnBarcode, lookupBookByIsbn } from '../../src/lib/bookApis';
+import { registerScanQueueReviewHandler } from '../../src/lib/scanQueueReviewBridge';
 import { parseSeriesTitle } from '../../src/lib/series';
+import { normalizeVolumeKind } from '../../src/lib/volumeKind';
 import { useAppSettings } from '../../src/store/AppSettingsContext';
 import { useLibrary } from '../../src/store/LibraryContext';
 import { useAppTheme } from '../../src/store/ThemeContext';
-import { BookInput, ReadingStatus } from '../../src/types';
+import { BookInput, BookVolumeKind, ReadingStatus } from '../../src/types';
 
 const statusOptions: Array<{ label: string; value: ReadingStatus }> = [
   { label: '未読', value: 'unread' },
@@ -32,6 +34,13 @@ const statusOptions: Array<{ label: string; value: ReadingStatus }> = [
 type ScanNotice = {
   tone: 'neutral' | 'success' | 'warning' | 'error';
   message: string;
+};
+
+type QueuedScanItem = BookInput & {
+  queueId: string;
+  purchaseMode: 'normal' | 'used';
+  scannedAt: number;
+  usedPurchasePrice: string;
 };
 
 function normalizeBarcode(data: string) {
@@ -55,6 +64,9 @@ export default function ScanScreen() {
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [showManualForm, setShowManualForm] = useState(false);
   const [scanMode, setScanMode] = useState<'confirm' | 'continuous'>('confirm');
+  const [scanQueue, setScanQueue] = useState<QueuedScanItem[]>([]);
+  const [showQueueReview, setShowQueueReview] = useState(false);
+  const [pendingQueueTarget, setPendingQueueTarget] = useState<string | null>(null);
   const [notice, setNotice] = useState<ScanNotice>({
     tone: 'neutral',
     message: 'ISBNバーコードを枠内に入れてください。',
@@ -67,6 +79,7 @@ export default function ScanScreen() {
   const [publisher, setPublisher] = useState('');
   const [seriesTitle, setSeriesTitle] = useState('');
   const [volumeNumber, setVolumeNumber] = useState('');
+  const [volumeKind, setVolumeKind] = useState<BookVolumeKind>('main');
   const [isbn, setIsbn] = useState('');
   const [thumbnailUrl, setThumbnailUrl] = useState('');
   const [status, setStatus] = useState<ReadingStatus>('unread');
@@ -91,6 +104,7 @@ export default function ScanScreen() {
     setPublisher(bookInput.publisher ?? '');
     setSeriesTitle(bookInput.seriesTitle);
     setVolumeNumber(bookInput.volumeNumber ? String(bookInput.volumeNumber) : '');
+    setVolumeKind(normalizeVolumeKind(bookInput.volumeKind, bookInput.title));
     setIsbn(bookInput.isbn ?? '');
     setThumbnailUrl(bookInput.thumbnailUrl ?? '');
     setStatus(bookInput.status);
@@ -116,6 +130,7 @@ export default function ScanScreen() {
     publisher: publisher.trim() || undefined,
     seriesTitle: seriesTitle.trim(),
     volumeNumber: volumeNumber ? Number.parseInt(volumeNumber, 10) : undefined,
+    volumeKind,
     thumbnailUrl: thumbnailUrl || undefined,
     purchasePrice: selectedPurchasePrice(),
     listPrice: normalPurchasePrice ?? undefined,
@@ -130,6 +145,7 @@ export default function ScanScreen() {
     setPublisher('');
     setSeriesTitle('');
     setVolumeNumber('');
+    setVolumeKind('main');
     setIsbn('');
     setThumbnailUrl('');
     setStatus('unread');
@@ -143,6 +159,146 @@ export default function ScanScreen() {
     lastScanRef.current = { isbn: '', at: 0 };
     processingRef.current = false;
   };
+
+
+  const queueBookInput = (bookInput: BookInput, scannedIsbn: string) => {
+    const nextIsbn = bookInput.isbn ?? scannedIsbn;
+    setScanQueue((current) => {
+      if (nextIsbn && current.some((item) => normalizeBarcode(item.isbn ?? '') === normalizeBarcode(nextIsbn))) {
+        return current;
+      }
+      return [
+        ...current,
+        {
+          ...bookInput,
+          isbn: nextIsbn,
+          queueId: `${nextIsbn || bookInput.title}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          volumeKind: normalizeVolumeKind(bookInput.volumeKind, bookInput.title),
+          purchaseMode: 'normal',
+          scannedAt: Date.now(),
+          usedPurchasePrice: '',
+        },
+      ];
+    });
+  };
+
+  const openQueueReview = () => {
+    if (scanQueue.length === 0) return;
+    setShowQueueReview(true);
+    setShowConfirmation(false);
+    setShowManualForm(false);
+    setIsScanning(false);
+  };
+
+  const isQueuedIsbn = (targetIsbn: string) =>
+    scanQueue.some((item) => normalizeBarcode(item.isbn ?? '') === normalizeBarcode(targetIsbn));
+
+  const updateQueuedPurchase = (queueId: string, updates: Partial<Pick<QueuedScanItem, 'purchaseMode' | 'usedPurchasePrice'>>) => {
+    setScanQueue((current) => current.map((item) => (item.queueId === queueId ? { ...item, ...updates } : item)));
+  };
+
+  const removeQueuedScan = (queueId: string) => {
+    setScanQueue((current) => current.filter((item) => item.queueId !== queueId));
+  };
+
+  const queuedBookInput = (item: QueuedScanItem): BookInput => {
+    const usedPrice = item.usedPurchasePrice.replace(/[^0-9]/g, '');
+    const purchasePrice = !trackPurchasePrices
+      ? undefined
+      : item.purchaseMode === 'normal'
+        ? item.listPrice ?? undefined
+        : usedPrice
+          ? Number.parseInt(usedPrice, 10)
+          : undefined;
+    return {
+      isbn: item.isbn,
+      title: item.title,
+      author: item.author,
+      publisher: item.publisher,
+      seriesTitle: item.seriesTitle,
+      volumeNumber: item.volumeNumber,
+      volumeKind: item.volumeKind,
+      thumbnailUrl: item.thumbnailUrl,
+      purchasePrice,
+      listPrice: item.listPrice,
+      priceSource: item.priceSource,
+      priceFetchedAt: item.priceFetchedAt,
+      status: item.status,
+    };
+  };
+
+  const addQueuedBooks = async () => {
+    if (scanQueue.length === 0) return;
+    setIsSubmitting(true);
+    let addedCount = 0;
+    let skippedCount = 0;
+    try {
+      for (const item of scanQueue) {
+        const bookInput = queuedBookInput(item);
+        const duplicate = findDuplicateBook(bookInput);
+        const incomingIsbn = normalizeBarcode(bookInput.isbn ?? '');
+        const duplicateIsbn = normalizeBarcode(duplicate?.isbn ?? '');
+        if (incomingIsbn && duplicateIsbn && incomingIsbn === duplicateIsbn) {
+          skippedCount += 1;
+          continue;
+        }
+        await addBook(bookInput, { allowDuplicate: !!duplicate });
+        addedCount += 1;
+      }
+      const targetAfterReview = pendingQueueTarget;
+      setPendingQueueTarget(null);
+      setScanQueue([]);
+      setShowQueueReview(false);
+      setIsScanning(true);
+      setNotice({
+        tone: addedCount > 0 ? 'success' : 'warning',
+        message: skippedCount > 0
+          ? `${addedCount}冊を追加しました。${skippedCount}冊は登録済みのためスキップしました。`
+          : `${addedCount}冊を追加しました。`,
+      });
+      if (targetAfterReview) {
+        router.replace(targetAfterReview as Parameters<typeof router.replace>[0]);
+      } else if (addedCount > 0) {
+        router.replace('/');
+      }
+    } catch (error) {
+      setNotice({
+        tone: 'error',
+        message: error instanceof Error ? error.message : '連続スキャンした本の登録に失敗しました。',
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleScanModeChange = (nextMode: 'confirm' | 'continuous') => {
+    if (scanMode === 'continuous' && nextMode === 'confirm' && scanQueue.length > 0) {
+      setScanMode(nextMode);
+      openQueueReview();
+      return;
+    }
+    setScanMode(nextMode);
+  };
+
+  const handleScanToggle = () => {
+    if (scanMode === 'continuous' && isScanning && scanQueue.length > 0) {
+      openQueueReview();
+      return;
+    }
+    setIsScanning((value) => !value);
+  };
+
+
+  useEffect(() =>
+    registerScanQueueReviewHandler((targetHref) => {
+      if (!isFocused || scanMode !== 'continuous' || scanQueue.length === 0) {
+        return false;
+      }
+      setPendingQueueTarget(targetHref);
+      openQueueReview();
+      return true;
+    }),
+  [isFocused, scanMode, scanQueue.length]);
 
   const performAdd = async (bookInput: BookInput, allowDuplicate = false) => {
     setIsSubmitting(true);
@@ -266,6 +422,11 @@ export default function ScanScreen() {
         return;
       }
 
+      if (scanMode === 'continuous' && isQueuedIsbn(normalized)) {
+        setNotice({ tone: 'warning', message: 'このISBNはすでに一時リストにあります。' });
+        return;
+      }
+
       processingRef.current = true;
       setIsSubmitting(true);
       setNotice({ tone: 'neutral', message: `${normalized} を検索しています。` });
@@ -273,23 +434,15 @@ export default function ScanScreen() {
       try {
         const bookInput = await lookupBookByIsbn(normalized);
         if (bookInput) {
-          applyLookupResult({ ...bookInput, isbn: bookInput.isbn ?? normalized });
           if (scanMode === 'continuous') {
+            queueBookInput({ ...bookInput, isbn: bookInput.isbn ?? normalized }, normalized);
             setShowConfirmation(false);
-            try {
-              const book = await addBook({ ...bookInput, isbn: bookInput.isbn ?? normalized });
-              resetForm();
-              setNotice({ tone: 'success', message: `${book.title} を追加しました。次の本を読み取れます。` });
-            } catch (error) {
-              setNotice({
-                tone: 'warning',
-                message:
-                  error instanceof Error
-                    ? `書籍は見つかりましたが登録できませんでした: ${error.message}`
-                    : '書籍は見つかりましたが登録できませんでした。ログイン状態を確認してください。',
-              });
-            }
+            setNotice({
+              tone: 'success',
+              message: `${bookInput.title} を一時リストに追加しました。続けてスキャンできます。`,
+            });
           } else {
+            applyLookupResult({ ...bookInput, isbn: bookInput.isbn ?? normalized });
             setIsScanning(false);
             setNotice({ tone: 'success', message: `${bookInput.title} を確認してから追加してください。` });
           }
@@ -317,7 +470,7 @@ export default function ScanScreen() {
         }, 1200);
       }
     },
-    [addBook, isScanning, scanMode],
+    [isScanning, scanMode, scanQueue],
   );
 
   const reviewManual = () => {
@@ -336,7 +489,7 @@ export default function ScanScreen() {
     setNotice({ tone: 'neutral', message: '内容を確認して追加してください。' });
   };
 
-  const cameraVisible = isFocused && !showConfirmation;
+  const cameraVisible = isFocused && !showConfirmation && !showQueueReview;
 
   const noticeColor =
     notice.tone === 'success'
@@ -384,7 +537,7 @@ export default function ScanScreen() {
           <Text style={[styles.noticeText, { color: noticeTextColor }]}>{notice.message}</Text>
         </View>
 
-        {!showConfirmation && <View style={styles.scanControls}>
+        {!showConfirmation && !showQueueReview && <View style={styles.scanControls}>
           <View style={[styles.modeSwitch, { backgroundColor: colors.elevated }]}>
             {[
               ['confirm', '確認'],
@@ -392,7 +545,7 @@ export default function ScanScreen() {
             ].map(([value, label]) => (
               <Pressable
                 key={value}
-                onPress={() => setScanMode(value as 'confirm' | 'continuous')}
+                onPress={() => handleScanModeChange(value as 'confirm' | 'continuous')}
                 style={[styles.modeButton, scanMode === value && { backgroundColor: colors.text }]}
               >
                 <Text style={[styles.modeText, { color: scanMode === value ? colors.background : colors.muted }]}>
@@ -403,7 +556,7 @@ export default function ScanScreen() {
           </View>
           <Pressable
             disabled={isSubmitting}
-            onPress={() => setIsScanning((value) => !value)}
+            onPress={handleScanToggle}
             style={[
               styles.primaryButton,
               { backgroundColor: isScanning ? colors.primary : colors.text },
@@ -415,6 +568,76 @@ export default function ScanScreen() {
             </Text>
           </Pressable>
         </View>}
+
+
+        {showQueueReview && (
+          <View style={[styles.queueReview, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <View style={styles.queueHeaderRow}>
+              <View style={styles.queueTitleBlock}>
+                <Text style={[styles.sectionTitle, { color: colors.text }]}>連続スキャンの確認</Text>
+                <Text style={[styles.queueCopy, { color: colors.muted }]}>読み取った本を確認してからまとめて追加します。</Text>
+              </View>
+              <View style={[styles.queueCountPill, { backgroundColor: colors.elevated }]}>
+                <Text style={[styles.queueCountText, { color: colors.text }]}>{scanQueue.length}冊</Text>
+              </View>
+            </View>
+            {scanQueue.map((item, index) => (
+              <View key={item.queueId} style={[styles.queueItem, { borderColor: colors.border }]}>
+                <BookCover
+                  thumbnailUrl={item.thumbnailUrl}
+                  isbn={item.isbn}
+                  style={styles.queueCover}
+                  placeholderText="No Cover"
+                />
+                <View style={styles.queueItemBody}>
+                  <Text style={[styles.queueItemTitle, { color: colors.text }]} numberOfLines={2}>
+                    {index + 1}. {item.title}
+                  </Text>
+                  <Text style={[styles.queueItemMeta, { color: colors.muted }]} numberOfLines={1}>
+                    {item.seriesTitle}{item.volumeNumber ? ` / ${item.volumeNumber}巻` : ''}
+                  </Text>
+                  {!!item.isbn && <Text style={[styles.queueItemMeta, { color: colors.muted }]}>ISBN {item.isbn}</Text>}
+                  {trackPurchasePrices && (
+                    <PurchasePriceControls
+                      colors={colors}
+                      mode={item.purchaseMode}
+                      normalPrice={typeof item.listPrice === 'number' ? item.listPrice : null}
+                      onModeChange={(mode) => updateQueuedPurchase(item.queueId, { purchaseMode: mode })}
+                      onUsedPriceChange={(value) => updateQueuedPurchase(item.queueId, { usedPurchasePrice: value })}
+                      usedPrice={item.usedPurchasePrice}
+                    />
+                  )}
+                </View>
+                <Pressable
+                  accessibilityLabel={`${item.title}を一時リストから削除`}
+                  onPress={() => removeQueuedScan(item.queueId)}
+                  style={[styles.queueRemoveButton, { borderColor: colors.border }]}
+                >
+                  <Text style={[styles.queueRemoveText, { color: colors.danger }]}>削除</Text>
+                </Pressable>
+              </View>
+            ))}
+            <View style={styles.queueActions}>
+              <Pressable
+                onPress={() => {
+                  setPendingQueueTarget(null);
+                  setShowQueueReview(false);
+                  setIsScanning(true);
+                }}
+                style={[styles.secondaryButton, { borderColor: colors.border }]}
+              >
+                <Text style={[styles.secondaryButtonText, { color: colors.text }]}>続けてスキャン</Text>
+              </Pressable>
+              <Pressable
+                disabled={isSubmitting || scanQueue.length === 0}
+                onPress={() => void addQueuedBooks()}
+                style={[styles.confirmAddButton, { backgroundColor: colors.primary }, (isSubmitting || scanQueue.length === 0) && styles.disabled]}
+              >
+                <Text style={styles.primaryButtonText}>{isSubmitting ? '追加中' : 'まとめて追加'}</Text>
+              </Pressable>
+            </View>
+          </View>
+        )}
 
         {showConfirmation && (
           <View style={[styles.confirmation, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -468,7 +691,7 @@ export default function ScanScreen() {
           </View>
         )}
 
-        {!showConfirmation && (
+        {!showConfirmation && !showQueueReview && (
           <View style={[styles.manualToggleRow, { borderTopColor: colors.border }]}>
             <View style={styles.manualToggleText}>
               <Text style={[styles.sectionTitle, { color: colors.text }]}>手動登録</Text>
@@ -485,7 +708,7 @@ export default function ScanScreen() {
           </View>
         )}
 
-        {!showConfirmation && showManualForm && <View style={styles.form}>
+        {!showConfirmation && !showQueueReview && showManualForm && <View style={styles.form}>
           <Text style={[styles.sectionTitle, { color: colors.text }]}>手動登録</Text>
           <TextInput
             autoCorrect={false}
@@ -530,6 +753,7 @@ export default function ScanScreen() {
               <Text style={styles.lookupButtonText}>検索</Text>
             </Pressable>
           </View>
+          <VolumeKindControls colors={colors} value={volumeKind} onChange={setVolumeKind} />
           <TextInput
             autoCorrect={false}
             value={author}
@@ -582,6 +806,38 @@ export default function ScanScreen() {
   );
 }
 
+
+
+function VolumeKindControls({
+  colors,
+  onChange,
+  value,
+}: {
+  colors: ReturnType<typeof useAppTheme>['colors'];
+  onChange: (value: BookVolumeKind) => void;
+  value: BookVolumeKind;
+}) {
+  return (
+    <View style={styles.volumeKindBox}>
+      <Text style={[styles.purchaseLabel, { color: colors.text }]}>巻の扱い</Text>
+      <View style={[styles.purchaseModeRow, { backgroundColor: colors.elevated }]}>
+        {([
+          ['main', '通常巻'],
+          ['extra', '関連巻'],
+        ] as const).map(([optionValue, label]) => (
+          <Pressable
+            key={optionValue}
+            onPress={() => onChange(optionValue)}
+            style={[styles.purchaseModeButton, value === optionValue && { backgroundColor: colors.text }]}
+          >
+            <Text style={[styles.purchaseModeText, { color: value === optionValue ? colors.background : colors.muted }]}>{label}</Text>
+          </Pressable>
+        ))}
+      </View>
+      <Text style={[styles.purchaseHint, { color: colors.muted }]}>関連巻は同じシリーズに表示されますが、刊行数や抜け巻には含めません。</Text>
+    </View>
+  );
+}
 
 function PurchasePriceControls({
   colors,
@@ -679,6 +935,39 @@ const styles = StyleSheet.create({
   },
   manualToggleText: { flex: 1 },
   manualToggleCopy: { fontSize: 12, lineHeight: 17, marginTop: -6 },
+  queueReview: {
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 12,
+    padding: 14,
+  },
+  queueHeaderRow: { alignItems: 'flex-start', flexDirection: 'row', gap: 12, justifyContent: 'space-between' },
+  queueTitleBlock: { flex: 1 },
+  queueCopy: { fontSize: 12, lineHeight: 17, marginTop: -6 },
+  queueCountPill: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5 },
+  queueCountText: { fontSize: 12, fontWeight: '900' },
+  queueItem: {
+    alignItems: 'flex-start',
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 10,
+    padding: 10,
+  },
+  queueCover: { borderRadius: 4, height: 92, width: 62 },
+  queueItemBody: { flex: 1, minWidth: 0 },
+  queueItemTitle: { fontSize: 15, fontWeight: '900', lineHeight: 20 },
+  queueItemMeta: { fontSize: 12, lineHeight: 17, marginTop: 4 },
+  queueRemoveButton: {
+    alignItems: 'center',
+    borderRadius: 8,
+    borderWidth: 1,
+    height: 34,
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+  },
+  queueRemoveText: { fontSize: 12, fontWeight: '900' },
+  queueActions: { flexDirection: 'row', gap: 8, marginTop: 2 },
   confirmation: {
     alignItems: 'flex-start',
     borderRadius: 8,
@@ -698,6 +987,7 @@ const styles = StyleSheet.create({
   confirmationMeta: { fontSize: 14, lineHeight: 20, marginTop: 6 },
   confirmationIsbn: { fontSize: 12, marginTop: 10 },
   confirmationActions: { flexDirection: 'row', gap: 8, marginTop: 16 },
+  volumeKindBox: { gap: 8, marginTop: 12 },
   purchaseBox: { gap: 8, marginTop: 12 },
   purchaseLabel: { fontSize: 13, fontWeight: '800' },
   purchaseModeRow: { borderRadius: 8, flexDirection: 'row', padding: 4 },

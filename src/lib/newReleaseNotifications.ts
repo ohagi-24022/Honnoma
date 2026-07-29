@@ -236,6 +236,7 @@ export async function getNewReleaseSubscriptions(userId: string) {
 export async function syncNewReleaseSubscriptions(userId: string, seriesGroups: SeriesGroup[]) {
   if (!supabase) return;
   const subscriptions = buildSeriesSubscriptions(seriesGroups);
+  if (subscriptions.length === 0) return;
   const existingSubscriptions = await getNewReleaseSubscriptions(userId);
   const existingByKey = new Map(
     existingSubscriptions.map((subscription) => [subscription.seriesKey, subscription]),

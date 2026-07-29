@@ -3,12 +3,20 @@ import { Tabs } from 'expo-router';
 import { Platform, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { requestScanQueueReview } from '../../src/lib/scanQueueReviewBridge';
 import { useAppTheme } from '../../src/store/ThemeContext';
 
 export default function TabLayout() {
   const { colors } = useAppTheme();
   const insets = useSafeAreaInsets();
   const bottomInset = Math.max(insets.bottom, Platform.OS === 'android' ? 12 : 0);
+  const interceptTabPress = (targetHref: string) => ({
+    tabPress: (event: { preventDefault: () => void }) => {
+      if (requestScanQueueReview(targetHref)) {
+        event.preventDefault();
+      }
+    },
+  });
 
   return (
     <Tabs
@@ -31,6 +39,7 @@ export default function TabLayout() {
     >
       <Tabs.Screen
         name="index"
+        listeners={interceptTabPress('/')}
         options={{
           title: '本棚',
           tabBarLabel: '本棚',
@@ -41,6 +50,7 @@ export default function TabLayout() {
       />
       <Tabs.Screen
         name="wishlist"
+        listeners={interceptTabPress('/(tabs)/wishlist')}
         options={{
           title: '欲しい',
           tabBarLabel: '欲しい',
@@ -96,6 +106,7 @@ export default function TabLayout() {
       />
       <Tabs.Screen
         name="ranking"
+        listeners={interceptTabPress('/(tabs)/ranking')}
         options={{
           title: '順位',
           tabBarLabel: '順位',
@@ -106,6 +117,7 @@ export default function TabLayout() {
       />
       <Tabs.Screen
         name="settings"
+        listeners={interceptTabPress('/(tabs)/settings')}
         options={{
           title: '設定',
           tabBarLabel: '設定',

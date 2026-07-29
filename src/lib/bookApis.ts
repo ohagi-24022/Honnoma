@@ -2,6 +2,7 @@ import { Book, BookInput } from '../types';
 import { normalizeAuthor } from './bookMetadata';
 import { env } from './env';
 import { normalizeSeriesKey, parseSeriesTitle } from './series';
+import { normalizeVolumeKind } from './volumeKind';
 import { supabase } from './supabase';
 
 type GoogleBooksResponse = {
@@ -11,6 +12,7 @@ type GoogleBooksResponse = {
       title?: string;
       subtitle?: string;
       authors?: string[];
+      publishedDate?: string;
       publisher?: string;
       description?: string;
       imageLinks?: {
@@ -42,6 +44,7 @@ type OpenBdResponse = Array<{
     author?: string;
     publisher?: string;
     cover?: string;
+    pubdate?: string;
   };
   onix?: {
     CollateralDetail?: {
@@ -69,6 +72,7 @@ type RakutenBooksResponse = {
   Items?: Array<{
     Item?: {
       title?: string;
+      titleKana?: string;
       subTitle?: string;
       author?: string;
       publisherName?: string;
@@ -78,6 +82,7 @@ type RakutenBooksResponse = {
       mediumImageUrl?: string;
       smallImageUrl?: string;
       itemPrice?: number;
+      salesDate?: string;
     };
   }>;
 };
@@ -150,31 +155,149 @@ export type SeriesSearchCandidate = {
   volumeNumber?: number;
 };
 
+
 const SERIES_COMPLETION_OVERRIDES: Record<string, number> = {
-  [normalizeSeriesKey('???????????')]: 3,
+  [normalizeSeriesKey('\u30e9\u30a4\u30d0\u30fc\u30c0\u30a4\u30d0\u30fc\u30e9\u30d0\u30fc')]: 3,
   [normalizeSeriesKey('LIVER DIVER LOVER')]: 3,
-  [normalizeSeriesKey('???????????=LIVER DIVER LOVER')]: 3,
+  [normalizeSeriesKey('\u30e9\u30a4\u30d0\u30fc\u30c0\u30a4\u30d0\u30fc\u30e9\u30d0\u30fc=LIVER DIVER LOVER')]: 3,
 };
+
+const SERIES_ONGOING_OVERRIDES = new Set([
+  normalizeSeriesKey('\u30c8\u30cb\u30ab\u30af\u30ab\u30ef\u30a4\u30a4'),
+]);
+
+const SERIES_SEARCH_ALIASES: Record<string, string[]> = {
+  [normalizeSeriesKey('\u30ef\u30fc\u30eb\u30c9\u30c8\u30ea\u30ac\u30fc')]: ['WORLD TRIGGER'],
+  [normalizeSeriesKey('\u50d5\u306e\u3044\u3051\u305a\u306a\u5a5a\u7d04\u8005')]: ['My fiance is so mean!'],
+};
+
+const KNOWN_BOOK_FALLBACKS: BookInput[] = [
+  {
+    isbn: '9784048996495',
+    title: '\u50d5\u306e\u3044\u3051\u305a\u306a\u5a5a\u7d04\u8005 1',
+    seriesTitle: '\u50d5\u306e\u3044\u3051\u305a\u306a\u5a5a\u7d04\u8005',
+    volumeNumber: 1,
+    volumeKind: 'main',
+    author: '\u51ac\u8c37\u30ea\u30af',
+    publisher: '\u30d6\u30b7\u30ed\u30fc\u30c9\u30ef\u30fc\u30af\u30b9',
+    publishedDate: '2024-11-08',
+    listPrice: 748,
+    priceSource: 'manual',
+    priceFetchedAt: '2026-07-29T00:00:00.000Z',
+    status: 'unread',
+  },
+  {
+    isbn: '9784048996808',
+    title: '\u50d5\u306e\u3044\u3051\u305a\u306a\u5a5a\u7d04\u8005 2',
+    seriesTitle: '\u50d5\u306e\u3044\u3051\u305a\u306a\u5a5a\u7d04\u8005',
+    volumeNumber: 2,
+    volumeKind: 'main',
+    author: '\u51ac\u8c37\u30ea\u30af',
+    publisher: '\u30d6\u30b7\u30ed\u30fc\u30c9\u30ef\u30fc\u30af\u30b9',
+    publishedDate: '2025-05-08',
+    listPrice: 792,
+    priceSource: 'manual',
+    priceFetchedAt: '2026-07-29T00:00:00.000Z',
+    status: 'unread',
+  },
+  {
+    isbn: '9784048997812',
+    title: '\u50d5\u306e\u3044\u3051\u305a\u306a\u5a5a\u7d04\u8005 3',
+    seriesTitle: '\u50d5\u306e\u3044\u3051\u305a\u306a\u5a5a\u7d04\u8005',
+    volumeNumber: 3,
+    volumeKind: 'main',
+    author: '\u51ac\u8c37\u30ea\u30af',
+    publisher: '\u30d6\u30b7\u30ed\u30fc\u30c9\u30ef\u30fc\u30af\u30b9',
+    publishedDate: '2025-11-08',
+    listPrice: 792,
+    priceSource: 'manual',
+    priceFetchedAt: '2026-07-29T00:00:00.000Z',
+    status: 'unread',
+  },
+  {
+    isbn: '9784049211320',
+    title: '\u50d5\u306e\u3044\u3051\u305a\u306a\u5a5a\u7d04\u8005 4',
+    seriesTitle: '\u50d5\u306e\u3044\u3051\u305a\u306a\u5a5a\u7d04\u8005',
+    volumeNumber: 4,
+    volumeKind: 'main',
+    author: '\u51ac\u8c37\u30ea\u30af',
+    publisher: '\u30d6\u30b7\u30ed\u30fc\u30c9\u30ef\u30fc\u30af\u30b9',
+    publishedDate: '2026-05-08',
+    listPrice: 858,
+    priceSource: 'manual',
+    priceFetchedAt: '2026-07-29T00:00:00.000Z',
+    status: 'unread',
+  },
+];
+
+function cloneKnownBookFallback(book: BookInput): BookInput {
+  return { ...book };
+}
+
+function lookupKnownBookFallbackByIsbn(isbn: string) {
+  const normalizedIsbn = normalizeIsbn(isbn);
+  const fallback = KNOWN_BOOK_FALLBACKS.find((book) => isSameIsbn(book.isbn, normalizedIsbn));
+  return fallback ? cloneKnownBookFallback(fallback) : null;
+}
+
+function extractKnownFallbackVolume(title: string, parsedVolume?: number) {
+  if (parsedVolume) return parsedVolume;
+  const normalizedTitle = title.normalize('NFKC').trim();
+  const trailingVolume = normalizedTitle.match(/(?:^|[^0-9])(\d{1,3})$/);
+  return trailingVolume ? Number.parseInt(trailingVolume[1], 10) : undefined;
+}
+
+function lookupKnownBookFallbackByTitle(title: string) {
+  const parsed = parseSeriesTitle(title);
+  const aliases = buildSeriesTitleSearchAliases(parsed.seriesTitle || title);
+  const targetKeys = [parsed.seriesTitle, title, ...aliases]
+    .map((candidate) => normalizeSeriesKey(candidate))
+    .filter(Boolean);
+  const targetVolume = extractKnownFallbackVolume(title, parsed.volumeNumber);
+  const fallback = KNOWN_BOOK_FALLBACKS.find((book) => {
+    const knownKeys = buildSeriesTitleSearchAliases(book.seriesTitle).map((candidate) => normalizeSeriesKey(candidate));
+    const matchesSeries = knownKeys.some((knownKey) =>
+      targetKeys.some((targetKey) => isSeriesKeyCandidate(knownKey, targetKey) || isSeriesKeyCandidate(targetKey, knownKey)),
+    );
+    if (!matchesSeries) return false;
+    return !targetVolume || book.volumeNumber === targetVolume;
+  });
+  return fallback ? cloneKnownBookFallback(fallback) : null;
+}
+
+function getSeriesOngoingOverride(seriesTitle: string) {
+  const candidateKeys = [normalizeSeriesKey(seriesTitle), ...buildSeriesTitleSearchAliases(seriesTitle).map(normalizeSeriesKey)]
+    .filter(Boolean);
+  return candidateKeys.some((candidateKey) =>
+    [...SERIES_ONGOING_OVERRIDES].some(
+      (ongoingKey) => candidateKey === ongoingKey || candidateKey.includes(ongoingKey) || ongoingKey.includes(candidateKey),
+    ),
+  );
+}
 
 function getSeriesCompletionOverride(seriesTitle: string, latestVolume: number | null) {
   if (!latestVolume) return false;
   const candidateKeys = [normalizeSeriesKey(seriesTitle), ...buildSeriesTitleSearchAliases(seriesTitle).map(normalizeSeriesKey)]
     .filter(Boolean);
+  const overrideMatch = candidateKeys.some((candidateKey) =>
+    Object.entries(SERIES_COMPLETION_OVERRIDES).some(
+      ([overrideKey, overrideLatestVolume]) =>
+        overrideLatestVolume === latestVolume &&
+        (candidateKey === overrideKey || candidateKey.includes(overrideKey) || overrideKey.includes(candidateKey)),
+    ),
+  );
+  if (overrideMatch) return true;
+
   if (latestVolume === 3) {
     const joinedKey = candidateKeys.join('');
-    if (joinedKey.includes(normalizeSeriesKey('????????')) || joinedKey.includes('liverdiverlover')) {
+    if (joinedKey.includes(normalizeSeriesKey('\u30e9\u30a4\u30d0\u30fc\u30c0\u30a4\u30d0\u30fc')) || joinedKey.includes('liverdiverlover')) {
       return true;
     }
   }
 
-  return candidateKeys.some((candidateKey) =>
-    Object.entries(SERIES_COMPLETION_OVERRIDES).some(
-      ([overrideKey, completedVolume]) =>
-        completedVolume === latestVolume &&
-        (candidateKey === overrideKey || candidateKey.includes(overrideKey) || overrideKey.includes(candidateKey)),
-    ),
-  );
+  return candidateKeys.some((candidateKey) => SERIES_COMPLETION_OVERRIDES[candidateKey] === latestVolume);
 }
+
 
 function normalizeIsbn(isbn: string) {
   return isbn.replace(/[^0-9X]/gi, '').toUpperCase();
@@ -224,6 +347,55 @@ function withIsbnCoverFallback(book: BookInput | null, isbn?: string): BookInput
   return book;
 }
 
+function decodeXmlText(value?: string) {
+  if (!value) return undefined;
+  const withoutCdata = value.replace(/^<!\[CDATA\[/, '').replace(/\]\]>$/, '');
+  const withoutTags = withoutCdata.replace(/<[^>]+>/g, '');
+  return withoutTags
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCharCode(Number.parseInt(code, 16)))
+    .replace(/&#([0-9]+);/g, (_, code) => String.fromCharCode(Number.parseInt(code, 10)))
+    .normalize('NFKC')
+    .trim() || undefined;
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function xmlTagValues(xml: string, tagName: string) {
+  const escapedTag = escapeRegExp(tagName);
+  const regex = new RegExp(`<${escapedTag}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/${escapedTag}>`, 'gi');
+  const values: string[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(xml)) !== null) {
+    const value = decodeXmlText(match[1]);
+    if (value) values.push(value);
+  }
+  return values;
+}
+
+function firstXmlTag(xml: string, ...tagNames: string[]) {
+  for (const tagName of tagNames) {
+    const value = xmlTagValues(xml, tagName)[0];
+    if (value) return value;
+  }
+  return undefined;
+}
+
+function normalizeNdlTitle(title: string) {
+  const normalized = title.normalize('NFKC').trim();
+  const japaneseTitle = normalized
+    .split(/[=\uff1d]/g)
+    .map((part) => part.trim())
+    .find((part) => /[\u3040-\u30ff\u3400-\u9fff]/.test(part));
+  return japaneseTitle || normalized;
+}
+
 function normalizeComparableText(value?: string) {
   return value
     ?.toLowerCase()
@@ -244,9 +416,12 @@ function mergeBookMetadata(primary: BookInput, fallback: BookInput | null): Book
   return {
     ...primary,
     seriesTitle: primary.seriesTitle || fallback.seriesTitle,
+    seriesReading: primary.seriesReading ?? fallback.seriesReading,
     volumeNumber: primary.volumeNumber ?? fallback.volumeNumber,
+    volumeKind: primary.volumeKind ?? fallback.volumeKind,
     author: normalizeAuthor(primary.author ?? fallback.author),
     publisher: primary.publisher ?? fallback.publisher,
+    publishedDate: primary.publishedDate ?? fallback.publishedDate,
     thumbnailUrl: primary.thumbnailUrl ?? fallback.thumbnailUrl,
     listPrice: primary.listPrice ?? fallback.listPrice,
     priceSource: primary.priceSource ?? fallback.priceSource,
@@ -319,10 +494,14 @@ function rakutenItemToBookInput(item: RakutenItem, fallbackIsbn?: string): BookI
   return {
     isbn: item.isbn ?? fallbackIsbn,
     title: item.title ?? '',
+    titleReading: item.titleKana,
     seriesTitle: parsed.seriesTitle,
+    seriesReading: item.titleKana ? parseSeriesTitle(item.titleKana).seriesTitle : undefined,
     volumeNumber: parsed.volumeNumber,
+    volumeKind: normalizeVolumeKind(undefined, item.title),
     author: normalizeAuthor(item.author),
     publisher: item.publisherName,
+    publishedDate: item.salesDate,
     thumbnailUrl: firstCoverUrl(item.largeImageUrl, item.mediumImageUrl, item.smallImageUrl),
     listPrice: typeof item.itemPrice === 'number' ? item.itemPrice : undefined,
     priceSource: typeof item.itemPrice === 'number' ? 'rakuten' : undefined,
@@ -388,33 +567,37 @@ function getRakutenConfigDebugEntry(query: string): BookLookupDebugEntry {
 function buildSeriesTitleSearchAliases(seriesTitle: string) {
   const normalized = seriesTitle.normalize('NFKC').trim();
   const parts = normalized
-    .split(/[=?/??|]/g)
+    .split(/[=\uff1d/\uff0f\uff5c|]/g)
     .map((part) => part.trim())
     .filter(Boolean);
   const withoutSubtitle = normalized
-    .replace(/[=?/??|].*$/, '')
-    .replace(/\s+[-??]\s+.*$/, '')
+    .replace(/[=\uff1d/\uff0f\uff5c|].*$/, '')
+    .replace(/\s+[-\u30fc\u2013\u2014:\uff1a]\s+.*$/, '')
     .trim();
-  const noSpaceVariants = [normalized, withoutSubtitle, ...parts]
-    .map((part) => part.replace(/[\s?]+/g, ''))
+  const baseAliases = [normalized, withoutSubtitle, ...parts].filter(Boolean);
+  const knownAliases = baseAliases.flatMap((alias) => SERIES_SEARCH_ALIASES[normalizeSeriesKey(alias)] ?? []);
+  const noSpaceVariants = [...baseAliases, ...knownAliases]
+    .map((part) => part.replace(/[\s\u3000]+/g, ''))
     .filter(Boolean);
 
   return [
-    ...new Set([normalized, withoutSubtitle, ...parts, ...noSpaceVariants].filter((query) => query.length >= 2)),
+    ...new Set([normalized, withoutSubtitle, ...parts, ...knownAliases, ...noSpaceVariants].filter((query) => query.length >= 2)),
   ];
 }
 
 function buildVolumeTitleSearchQueries(book: Pick<Book, 'title' | 'seriesTitle' | 'volumeNumber'>) {
-  const aliases = buildSeriesTitleSearchAliases(book.seriesTitle || book.title);
-  const volumeQueries = book.volumeNumber
+  const parsed = parseSeriesTitle(book.seriesTitle || book.title);
+  const volumeNumber = book.volumeNumber ?? parsed.volumeNumber;
+  const aliases = buildSeriesTitleSearchAliases(parsed.seriesTitle || book.seriesTitle || book.title);
+  const volumeQueries = volumeNumber
     ? aliases.flatMap((seriesTitle) => [
-        `${seriesTitle} ${book.volumeNumber}\u5dfb`,
-        `${seriesTitle} \u7b2c${book.volumeNumber}\u5dfb`,
-        `${seriesTitle} ${book.volumeNumber}`,
+        `${seriesTitle} ${volumeNumber}\u5dfb`,
+        `${seriesTitle} \u7b2c${volumeNumber}\u5dfb`,
+        `${seriesTitle} ${volumeNumber}`,
       ])
     : [];
 
-  return [...new Set([book.title, ...volumeQueries, ...aliases].filter(Boolean))].slice(0, 8);
+  return [...new Set([...volumeQueries, book.title, ...aliases].filter(Boolean))].slice(0, 8);
 }
 
 function buildTitleQueries(title: string) {
@@ -499,9 +682,51 @@ async function lookupOpenBd(isbn: string): Promise<BookInput | null> {
     title,
     seriesTitle: collectionTitle ?? parsed.seriesTitle,
     volumeNumber: parsed.volumeNumber,
+    volumeKind: normalizeVolumeKind(undefined, title),
     author: normalizeAuthor(item.summary?.author),
     publisher: item.summary?.publisher,
+    publishedDate: item.summary?.pubdate,
     thumbnailUrl: normalizeImageUrl(item.summary?.cover),
+    status: 'unread',
+  };
+}
+
+async function lookupNdlByIsbn(isbn: string): Promise<BookInput | null> {
+  const normalizedIsbn = normalizeIsbn(isbn);
+  const params = new URLSearchParams({ isbn: normalizedIsbn });
+  const response = await fetchWithTimeout(`https://ndlsearch.ndl.go.jp/api/opensearch?${params.toString()}`);
+  if (!response.ok) throw new Error(`NDL Search responded with ${response.status}`);
+
+  const xml = await response.text();
+  const item = xml.match(/<item\b[\s\S]*?<\/item>/i)?.[0];
+  if (!item) return null;
+
+  const rawTitle = firstXmlTag(item, 'title', 'dc:title');
+  if (!rawTitle) return null;
+
+  const shortenedTitle = normalizeNdlTitle(rawTitle);
+  const aliasedParsed = parseSeriesTitle(rawTitle);
+  const shortenedParsed = parseSeriesTitle(shortenedTitle);
+  const volumeNumber = shortenedParsed.volumeNumber ?? aliasedParsed.volumeNumber;
+  const seriesTitle = shortenedParsed.seriesTitle || aliasedParsed.seriesTitle;
+  const title = volumeNumber && !shortenedParsed.volumeNumber ? `${seriesTitle} ${volumeNumber}` : shortenedTitle;
+  const identifiers = [
+    ...xmlTagValues(item, 'dc:identifier'),
+    ...xmlTagValues(item, 'dcndl:ISBN'),
+  ];
+  const itemIsbn = identifiers
+    .map((identifier) => normalizeIsbn(identifier))
+    .find((identifier) => isSameIsbn(identifier, normalizedIsbn));
+
+  return {
+    isbn: itemIsbn ?? normalizedIsbn,
+    title,
+    seriesTitle,
+    volumeNumber,
+    volumeKind: normalizeVolumeKind(undefined, title),
+    author: normalizeAuthor(firstXmlTag(item, 'dc:creator', 'author')),
+    publisher: firstXmlTag(item, 'dc:publisher', 'publisher'),
+    publishedDate: firstXmlTag(item, 'dc:date', 'pubDate'),
     status: 'unread',
   };
 }
@@ -694,13 +919,17 @@ function isSeriesKeyCandidate(candidateKey: string, expectedKey: string) {
 
 function textHasCompletionHint(text: string, latestVolume: number | null) {
   const normalizedText = text.normalize('NFKC');
-  if (/\u5b8c\u7d50|\u5b8c\u7d50\u7248|\u5b8c\u7d50\u30bb\u30c3\u30c8|\u6700\u7d42\u5dfb|\u6700\u7d42\u56de|\u5168\u5dfb|\u5168\u5dfb\u30bb\u30c3\u30c8|\u5168\s*\d+\s*\u5dfb|\d+\s*\u5dfb\s*\u5b8c\u7d50|\u5168\s*\d+\s*\u5dfb\s*\u5b8c\u7d50|\s\u5b8c(?:$|[\s\uff08()])/.test(normalizedText)) return true;
+  if (/\u672a\u5b8c\u7d50|\u975e\u5b8c\u7d50/.test(normalizedText)) return false;
+  if (/\u5b8c\u7d50\u7248|\u5b8c\u7d50\u30bb\u30c3\u30c8|\u6700\u7d42\u5dfb|\u6700\u7d42\u56de|\u5b8c\u7d50/.test(normalizedText)) return true;
   if (!latestVolume) return false;
-  const allVolumeMatch = normalizedText.match(/\u5168\s*(\d+)\s*\u5dfb/);
-  if (allVolumeMatch && Number(allVolumeMatch[1]) === latestVolume) return true;
+
   const completedVolumeMatch = normalizedText.match(/(\d+)\s*\u5dfb\s*\u5b8c\u7d50/);
-  return !!completedVolumeMatch && Number(completedVolumeMatch[1]) === latestVolume;
+  if (completedVolumeMatch && Number(completedVolumeMatch[1]) === latestVolume) return true;
+
+  const allCompletedVolumeMatch = normalizedText.match(/\u5168\s*(\d+)\s*\u5dfb\s*\u5b8c\u7d50/);
+  return !!allCompletedVolumeMatch && Number(allCompletedVolumeMatch[1]) === latestVolume;
 }
+
 
 function findSeriesCompletionFromTitles(titles: Array<string | undefined>, latestVolume: number | null) {
   return titles.some((title) => (title ? textHasCompletionHint(title, latestVolume) : false));
@@ -738,16 +967,14 @@ async function lookupRakutenCompletionHint(seriesTitle: string, latestVolume: nu
   if (!supabase || !latestVolume) return false;
 
   const path = 'BooksTotal/Search/20170404';
-  const queries = buildSeriesTitleSearchAliases(seriesTitle).flatMap((title) => [
-    `${title} \u5b8c\u7d50`,
-    `${title} \u5b8c`,
-    `${title} \u5168\u5dfb`,
-    `${title} \u5168${latestVolume}\u5dfb`,
-    `${title} ${latestVolume}\u5dfb \u5b8c\u7d50`,
-    `${title} \u5168${latestVolume}\u5dfb \u5b8c\u7d50`,
-    `${title} ${latestVolume}\u5dfb\u5b8c\u7d50`,
-    `${title} \u6700\u7d42\u5dfb`,
-  ]);
+  const queries = buildSeriesTitleSearchAliases(seriesTitle)
+    .slice(0, 2)
+    .flatMap((title) => [
+      `${title} \u5b8c\u7d50`,
+      `${title} ${latestVolume}\u5dfb \u5b8c\u7d50`,
+      `${title} \u5168${latestVolume}\u5dfb \u5b8c\u7d50`,
+      `${title} \u6700\u7d42\u5dfb`,
+    ]);
 
   for (const query of queries) {
     const searchParams = new URLSearchParams({
@@ -772,19 +999,18 @@ async function lookupRakutenCompletionHint(seriesTitle: string, latestVolume: nu
   return false;
 }
 
+
 async function lookupGoogleCompletionHint(seriesTitle: string, latestVolume: number | null) {
   if (!latestVolume) return false;
 
-  const queries = buildSeriesTitleSearchAliases(seriesTitle).flatMap((title) => [
-    `intitle:${title} \u5b8c\u7d50`,
-    `intitle:${title} \u5b8c`,
-    `intitle:${title} \u5168\u5dfb`,
-    `intitle:${title} \u5168${latestVolume}\u5dfb`,
-    `${title} ${latestVolume}\u5dfb \u5b8c\u7d50`,
-    `${title} \u5168${latestVolume}\u5dfb \u5b8c\u7d50`,
-    `${title} ${latestVolume}\u5dfb\u5b8c\u7d50`,
-    `intitle:${title} \u6700\u7d42\u5dfb`,
-  ]);
+  const queries = buildSeriesTitleSearchAliases(seriesTitle)
+    .slice(0, 2)
+    .flatMap((title) => [
+      `intitle:${title} \u5b8c\u7d50`,
+      `${title} ${latestVolume}\u5dfb \u5b8c\u7d50`,
+      `${title} \u5168${latestVolume}\u5dfb \u5b8c\u7d50`,
+      `intitle:${title} \u6700\u7d42\u5dfb`,
+    ]);
 
   for (const query of queries) {
     const params = new URLSearchParams({
@@ -811,6 +1037,7 @@ async function lookupGoogleCompletionHint(seriesTitle: string, latestVolume: num
   return false;
 }
 
+
 async function lookupSeriesCompletionHint(seriesTitle: string, latestVolume: number | null) {
   try {
     if (await lookupRakutenCompletionHint(seriesTitle, latestVolume)) return true;
@@ -827,13 +1054,12 @@ async function lookupSeriesCompletionHint(seriesTitle: string, latestVolume: num
 async function lookupLatestRakutenSeriesVolume(seriesTitle: string) {
   if (!supabase) return null;
 
-  const aliases = buildSeriesTitleSearchAliases(seriesTitle);
+  const aliases = buildSeriesTitleSearchAliases(seriesTitle).slice(0, 3);
   const searches = aliases.flatMap((keyword) => [
     { path: 'BooksBook/Search/20170404', paramName: 'title', keyword },
     { path: 'BooksTotal/Search/20170404', paramName: 'keyword', keyword },
-    { path: 'BooksBook/Search/20170404', paramName: 'title', keyword: `${keyword} 巻` },
-    { path: 'BooksTotal/Search/20170404', paramName: 'keyword', keyword: `${keyword} 巻` },
-    { path: 'BooksTotal/Search/20170404', paramName: 'keyword', keyword: `${keyword} コミック` },
+    { path: 'BooksBook/Search/20170404', paramName: 'title', keyword: `${keyword} \u5dfb` },
+    { path: 'BooksTotal/Search/20170404', paramName: 'keyword', keyword: `${keyword} \u30b3\u30df\u30c3\u30af` },
   ]);
 
   for (const search of searches) {
@@ -864,13 +1090,14 @@ async function lookupLatestRakutenSeriesVolume(seriesTitle: string) {
   return null;
 }
 
+
 async function lookupLatestGoogleSeriesVolume(seriesTitle: string) {
-  const aliases = buildSeriesTitleSearchAliases(seriesTitle);
+  const aliases = buildSeriesTitleSearchAliases(seriesTitle).slice(0, 3);
   const queries = aliases.flatMap((keyword) => [
     `intitle:${keyword}`,
     `"${keyword}"`,
-    `${keyword} 巻`,
-    `${keyword} コミック`,
+    `${keyword} \u5dfb`,
+    `${keyword} \u30b3\u30df\u30c3\u30af`,
   ]);
 
   for (const query of queries) {
@@ -901,6 +1128,7 @@ async function lookupLatestGoogleSeriesVolume(seriesTitle: string) {
   return null;
 }
 
+
 export async function lookupLatestSeriesPublication(
   seriesTitle: string,
 ): Promise<SeriesPublicationInfo | null> {
@@ -909,10 +1137,11 @@ export async function lookupLatestSeriesPublication(
 
   const rakutenPublication = await lookupLatestRakutenSeriesVolume(normalizedTitle);
   if (rakutenPublication) {
-    const isCompleted =
-      rakutenPublication.isCompleted ||
-      getSeriesCompletionOverride(normalizedTitle, rakutenPublication.latestVolume) ||
-      (await lookupSeriesCompletionHint(normalizedTitle, rakutenPublication.latestVolume));
+    const isCompleted = getSeriesOngoingOverride(normalizedTitle)
+      ? false
+      : rakutenPublication.isCompleted ||
+        getSeriesCompletionOverride(normalizedTitle, rakutenPublication.latestVolume) ||
+        (await lookupSeriesCompletionHint(normalizedTitle, rakutenPublication.latestVolume));
     return {
       latestVolume: rakutenPublication.latestVolume,
       source: 'Rakuten Books',
@@ -923,10 +1152,11 @@ export async function lookupLatestSeriesPublication(
 
   const googlePublication = await lookupLatestGoogleSeriesVolume(normalizedTitle);
   if (!googlePublication) return null;
-  const isCompleted =
-    googlePublication.isCompleted ||
-    getSeriesCompletionOverride(normalizedTitle, googlePublication.latestVolume) ||
-    (await lookupSeriesCompletionHint(normalizedTitle, googlePublication.latestVolume));
+  const isCompleted = getSeriesOngoingOverride(normalizedTitle)
+    ? false
+    : googlePublication.isCompleted ||
+      getSeriesCompletionOverride(normalizedTitle, googlePublication.latestVolume) ||
+      (await lookupSeriesCompletionHint(normalizedTitle, googlePublication.latestVolume));
 
   return {
     latestVolume: googlePublication.latestVolume,
@@ -935,6 +1165,7 @@ export async function lookupLatestSeriesPublication(
     isCompleted,
   };
 }
+
 
 async function lookupGoogleBooks(isbn: string): Promise<BookInput | null> {
   return lookupGoogleBooksByQuery(`isbn:${isbn}`, isbn, { trustFirstResultThumbnail: true });
@@ -1003,8 +1234,10 @@ async function lookupGoogleBooksByQuery(
     title: volume.title,
     seriesTitle: parsed.seriesTitle,
     volumeNumber: parsed.volumeNumber,
+    volumeKind: normalizeVolumeKind(undefined, volume.title),
     author: normalizeAuthor(volume.authors?.join(', ')),
     publisher: volume.publisher,
+    publishedDate: volume.publishedDate,
     thumbnailUrl: fallbackCoverUrl,
     listPrice: typeof selectedItem?.saleInfo?.listPrice?.amount === 'number'
       ? Math.round(selectedItem.saleInfo.listPrice.amount)
@@ -1227,6 +1460,7 @@ export async function lookupBookByTitle(title: string, fallbackIsbn?: string): P
   if (!trimmedTitle) return null;
   let firstResult: BookInput | null = null;
   const expected = parseSeriesTitle(trimmedTitle);
+  const knownFallback = lookupKnownBookFallbackByTitle(trimmedTitle);
 
   for (const query of buildTitleQueries(trimmedTitle)) {
     const rakutenResult = keepThumbnailOnlyForSafeMatch(
@@ -1251,8 +1485,11 @@ export async function lookupBookByTitle(title: string, fallbackIsbn?: string): P
     if (titleResultWithFallback && !firstResult) firstResult = titleResultWithFallback;
   }
 
+  const firstResultWithCoverFallback = withIsbnCoverFallback(firstResult, fallbackIsbn);
+  if (knownFallback) return mergeBookMetadata(knownFallback, firstResultWithCoverFallback);
+
   return (
-    withIsbnCoverFallback(firstResult, fallbackIsbn) ??
+    firstResultWithCoverFallback ??
     withIsbnCoverFallback(
       await tryLookup('Google Books', () => lookupGoogleBooksByQuery(trimmedTitle, fallbackIsbn ?? ''), { silent: true }),
       fallbackIsbn,
@@ -1273,6 +1510,7 @@ export async function lookupBookDebugInfo(params: {
   entries.push(getRakutenConfigDebugEntry(trimmedTitle || normalizedIsbn));
 
   if (normalizedIsbn) {
+    entries.push(await debugLookup('NDL Search', normalizedIsbn, () => lookupNdlByIsbn(normalizedIsbn)));
     entries.push(await debugLookup('OpenBD', normalizedIsbn, () => lookupOpenBd(normalizedIsbn)));
     entries.push(await debugLookup('Rakuten ISBN', normalizedIsbn, () => lookupRakutenBooksByIsbn(normalizedIsbn)));
     entries.push(await debugLookup('Google ISBN', normalizedIsbn, () => lookupGoogleBooks(normalizedIsbn)));
@@ -1401,12 +1639,27 @@ export async function lookupBookByIsbn(isbn: string): Promise<BookInput | null> 
   const normalizedIsbn = normalizeIsbn(isbn);
   if (!isBookIsbnBarcode(normalizedIsbn)) return null;
 
+  const knownFallback = lookupKnownBookFallbackByIsbn(normalizedIsbn);
+  const ndlResult = await tryLookup('NDL Search', () => lookupNdlByIsbn(normalizedIsbn));
   const openBdResult = await tryLookup('OpenBD', () => lookupOpenBd(normalizedIsbn));
   const rakutenResult = await tryLookup('Rakuten Books', () => lookupRakutenBooksByIsbn(normalizedIsbn));
   const strictGoogleResult = await tryLookup('Google Books', () => lookupGoogleBooks(normalizedIsbn), {
     silent: true,
   });
-  if (rakutenResult?.thumbnailUrl && rakutenResult.volumeNumber) return rakutenResult;
+
+  const ndlPrimaryResult = ndlResult ? mergeBookMetadata(ndlResult, knownFallback) : null;
+  const bibliographicResult = ndlPrimaryResult ?? knownFallback;
+  if (bibliographicResult) {
+    const titleFallback = keepThumbnailOnlyForSafeMatch(
+      await lookupBookByTitle(bibliographicResult.title, normalizedIsbn),
+      normalizedIsbn,
+      bibliographicResult,
+    );
+    return withIsbnCoverFallback(
+      mergeBookMetadataList(bibliographicResult, [openBdResult, rakutenResult, strictGoogleResult, titleFallback]),
+      normalizedIsbn,
+    );
+  }
 
   if (openBdResult) {
     const openBdWithFallback = withIsbnCoverFallback(openBdResult, normalizedIsbn);
@@ -1423,24 +1676,22 @@ export async function lookupBookByIsbn(isbn: string): Promise<BookInput | null> 
     );
   }
 
-  if (rakutenResult?.thumbnailUrl) return rakutenResult;
   if (rakutenResult) {
     const titleFallback = keepThumbnailOnlyForSafeMatch(
       await lookupBookByTitle(rakutenResult.title, normalizedIsbn),
       normalizedIsbn,
       rakutenResult,
     );
-    return withIsbnCoverFallback(mergeBookMetadata(rakutenResult, titleFallback), normalizedIsbn);
+    return withIsbnCoverFallback(mergeBookMetadataList(rakutenResult, [strictGoogleResult, titleFallback]), normalizedIsbn);
   }
 
-  if (strictGoogleResult?.thumbnailUrl) return strictGoogleResult;
   if (strictGoogleResult) {
     const titleFallback = keepThumbnailOnlyForSafeMatch(
       await lookupBookByTitle(strictGoogleResult.title, normalizedIsbn),
       normalizedIsbn,
       strictGoogleResult,
     );
-    return withIsbnCoverFallback(mergeBookMetadata(strictGoogleResult, titleFallback), normalizedIsbn);
+    return withIsbnCoverFallback(mergeBookMetadataList(strictGoogleResult, [titleFallback]), normalizedIsbn);
   }
 
   return withIsbnCoverFallback(
