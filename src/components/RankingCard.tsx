@@ -13,6 +13,7 @@ type RankingCardProps = {
   onAddWishlist?: () => void;
   onPress?: () => void;
   row: RankingDisplayRow;
+  showOwnedVolumeCount?: boolean;
   variant?: 'compact' | 'wide';
 };
 
@@ -24,13 +25,14 @@ export function RankingCard({
   onAddWishlist,
   onPress,
   row,
+  showOwnedVolumeCount = true,
   variant = 'wide',
 }: RankingCardProps) {
   const { colors } = useAppTheme();
   const compact = variant === 'compact';
   const addDisabled = added || !!disabledAddLabel;
   const compactAddLabel = disabledAddLabel ?? (added ? '追加済み' : '欲しいに追加');
-  const wideAddLabel = disabledAddLabel ?? (added ? '済み' : '追加');
+  const wideAddLabel = disabledAddLabel ?? (added ? '欲しいに追加済み' : '欲しいに追加');
   const Container = onPress ? Pressable : View;
   const handleAddWishlist = (event: GestureResponderEvent) => {
     event.stopPropagation();
@@ -69,7 +71,7 @@ export function RankingCard({
             {row.ownerCount !== undefined ? (
               <Metric icon="people-outline" label="所持" value={`${row.ownerCount}人`} />
             ) : null}
-            {row.ownedVolumeCount !== undefined ? (
+            {showOwnedVolumeCount && row.ownedVolumeCount !== undefined ? (
               <Metric icon="albums-outline" label="登録" value={`${row.ownedVolumeCount}冊`} />
             ) : null}
             {row.favoriteCount !== undefined ? (
@@ -84,6 +86,26 @@ export function RankingCard({
             {row.popularityScore !== undefined ? ` / 人気度 ${row.popularityScore.toFixed(1)}` : ''}
           </Text>
         ) : null}
+      {!compact && (onAddWishlist || disabledAddLabel) ? (
+        <Pressable
+          accessibilityLabel={
+            addDisabled
+              ? `${row.title}${disabledAddLabel ? 'は所持済み' : 'は欲しいに追加済み'}`
+              : `${row.title}を欲しいに追加`
+          }
+          disabled={addDisabled}
+          onPress={handleAddWishlist}
+          style={[
+            styles.wideAddButton,
+            { backgroundColor: addDisabled ? colors.elevated : colors.text, borderColor: colors.border },
+          ]}
+        >
+          <Ionicons color={addDisabled ? colors.muted : colors.background} name={addDisabled ? 'checkmark' : 'add'} size={16} />
+          <Text style={[styles.wideAddText, { color: addDisabled ? colors.muted : colors.background }]}>
+            {wideAddLabel}
+          </Text>
+        </Pressable>
+      ) : null}
       </View>
       {compact && expanded && (onAddWishlist || disabledAddLabel) ? (
         <Pressable
@@ -102,26 +124,6 @@ export function RankingCard({
           <Ionicons color={addDisabled ? colors.muted : colors.background} name={addDisabled ? 'checkmark' : 'add'} size={15} />
           <Text style={[styles.compactAddText, { color: addDisabled ? colors.muted : colors.background }]}>
             {compactAddLabel}
-          </Text>
-        </Pressable>
-      ) : null}
-      {!compact && (onAddWishlist || disabledAddLabel) ? (
-        <Pressable
-          accessibilityLabel={
-            addDisabled
-              ? `${row.title}${disabledAddLabel ? 'は所持済み' : 'は欲しいに追加済み'}`
-              : `${row.title}を欲しいに追加`
-          }
-          disabled={addDisabled}
-          onPress={handleAddWishlist}
-          style={[
-            styles.wideAddButton,
-            { backgroundColor: addDisabled ? colors.elevated : colors.text, borderColor: colors.border },
-          ]}
-        >
-          <Ionicons color={addDisabled ? colors.muted : colors.background} name={addDisabled ? 'checkmark' : 'add'} size={16} />
-          <Text style={[styles.wideAddText, { color: addDisabled ? colors.muted : colors.background }]}>
-            {wideAddLabel}
           </Text>
         </Pressable>
       ) : null}
@@ -200,14 +202,15 @@ const styles = StyleSheet.create({
   compactAddText: { fontSize: 12, fontWeight: '900' },
   wideAddButton: {
     alignItems: 'center',
+    alignSelf: 'flex-start',
     borderRadius: 8,
     borderWidth: 1,
     flexDirection: 'row',
     gap: 5,
     height: 38,
     justifyContent: 'center',
-    paddingHorizontal: 8,
-    width: 72,
+    paddingHorizontal: 10,
+    minWidth: 116,
   },
   wideAddText: { fontSize: 12, fontWeight: '900' },
 });

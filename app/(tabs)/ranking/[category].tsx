@@ -207,6 +207,7 @@ export default function RankingCategoryScreen() {
                       : undefined
                   }
                   row={row}
+                  showOwnedVolumeCount={false}
                 />
               );
             })}
