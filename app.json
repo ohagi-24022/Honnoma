@@ -1,22 +1,22 @@
 {
   "expo": {
     "name": "蒐集架",
-    "slug": "booknest",
+    "slug": "shushuka",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
-    "scheme": "booknest",
+    "scheme": "shushuka",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.booknest.app",
+      "bundleIdentifier": "com.shushuka.app",
       "infoPlist": {
-        "NSCameraUsageDescription": "ISBN barcode scanning is used to register books.",
+        "NSCameraUsageDescription": "ISBNバーコードを読み取り、本を登録するためにカメラを使用します。",
         "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
-      "package": "com.booknest.app",
+      "package": "com.shushuka.app",
       "adaptiveIcon": {
         "backgroundColor": "#ffffff",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -38,7 +38,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "ISBN barcode scanning is used to register books.",
+          "cameraPermission": "ISBNバーコードを読み取り、本を登録するためにカメラを使用します。",
           "microphonePermission": false,
           "recordAudioAndroid": false
         }

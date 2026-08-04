@@ -31,6 +31,11 @@ import {
   syncNewReleaseSubscriptions,
 } from '../../src/lib/newReleaseNotifications';
 import { getMissingVolumes, normalizeSeriesKey } from '../../src/lib/series';
+import {
+  loadSeriesMetadata,
+  mergeSeriesPublicationInfo,
+  SeriesMetadataOverride,
+} from '../../src/lib/seriesMetadata';
 import { SeriesGroup } from '../../src/lib/seriesSelectors';
 import { supabase } from '../../src/lib/supabase';
 import { isMissingSupabaseRelationError } from '../../src/lib/supabaseErrors';
@@ -54,6 +59,7 @@ type SeriesSort = 'title' | 'recent' | 'missing' | 'unread' | 'completion' | 'fa
 type BookSort = 'recent' | 'title' | 'series' | 'volume' | 'status' | 'favorite' | 'author' | 'publisher';
 type SeriesDisplayMode = 'detail' | 'cover' | 'title';
 type SeriesPublicationCache = Record<string, SeriesPublicationInfo>;
+type SeriesMetadataCache = Record<string, SeriesMetadataOverride>;
 type SeriesStats = {
   completionRate: number;
   internalMissingVolumes: number[];
@@ -268,6 +274,7 @@ export default function HomeScreen() {
   const [openMenu, setOpenMenu] = useState<'filter' | 'sort' | 'author' | 'publisher' | null>(null);
   const [toolbarHeight, setToolbarHeight] = useState(152);
   const [publicationCache, setPublicationCache] = useState<SeriesPublicationCache>({});
+  const [seriesMetadataCache, setSeriesMetadataCache] = useState<SeriesMetadataCache>({});
   const [visibleFavoriteSeriesKeys, setVisibleFavoriteSeriesKeys] = useState<string[]>(favoriteSeriesKeys);
   const [refreshingSeriesTitle, setRefreshingSeriesTitle] = useState<string | null>(null);
   const [notificationSeriesKeys, setNotificationSeriesKeys] = useState<string[]>([]);
@@ -337,6 +344,27 @@ export default function HomeScreen() {
       })
       .catch((cacheError) => console.warn('Failed to load series publication cache', cacheError));
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadSeriesMetadata(user?.id)
+      .then((metadata) => {
+        if (!cancelled) setSeriesMetadataCache(metadata);
+      })
+      .catch((metadataError) => console.warn('Failed to load series metadata overrides', metadataError));
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
+
+  const effectivePublicationCache = useMemo(() => {
+    const merged: SeriesPublicationCache = { ...publicationCache };
+    Object.entries(seriesMetadataCache).forEach(([seriesKey, override]) => {
+      const publicationInfo = mergeSeriesPublicationInfo(merged[seriesKey], override);
+      if (publicationInfo) merged[seriesKey] = publicationInfo;
+    });
+    return merged;
+  }, [publicationCache, seriesMetadataCache]);
 
   useEffect(() => {
     if (!user) {
@@ -431,7 +459,7 @@ export default function HomeScreen() {
           .map((book) => book.volumeNumber)
           .filter((volume): volume is number => !!volume);
         const latestVolume = volumes.length > 0 ? Math.max(...volumes) : undefined;
-        const publishedLatestVolume = publicationCache[seriesKey]?.latestVolume;
+        const publishedLatestVolume = effectivePublicationCache[seriesKey]?.latestVolume;
         const internalMissingVolumes = getMissingVolumes(volumes);
         const trailingUnownedVolumes = getTrailingUnownedVolumes(latestVolume, publishedLatestVolume);
         const missingVolumes = [...new Set([...internalMissingVolumes, ...trailingUnownedVolumes])].sort(
@@ -447,7 +475,7 @@ export default function HomeScreen() {
         return [seriesKey, { completionRate, internalMissingVolumes, missingVolumes, trailingUnownedVolumes }] as const;
       }),
     );
-  }, [books, publicationCache]);
+  }, [books, effectivePublicationCache]);
 
   const visibleGroups = useMemo(() => {
     const activeFilters = getActiveFilters(filters);
@@ -460,7 +488,7 @@ export default function HomeScreen() {
     const filtered = seriesGroups.filter((group) => {
       const seriesKey = normalizeSeriesKey(group.title);
       const stats = seriesStats.get(seriesKey);
-      const publicationInfo = publicationCache[seriesKey];
+      const publicationInfo = effectivePublicationCache[seriesKey];
       const matchesStatus =
         statusFilters.length === 0 ||
         statusFilters.some(
@@ -513,7 +541,7 @@ export default function HomeScreen() {
       }
       return applySortDirection(comparison, seriesSortDirection) || compareText(left.title, right.title);
     });
-  }, [books, favoriteSeriesKeySet, filters, publicationCache, query, seriesGroups, seriesSort, seriesSortDirection, seriesStats]);
+  }, [books, effectivePublicationCache, favoriteSeriesKeySet, filters, query, seriesGroups, seriesSort, seriesSortDirection, seriesStats]);
 
   const visibleBooks = useMemo(() => {
     const activeFilters = getActiveFilters(filters);
@@ -524,7 +552,7 @@ export default function HomeScreen() {
     const keyword = normalizeText(query);
     const filtered = books.filter((book) => {
       const seriesKey = normalizeSeriesKey(book.seriesTitle);
-      const publicationInfo = publicationCache[seriesKey];
+      const publicationInfo = effectivePublicationCache[seriesKey];
       const matchesFilter =
         (statusFilters.length === 0 || statusFilters.includes(book.status)) &&
         (!activeFilters.includes('missing') || (seriesStats.get(seriesKey)?.missingVolumes.length ?? 0) > 0) &&
@@ -565,7 +593,7 @@ export default function HomeScreen() {
       }
       return applySortDirection(comparison, bookSortDirection) || compareText(left.titleReading ?? left.title, right.titleReading ?? right.title);
     });
-  }, [bookSort, bookSortDirection, books, favoriteSeriesKeySet, filters, publicationCache, query, seriesStats]);
+  }, [bookSort, bookSortDirection, books, effectivePublicationCache, favoriteSeriesKeySet, filters, query, seriesStats]);
 
   const selectedMetadataFilters = getSelectedMetadataFilters(filters);
   const selectedFilterLabel = useMemo(() => {
@@ -682,7 +710,7 @@ export default function HomeScreen() {
       const result = await lookupLatestSeriesPublication(seriesTitle);
       await refreshRepresentativeCover;
       if (!result) {
-        if (publicationCache[cacheKey]) return;
+        if (effectivePublicationCache[cacheKey]) return;
         Alert.alert('\u520a\u884c\u5dfb\u6570\u3092\u53d6\u5f97\u3067\u304d\u307e\u305b\u3093\u3067\u3057\u305f', '\u5916\u90e8API\u304b\u3089\u540c\u3058\u30b7\u30ea\u30fc\u30ba\u306e\u5dfb\u6570\u60c5\u5831\u3092\u78ba\u8a8d\u3067\u304d\u307e\u305b\u3093\u3067\u3057\u305f\u3002\u5c11\u3057\u6642\u9593\u3092\u304a\u3044\u3066\u518d\u5ea6\u304a\u8a66\u3057\u304f\u3060\u3055\u3044\u3002');
         return;
       }
@@ -694,7 +722,7 @@ export default function HomeScreen() {
       });
     } catch (refreshError) {
       await refreshRepresentativeCover;
-      if (publicationCache[cacheKey]) return;
+      if (effectivePublicationCache[cacheKey]) return;
       Alert.alert(
         '\u66f4\u65b0\u3067\u304d\u307e\u305b\u3093\u3067\u3057\u305f',
         refreshError instanceof Error ? refreshError.message : '\u901a\u4fe1\u72b6\u614b\u3092\u78ba\u8a8d\u3057\u3066\u3001\u3082\u3046\u4e00\u5ea6\u304a\u8a66\u3057\u304f\u3060\u3055\u3044\u3002',
@@ -828,7 +856,7 @@ export default function HomeScreen() {
           renderItem={({ item }) => {
             const cacheKey = normalizeSeriesKey(item.title);
             const stats = seriesStats.get(cacheKey);
-            const publicationInfo = publicationCache[cacheKey];
+            const publicationInfo = effectivePublicationCache[cacheKey];
             if (seriesDisplayMode === 'cover') {
               return (
                 <Pressable
@@ -905,6 +933,8 @@ export default function HomeScreen() {
                 favorite={favoriteSeriesKeySet.has(cacheKey)}
                 showPublishedLatestVolume={showPublishedLatestVolume}
                 publicationInfo={publicationInfo}
+                seriesCoverUrl={seriesMetadataCache[cacheKey]?.coverUrl}
+                publisherOverride={seriesMetadataCache[cacheKey]?.publisher}
                 refreshing={refreshingSeriesTitle === item.title}
                 refreshDisabled={refreshingSeriesTitle !== null}
                 notificationAvailable={Boolean(user && newReleaseNotifications)}

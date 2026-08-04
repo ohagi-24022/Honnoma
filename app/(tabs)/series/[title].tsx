@@ -20,6 +20,12 @@ import { EdgeSwipeBack } from '../../../src/components/EdgeSwipeBack';
 import { buildPurchaseUrl, lookupBookByTitle, SeriesPublicationInfo } from '../../../src/lib/bookApis';
 import { migrateNewReleaseSeriesSubscription } from '../../../src/lib/newReleaseNotifications';
 import { normalizeSeriesKey } from '../../../src/lib/series';
+import {
+  loadSeriesMetadata,
+  mergeSeriesPublicationInfo,
+  SeriesMetadataOverride,
+  upsertSeriesMetadataOverride,
+} from '../../../src/lib/seriesMetadata';
 import { useAppSettings } from '../../../src/store/AppSettingsContext';
 import { useAuth } from '../../../src/store/AuthContext';
 import { useLibrary } from '../../../src/store/LibraryContext';
@@ -73,14 +79,25 @@ export default function SeriesScreen() {
   const [renameOpen, setRenameOpen] = useState(false);
   const [draftSeriesTitle, setDraftSeriesTitle] = useState(seriesTitle);
   const [publicationInfo, setPublicationInfo] = useState<SeriesPublicationInfo | null>(null);
+  const [seriesMetadata, setSeriesMetadata] = useState<SeriesMetadataOverride | null>(null);
+  const [seriesMetadataOpen, setSeriesMetadataOpen] = useState(false);
+  const [metadataLatestVolume, setMetadataLatestVolume] = useState('');
+  const [metadataCompleted, setMetadataCompleted] = useState(false);
+  const [metadataPublisher, setMetadataPublisher] = useState('');
+  const [metadataCoverUrl, setMetadataCoverUrl] = useState('');
+  const [savingSeriesMetadata, setSavingSeriesMetadata] = useState(false);
   const [bulkFillOpen, setBulkFillOpen] = useState(false);
   const [bulkFillTargetVolume, setBulkFillTargetVolume] = useState('');
   const [bulkFillRunning, setBulkFillRunning] = useState(false);
   const [bulkFillProgress, setBulkFillProgress] = useState<{ current: number; total: number } | null>(null);
 
   const baseItems = useMemo(() => getSeriesItems(seriesTitle), [getSeriesItems, seriesTitle]);
+  const effectivePublicationInfo = useMemo(
+    () => mergeSeriesPublicationInfo(publicationInfo, seriesMetadata ?? undefined) ?? null,
+    [publicationInfo, seriesMetadata],
+  );
   const items = useMemo(() => {
-    if (!showPublishedLatestVolume || !publicationInfo?.latestVolume) return baseItems;
+    if (!showPublishedLatestVolume || !effectivePublicationInfo?.latestVolume) return baseItems;
 
     const existingVolumes = new Set(
       baseItems
@@ -96,7 +113,7 @@ export default function SeriesScreen() {
     const createdAt = new Date().toISOString();
     const trailingMissing: MissingBook[] = [];
 
-    for (let volume = ownedLatestVolume + 1; volume <= publicationInfo.latestVolume; volume += 1) {
+    for (let volume = ownedLatestVolume + 1; volume <= effectivePublicationInfo.latestVolume; volume += 1) {
       if (existingVolumes.has(volume)) continue;
       trailingMissing.push({
         id: `missing-published-${seriesTitle}-${volume}`,
@@ -111,7 +128,7 @@ export default function SeriesScreen() {
     }
 
     return [...baseItems, ...trailingMissing].sort(compareSeriesItems);
-  }, [baseItems, publicationInfo, seriesTitle, showPublishedLatestVolume, user?.id]);
+  }, [baseItems, effectivePublicationInfo, seriesTitle, showPublishedLatestVolume, user?.id]);
   const pageCount = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
   const pageItems = useMemo(() => items.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE), [items, page]);
   const ownedItems = useMemo(() => items.filter(isOwnedBook), [items]);
@@ -134,7 +151,7 @@ export default function SeriesScreen() {
       .filter((item) => !item.isMissing && item.volumeKind !== 'extra')
       .map((item) => item.volumeNumber)
       .filter((volume): volume is number => typeof volume === 'number'),
-    publicationInfo?.latestVolume ?? 0,
+    effectivePublicationInfo?.latestVolume ?? 0,
   );
   const bulkFillTarget = Number.parseInt(bulkFillTargetVolume.replace(/[^0-9]/g, ''), 10);
   const bulkFillMissingTargets = items
@@ -213,6 +230,24 @@ export default function SeriesScreen() {
   }, [seriesTitle]);
 
   useEffect(() => {
+    let cancelled = false;
+    loadSeriesMetadata(user?.id)
+      .then((metadata) => {
+        if (cancelled) return;
+        const override = metadata[normalizeSeriesKey(seriesTitle)] ?? null;
+        setSeriesMetadata(override);
+        setMetadataLatestVolume(override?.latestVolume ? String(override.latestVolume) : '');
+        setMetadataCompleted(override?.isCompleted ?? false);
+        setMetadataPublisher(override?.publisher ?? '');
+        setMetadataCoverUrl(override?.coverUrl ?? '');
+      })
+      .catch((metadataError) => console.warn('Failed to load series metadata override', metadataError));
+    return () => {
+      cancelled = true;
+    };
+  }, [seriesTitle, user?.id]);
+
+  useEffect(() => {
     setPage((current) => Math.min(current, pageCount));
   }, [pageCount]);
 
@@ -226,6 +261,33 @@ export default function SeriesScreen() {
     setSelectedIds((current) =>
       current.includes(item.id) ? current.filter((id) => id !== item.id) : [...current, item.id],
     );
+  };
+
+  const saveSeriesMetadata = async () => {
+    const latestVolume = Number.parseInt(metadataLatestVolume.replace(/[^0-9]/g, ''), 10);
+    setSavingSeriesMetadata(true);
+    try {
+      const saved = await upsertSeriesMetadataOverride(user?.id, {
+        seriesKey: normalizeSeriesKey(seriesTitle),
+        seriesTitle,
+        latestVolume: Number.isFinite(latestVolume) && latestVolume > 0 ? latestVolume : undefined,
+        isCompleted: metadataCompleted,
+        publisher: metadataPublisher,
+        coverUrl: metadataCoverUrl,
+        source: 'manual',
+      });
+      setSeriesMetadata(saved);
+      setMetadataLatestVolume(saved.latestVolume ? String(saved.latestVolume) : '');
+      setMetadataCompleted(saved.isCompleted ?? false);
+      setMetadataPublisher(saved.publisher ?? '');
+      setMetadataCoverUrl(saved.coverUrl ?? '');
+      setSeriesMetadataOpen(false);
+      Alert.alert('\u4fdd\u5b58\u3057\u307e\u3057\u305f', '\u3053\u306e\u30b7\u30ea\u30fc\u30ba\u306e\u520a\u884c\u60c5\u5831\u3092\u624b\u52d5\u88dc\u6b63\u3057\u307e\u3057\u305f\u3002');
+    } catch (metadataError) {
+      Alert.alert('\u4fdd\u5b58\u3067\u304d\u307e\u305b\u3093\u3067\u3057\u305f', metadataError instanceof Error ? metadataError.message : '\u3082\u3046\u4e00\u5ea6\u304a\u8a66\u3057\u304f\u3060\u3055\u3044\u3002');
+    } finally {
+      setSavingSeriesMetadata(false);
+    }
   };
 
   const closeInlineEdit = () => {
@@ -736,6 +798,21 @@ export default function SeriesScreen() {
               readPercent={readPercent}
               unreadCount={unreadCount}
             />
+            <SeriesMetadataPanel
+              coverUrl={metadataCoverUrl}
+              completed={metadataCompleted}
+              latestVolume={metadataLatestVolume}
+              onChangeCompleted={setMetadataCompleted}
+              onChangeCoverUrl={setMetadataCoverUrl}
+              onChangeLatestVolume={(value) => setMetadataLatestVolume(value.replace(/[^0-9]/g, ''))}
+              onChangePublisher={setMetadataPublisher}
+              onSave={() => void saveSeriesMetadata()}
+              open={seriesMetadataOpen}
+              publisher={metadataPublisher}
+              saving={savingSeriesMetadata}
+              setOpen={setSeriesMetadataOpen}
+              source={seriesMetadata?.updatedAt}
+            />
             <Pagination page={page} pageCount={pageCount} onChange={setPage} />
           </View>
         }
@@ -1009,6 +1086,108 @@ function SeriesOverview({
   );
 }
 
+
+function SeriesMetadataPanel({
+  completed,
+  coverUrl,
+  latestVolume,
+  onChangeCompleted,
+  onChangeCoverUrl,
+  onChangeLatestVolume,
+  onChangePublisher,
+  onSave,
+  open,
+  publisher,
+  saving,
+  setOpen,
+  source,
+}: {
+  completed: boolean;
+  coverUrl: string;
+  latestVolume: string;
+  onChangeCompleted: (value: boolean) => void;
+  onChangeCoverUrl: (value: string) => void;
+  onChangeLatestVolume: (value: string) => void;
+  onChangePublisher: (value: string) => void;
+  onSave: () => void;
+  open: boolean;
+  publisher: string;
+  saving: boolean;
+  setOpen: (value: boolean) => void;
+  source?: string;
+}) {
+  const { colors } = useAppTheme();
+  return (
+    <View style={[styles.metadataBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+      <Pressable
+        accessibilityLabel="シリーズ情報を補正"
+        onPress={() => setOpen(!open)}
+        style={styles.metadataHeader}
+      >
+        <View style={styles.metadataTitleWrap}>
+          <Text style={[styles.metadataTitle, { color: colors.text }]}>シリーズ情報の補正</Text>
+          <Text style={[styles.metadataCopy, { color: colors.muted }]}>
+            {source ? '手動補正あり' : '外部APIが弱い場合に上書き'}
+          </Text>
+        </View>
+        <Ionicons color={colors.text} name={open ? 'chevron-up' : 'chevron-down'} size={19} />
+      </Pressable>
+      {open && (
+        <View style={styles.metadataForm}>
+          <View style={styles.renameRow}>
+            <TextInput
+              keyboardType="number-pad"
+              onChangeText={onChangeLatestVolume}
+              placeholder="刊行最新巻"
+              placeholderTextColor={colors.muted}
+              style={[styles.renameInput, { backgroundColor: colors.input, color: colors.text }]}
+              value={latestVolume}
+            />
+            <Pressable
+              accessibilityLabel={completed ? '未完結にする' : '完結済みにする'}
+              onPress={() => onChangeCompleted(!completed)}
+              style={[styles.metadataToggleButton, { borderColor: completed ? colors.success : colors.border }]}
+            >
+              <Text style={[styles.metadataToggleText, { color: completed ? colors.success : colors.text }]}>
+                {completed ? '完結' : '未完結'}
+              </Text>
+            </Pressable>
+          </View>
+          <TextInput
+            autoCorrect={false}
+            onChangeText={onChangePublisher}
+            placeholder="出版社"
+            placeholderTextColor={colors.muted}
+            style={[styles.renameInput, { backgroundColor: colors.input, color: colors.text }]}
+            value={publisher}
+          />
+          <TextInput
+            autoCapitalize="none"
+            autoCorrect={false}
+            onChangeText={onChangeCoverUrl}
+            placeholder="代表表紙URL"
+            placeholderTextColor={colors.muted}
+            style={[styles.renameInput, { backgroundColor: colors.input, color: colors.text }]}
+            value={coverUrl}
+          />
+          <Pressable
+            accessibilityLabel="シリーズ情報の補正を保存"
+            disabled={saving}
+            onPress={onSave}
+            style={[styles.metadataSaveButton, { backgroundColor: colors.text }, saving && styles.disabledButton]}
+          >
+            {saving ? (
+              <ActivityIndicator color={colors.background} size="small" />
+            ) : (
+              <Text style={[styles.metadataSaveText, { color: colors.background }]}>補正を保存</Text>
+            )}
+          </Pressable>
+        </View>
+      )}
+    </View>
+  );
+}
+
 function OverviewStat({ label, value, danger = false }: { label: string; value: number; danger?: boolean }) {
   const { colors } = useAppTheme();
   return (
@@ -1173,6 +1352,30 @@ const styles = StyleSheet.create({
   },
   list: { padding: 14, paddingBottom: 28 },
   footerPagination: { paddingBottom: 16 },
+  metadataBox: {
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 8,
+    marginBottom: 10,
+    padding: 12,
+  },
+  metadataHeader: { alignItems: 'center', flexDirection: 'row', gap: 10 },
+  metadataTitleWrap: { flex: 1, gap: 3 },
+  metadataTitle: { fontSize: 14, fontWeight: '900' },
+  metadataCopy: { fontSize: 11, fontWeight: '700' },
+  metadataForm: { gap: 8 },
+  metadataToggleButton: {
+    alignItems: 'center',
+    borderRadius: 8,
+    borderWidth: 1,
+    height: 40,
+    justifyContent: 'center',
+    minWidth: 92,
+    paddingHorizontal: 10,
+  },
+  metadataToggleText: { fontSize: 13, fontWeight: '900' },
+  metadataSaveButton: { alignItems: 'center', borderRadius: 8, height: 40, justifyContent: 'center' },
+  metadataSaveText: { fontSize: 13, fontWeight: '900' },
   overview: {
     borderRadius: 8,
     borderWidth: 1,

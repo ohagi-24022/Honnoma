@@ -17,6 +17,8 @@ type SeriesCardProps = {
   favorite: boolean;
   showPublishedLatestVolume: boolean;
   publicationInfo?: SeriesPublicationInfo;
+  seriesCoverUrl?: string;
+  publisherOverride?: string;
   refreshing: boolean;
   refreshDisabled: boolean;
   notificationAvailable: boolean;
@@ -41,6 +43,8 @@ export function SeriesCard({
   favorite,
   showPublishedLatestVolume,
   publicationInfo,
+  seriesCoverUrl,
+  publisherOverride,
   refreshing,
   refreshDisabled,
   notificationAvailable,
@@ -54,6 +58,7 @@ export function SeriesCard({
   const router = useRouter();
   const isAllRead = group.ownedCount > 0 && group.readCount === group.ownedCount;
   const publicationSuffix = publicationInfo?.isCompleted ? ' / 完結' : publicationInfo ? ' / 未完結' : '';
+  const publisherText = publisherOverride ?? group.publishers.join(', ');
   const latestLabel = showPublishedLatestVolume
     ? publicationInfo
       ? ` / 刊行 ${publicationInfo.latestVolume}巻まで${publicationSuffix}`
@@ -74,7 +79,7 @@ export function SeriesCard({
     <View style={[styles.row, { backgroundColor: colors.surface, borderColor: colors.border }]}>
       <Pressable accessibilityLabel={`${group.title}の詳細を開く`} onPress={openSeries} style={styles.coverPress}>
         <BookCover
-          thumbnailUrl={group.representative.thumbnailUrl}
+          thumbnailUrl={seriesCoverUrl ?? group.representative.thumbnailUrl}
           isbn={group.representative.isbn}
           style={styles.cover}
         />
@@ -161,9 +166,9 @@ export function SeriesCard({
           <Text style={[styles.meta, { color: colors.muted }]}>
             {group.ownedCount}冊所持{latestLabel}
           </Text>
-          {(group.authors.length > 0 || group.publishers.length > 0) && (
+          {(group.authors.length > 0 || publisherText) && (
             <Text numberOfLines={2} style={[styles.credits, { color: colors.muted }]}>
-              {[group.authors.join(', '), group.publishers.join(', ')].filter(Boolean).join(' / ')}
+              {[group.authors.join(', '), publisherText].filter(Boolean).join(' / ')}
             </Text>
           )}
           <View style={[styles.progressTrack, { backgroundColor: colors.elevated }]}>

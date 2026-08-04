@@ -160,8 +160,7 @@ When a logged-in user deletes their account, the app removes user-scoped cloud d
 
 ## Privacy Policy
 
-A Japanese privacy policy template is available at [`docs/privacy-policy.md`](docs/privacy-policy.md).
-Before publishing, replace the operator name, contact information, and public policy URL with the real production values.
+A Japanese privacy policy is available at [`docs/privacy-policy.md`](docs/privacy-policy.md). Keep the in-app privacy policy, store listing, and public support/contact information in sync before each release.
 
 ## Supabase
 

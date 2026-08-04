@@ -50,10 +50,10 @@ export default function PrivacyScreen() {
         </View>
         <Text style={[styles.title, { color: colors.text }]}>プライバシーポリシー</Text>
         <Text style={[styles.copy, { color: colors.muted }]}>
-          最終更新日: 2026年7月13日
+          最終更新日: 2026年8月4日
         </Text>
         <Text style={[styles.copy, { color: colors.muted }]}>
-          この画面は公開前の雛形です。公開時には運営者名、問い合わせ先、公開URL、適用される法令やストア要件に合わせて確認してください。
+          本ポリシーは、蒐集架における利用者情報の取り扱いについて説明するものです。お問い合わせは下記のフォームまたはメールアドレスからご連絡ください。
         </Text>
       </View>
 
@@ -66,10 +66,22 @@ export default function PrivacyScreen() {
 
       <View style={[styles.card, { borderColor: colors.border }]}>
         <Text style={[styles.sectionTitle, { color: colors.text }]}>問い合わせ先</Text>
-        <Text style={[styles.body, { color: colors.muted }]}>
-          運営者: TODO: 運営者名を記載{'\n'}
-          問い合わせ先: TODO: メールアドレスまたは問い合わせフォームURLを記載
-        </Text>
+        <View style={styles.contactRows}>
+          <View style={styles.contactRow}>
+            <Text style={[styles.contactLabel, { color: colors.text }]}>運営者</Text>
+            <Text selectable style={[styles.contactValue, { color: colors.muted }]}>YUKI UTSUNO</Text>
+          </View>
+          <View style={styles.contactRow}>
+            <Text style={[styles.contactLabel, { color: colors.text }]}>問い合わせフォーム</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.urlScroller}>
+              <Text selectable style={[styles.contactValue, styles.urlText, { color: colors.text }]}>https://docs.google.com/forms/d/e/1FAIpQLSdKp8lpTAanF885CYChSQUafiQhV-YWXgQmeVTUxFu1612s3Q/viewform</Text>
+            </ScrollView>
+          </View>
+          <View style={styles.contactRow}>
+            <Text style={[styles.contactLabel, { color: colors.text }]}>メールアドレス</Text>
+            <Text selectable style={[styles.contactValue, { color: colors.muted }]}>ohagiworks.contact@gmail.com</Text>
+          </View>
+        </View>
       </View>
     </ScrollView>
   );
@@ -91,4 +103,10 @@ const styles = StyleSheet.create({
   card: { borderRadius: 8, borderWidth: 1, gap: 7, padding: 14 },
   sectionTitle: { fontSize: 16, fontWeight: '900' },
   body: { fontSize: 14, lineHeight: 21 },
+  contactRows: { gap: 10 },
+  contactRow: { gap: 4 },
+  contactLabel: { fontSize: 13, fontWeight: '900' },
+  contactValue: { fontSize: 14, lineHeight: 21 },
+  urlScroller: { maxWidth: '100%' },
+  urlText: { fontFamily: 'monospace' },
 });
