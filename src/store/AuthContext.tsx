@@ -83,8 +83,12 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const signOut = useCallback(async () => {
     if (!supabase) return;
     const userId = session?.user.id;
-    if (userId) {
-      await disableNewReleaseNotifications(userId);
+    try {
+      if (userId) {
+        await disableNewReleaseNotifications(userId);
+      }
+    } catch (error) {
+      console.warn('新刊通知トークンを無効化できませんでした', error);
     }
     const { error } = await supabase.auth.signOut();
     if (error) throw error;

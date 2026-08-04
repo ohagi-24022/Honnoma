@@ -438,7 +438,12 @@ export default function HomeScreen() {
           (left, right) => left - right,
         );
         const denominator = Math.max(latestVolume ?? 0, publishedLatestVolume ?? 0);
-        const completionRate = denominator > 0 ? Math.round((mainGroupedBooks.length / denominator) * 100) : 100;
+        const ownedVolumeCount = new Set(
+          mainGroupedBooks
+            .map((book) => book.volumeNumber)
+            .filter((value): value is number => typeof value === 'number' && Number.isInteger(value) && value > 0),
+        ).size;
+        const completionRate = denominator > 0 ? Math.min(100, Math.round((ownedVolumeCount / denominator) * 100)) : 100;
         return [seriesKey, { completionRate, internalMissingVolumes, missingVolumes, trailingUnownedVolumes }] as const;
       }),
     );

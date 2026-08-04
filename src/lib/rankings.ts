@@ -58,14 +58,20 @@ function toNumber(value: number | string | null | undefined) {
   return Number.isFinite(numericValue) ? numericValue : 0;
 }
 
+function toOptionalNumber(value: number | string | null | undefined) {
+  if (value === null || value === undefined) return undefined;
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) ? numericValue : undefined;
+}
+
 function toDisplayRow(row: GlobalRankingRow): RankingDisplayRow {
   return {
-    averageScore: toNumber(row.average_score),
+    averageScore: toOptionalNumber(row.average_score),
     coverUrl: row.cover_url ?? undefined,
     favoriteCount: Number(row.favorite_count ?? 0),
     ownedVolumeCount: Number(row.owned_volume_count ?? 0),
     ownerCount: Number(row.owner_count ?? 0),
-    popularityScore: toNumber(row.popularity_score),
+    popularityScore: toOptionalNumber(row.popularity_score),
     title: row.title,
     wantCount: Number(row.want_count ?? 0),
   };

@@ -312,10 +312,18 @@ async function deliverDailyNotifications(userLimit: number) {
           to: token.expo_push_token,
         });
         lastResponse = response;
-        if (response.ok) {
+        const pushResult = parseExpoPushResult(response);
+        if (pushResult.accepted) {
           sent += 1;
         } else {
-          lastError = `Expo Push HTTP ${response.status}`;
+          lastError = pushResult.error;
+          if (pushResult.deviceNotRegistered) {
+            await supabase
+              .from('push_tokens')
+              .update({ enabled: false })
+              .eq('user_id', userId)
+              .eq('expo_push_token', token.expo_push_token);
+          }
         }
       }
 
@@ -537,6 +545,29 @@ async function insertNotificationLog(
   if (!error) return true;
   if (error.code === '23505') return false;
   throw error;
+}
+
+function parseExpoPushResult(response: { body: unknown; ok: boolean; status: number }) {
+  const body = response.body as { data?: unknown; errors?: unknown } | null;
+  const data = Array.isArray(body?.data) ? body?.data[0] : body?.data;
+  const dataRecord = data && typeof data === 'object' ? (data as Record<string, unknown>) : null;
+  const details = dataRecord?.details && typeof dataRecord.details === 'object'
+    ? (dataRecord.details as Record<string, unknown>)
+    : null;
+  const ticketStatus = typeof dataRecord?.status === 'string' ? dataRecord.status : undefined;
+  const detailError = typeof details?.error === 'string' ? details.error : undefined;
+  const message = typeof dataRecord?.message === 'string' ? dataRecord.message : undefined;
+
+  if (response.ok && ticketStatus !== 'error') {
+    return { accepted: true, deviceNotRegistered: false, error: null as string | null };
+  }
+
+  const error = detailError || message || `Expo Push HTTP ${response.status}`;
+  return {
+    accepted: false,
+    deviceNotRegistered: detailError === 'DeviceNotRegistered',
+    error,
+  };
 }
 
 async function sendExpoPush(message: Record<string, unknown>) {

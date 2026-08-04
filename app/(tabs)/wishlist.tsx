@@ -2,9 +2,10 @@ import { useScrollToTop } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as WebBrowser from 'expo-web-browser';
 import { Linking } from 'react-native';
-import { useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   Alert,
+  Animated,
   NativeScrollEvent,
   NativeSyntheticEvent,
   Pressable,
@@ -64,10 +65,16 @@ export default function WishlistScreen() {
   const [editOrderIds, setEditOrderIds] = useState<string[]>([]);
   const [overviewHeight, setOverviewHeight] = useState(0);
   const [topSectionHeight, setTopSectionHeight] = useState(0);
+  const [headerHeight, setHeaderHeight] = useState(84);
   const scrollRef = useRef<ScrollView>(null);
   const scrollYRef = useRef(0);
+  const headerTranslateY = useRef(new Animated.Value(0)).current;
+  const headerVisibleRef = useRef(true);
+  const lastScrollYRef = useRef(0);
+  const directionDistanceRef = useRef(0);
+  const lastDirectionRef = useRef<1 | -1>(1);
   const tabScrollToTopRef = useRef({
-    scrollToTop: () => scrollRef.current?.scrollTo({ y: 0, animated: true }),
+    scrollToTop: () => {},
   });
 
   const openPurchaseCandidate = async (item: WishlistItem) => {
@@ -92,10 +99,52 @@ export default function WishlistScreen() {
     return [...orderedItems, ...newItems];
   }, [editMode, editOrderIds, items]);
   const highPriorityCount = useMemo(() => items.filter((item) => item.score >= 90).length, [items]);
-  useScrollToTop(tabScrollToTopRef);
-  const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    scrollYRef.current = event.nativeEvent.contentOffset.y;
+  const setHeaderVisible = useCallback(
+    (visible: boolean) => {
+      if (headerVisibleRef.current === visible) return;
+      headerVisibleRef.current = visible;
+      Animated.timing(headerTranslateY, {
+        toValue: visible ? 0 : -headerHeight,
+        duration: 180,
+        useNativeDriver: true,
+      }).start();
+    },
+    [headerHeight, headerTranslateY],
+  );
+
+  tabScrollToTopRef.current.scrollToTop = () => {
+    setHeaderVisible(true);
+    lastScrollYRef.current = 0;
+    directionDistanceRef.current = 0;
+    scrollRef.current?.scrollTo({ y: 0, animated: true });
   };
+  useScrollToTop(tabScrollToTopRef);
+
+  const handleScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const nextY = Math.max(0, event.nativeEvent.contentOffset.y);
+      scrollYRef.current = nextY;
+      const delta = nextY - lastScrollYRef.current;
+      lastScrollYRef.current = nextY;
+      if (nextY < 8) {
+        directionDistanceRef.current = 0;
+        setHeaderVisible(true);
+        return;
+      }
+      if (Math.abs(delta) < 1) return;
+      const direction: 1 | -1 = delta > 0 ? 1 : -1;
+      if (lastDirectionRef.current !== direction) {
+        lastDirectionRef.current = direction;
+        directionDistanceRef.current = 0;
+      }
+      directionDistanceRef.current += Math.abs(delta);
+      if (directionDistanceRef.current >= 14) {
+        setHeaderVisible(direction < 0);
+        directionDistanceRef.current = 0;
+      }
+    },
+    [setHeaderVisible],
+  );
   const hiddenSummaryHeight = () => overviewHeight + (topItems.length > 0 ? topSectionHeight : 0) + 32;
   const adjustScrollAfterLayoutChange = (delta: number) => {
     requestAnimationFrame(() => {
@@ -260,15 +309,21 @@ export default function WishlistScreen() {
 
   return (
     <View style={[styles.screen, { backgroundColor: colors.background }]}>
-      <ScrollView
-        ref={scrollRef}
-        style={styles.screen}
-        contentContainerStyle={styles.content}
-        onScroll={handleScroll}
-        scrollEventThrottle={16}
-        stickyHeaderIndices={[0]}
+      <Animated.View
+        onLayout={(event) => {
+          const nextHeight = Math.ceil(event.nativeEvent.layout.height);
+          if (nextHeight === headerHeight) return;
+          setHeaderHeight(nextHeight);
+          if (!headerVisibleRef.current) headerTranslateY.setValue(-nextHeight);
+        }}
+        style={[
+          styles.headerShell,
+          {
+            backgroundColor: colors.background,
+            transform: [{ translateY: headerTranslateY }],
+          },
+        ]}
       >
-        <View style={[styles.headerShell, { backgroundColor: colors.background }]}>
           <View style={styles.header}>
             <View style={styles.headerTitleRow}>
               <Text style={[styles.title, { color: colors.text }]}>欲しい漫画</Text>
@@ -299,7 +354,15 @@ export default function WishlistScreen() {
                 : '購入候補を眺めながら、思いついた作品をすぐ追加できます。'}
             </Text>
           </View>
-        </View>
+      </Animated.View>
+
+      <ScrollView
+        ref={scrollRef}
+        style={styles.screen}
+        contentContainerStyle={[styles.content, { paddingTop: headerHeight + 12 }]}
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
+      >
 
       <View style={[styles.quickAdd, { backgroundColor: colors.elevated }]}>
         <View style={styles.inputRow}>
@@ -657,22 +720,22 @@ function StatBox({ label, value }: { label: string; value: string }) {
 const styles = StyleSheet.create({
   screen: { flex: 1 },
   content: { gap: 16, padding: 18, paddingBottom: 40, paddingTop: 24 },
-  headerShell: { marginHorizontal: -18, marginTop: -24, paddingHorizontal: 18, paddingTop: 24, zIndex: 10 },
-  header: { gap: 4, paddingBottom: 10 },
+  headerShell: { left: 0, paddingHorizontal: 18, paddingTop: 24, position: 'absolute', right: 0, top: 0, zIndex: 10 },
+  header: { gap: 2, paddingBottom: 8 },
   headerTitleRow: { alignItems: 'center', flexDirection: 'row', gap: 12, justifyContent: 'space-between' },
-  title: { fontSize: 24, fontWeight: '900' },
+  title: { fontSize: 20, fontWeight: '900' },
   headerEditButton: {
     alignItems: 'center',
     borderRadius: 8,
     borderWidth: 1,
     flexDirection: 'row',
     gap: 5,
-    height: 38,
+    height: 34,
     justifyContent: 'center',
-    paddingHorizontal: 10,
+    paddingHorizontal: 9,
   },
-  editModeText: { fontSize: 13, fontWeight: '900' },
-  copy: { fontSize: 13, lineHeight: 18 },
+  editModeText: { fontSize: 12, fontWeight: '900' },
+  copy: { fontSize: 12, lineHeight: 16 },
   copyStrong: { fontSize: 13, fontWeight: '800', lineHeight: 18 },
   overview: { borderRadius: 8, borderWidth: 1, gap: 14, padding: 14 },
   overviewMain: { alignItems: 'center', flexDirection: 'row', gap: 12 },

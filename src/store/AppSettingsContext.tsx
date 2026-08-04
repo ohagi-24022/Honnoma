@@ -22,14 +22,12 @@ const NEW_RELEASE_NOTIFICATION_STORAGE_KEY_PREFIX = 'booknest.new-release-notifi
 
 type UserSettings = {
   favoriteSeriesKeys: string[];
+  newReleaseNotifications: boolean;
 };
 
-type LegacyUserSettings = UserSettings & {
-  newReleaseNotifications?: boolean;
-};
+type LegacyUserSettings = Partial<UserSettings>;
 
 type DeviceSettings = {
-  newReleaseNotifications: boolean;
   openExternalPurchaseLinks: boolean;
   showPublishedLatestVolume: boolean;
   trackPurchasePrices: boolean;
@@ -51,10 +49,10 @@ type AppSettingsContextValue = AppSettings & {
 
 const defaultUserSettings: UserSettings = {
   favoriteSeriesKeys: [],
+  newReleaseNotifications: false,
 };
 
 const defaultDeviceSettings: DeviceSettings = {
-  newReleaseNotifications: false,
   openExternalPurchaseLinks: false,
   showPublishedLatestVolume: false,
   trackPurchasePrices: false,
@@ -144,25 +142,29 @@ export function AppSettingsProvider({ children }: PropsWithChildren) {
           ? normalizeFavoriteKeys(parsedGuestUserSettings.favoriteSeriesKeys)
           : [];
 
+        const legacyDeviceNewReleaseNotifications =
+          'newReleaseNotifications' in parsedDeviceSettings &&
+          typeof (parsedDeviceSettings as { newReleaseNotifications?: unknown }).newReleaseNotifications === 'boolean'
+            ? (parsedDeviceSettings as { newReleaseNotifications: boolean }).newReleaseNotifications
+            : undefined;
         const resolvedNewReleaseNotifications = remoteNewReleaseNotifications
           ? true
-          : typeof parsedDeviceSettings.newReleaseNotifications === 'boolean'
-            ? parsedDeviceSettings.newReleaseNotifications
-            : storedNewReleaseNotifications !== undefined
-              ? storedNewReleaseNotifications
-              : parsedUserSettings.newReleaseNotifications;
+          : storedNewReleaseNotifications !== undefined
+            ? storedNewReleaseNotifications
+            : typeof parsedUserSettings.newReleaseNotifications === 'boolean'
+              ? parsedUserSettings.newReleaseNotifications
+              : legacyDeviceNewReleaseNotifications ?? defaultUserSettings.newReleaseNotifications;
 
         setUserSettings({
           ...defaultUserSettings,
           ...parsedUserSettings,
+          newReleaseNotifications: resolvedNewReleaseNotifications,
           favoriteSeriesKeys: normalizeFavoriteKeys([...localFavoriteKeys, ...guestFavoriteKeys, ...remoteFavoriteKeys]),
         });
+        const { newReleaseNotifications: _legacyNewReleaseNotifications, ...cleanDeviceSettings } = parsedDeviceSettings as Partial<DeviceSettings> & { newReleaseNotifications?: boolean };
         setDeviceSettings({
           ...defaultDeviceSettings,
-          ...parsedDeviceSettings,
-          ...(resolvedNewReleaseNotifications !== undefined
-            ? { newReleaseNotifications: resolvedNewReleaseNotifications }
-            : {}),
+          ...cleanDeviceSettings,
         });
       })
       .finally(() => {
@@ -179,9 +181,9 @@ export function AppSettingsProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     if (!hydrated || hydratedStorageKeyRef.current !== userStorageKey) return;
     AsyncStorage.setItem(userStorageKey, JSON.stringify(userSettings));
-    AsyncStorage.setItem(newReleaseNotificationStorageKey, String(deviceSettings.newReleaseNotifications));
+    AsyncStorage.setItem(newReleaseNotificationStorageKey, String(userSettings.newReleaseNotifications));
     AsyncStorage.setItem(DEVICE_STORAGE_KEY, JSON.stringify(deviceSettings));
-  }, [deviceSettings, hydrated, newReleaseNotificationStorageKey, userSettings, userStorageKey]);
+  }, [deviceSettings, hydrated, newReleaseNotificationStorageKey, userId, userSettings, userStorageKey]);
 
   const value = useMemo(
     () => ({
@@ -206,10 +208,10 @@ export function AppSettingsProvider({ children }: PropsWithChildren) {
         });
       },
       setNewReleaseNotifications: (newReleaseNotifications: boolean) =>
-        setDeviceSettings((current) => {
+        setUserSettings((current) => {
           const next = { ...current, newReleaseNotifications };
           if (hydratedStorageKeyRef.current === userStorageKey) {
-            void AsyncStorage.setItem(DEVICE_STORAGE_KEY, JSON.stringify(next));
+            void AsyncStorage.setItem(userStorageKey, JSON.stringify(next));
             void AsyncStorage.setItem(newReleaseNotificationStorageKey, String(newReleaseNotifications));
           }
           return next;
@@ -224,6 +226,24 @@ export function AppSettingsProvider({ children }: PropsWithChildren) {
             favoriteSeriesKeys: favorite ? [...currentKeys, seriesKey] : currentKeys,
           };
         });
+        if (supabase && userId) {
+          const request = favorite
+            ? supabase.from('favorite_series').upsert({
+                user_id: userId,
+                series_key: seriesKey,
+                series_title: seriesTitle,
+              })
+            : supabase
+                .from('favorite_series')
+                .delete()
+                .eq('user_id', userId)
+                .eq('series_key', seriesKey);
+          void request.then(({ error }) => {
+            if (error && !isMissingSupabaseRelationError(error)) {
+              console.warn('Failed to sync favorite series', error);
+            }
+          });
+        }
       },
       setOpenExternalPurchaseLinks: (openExternalPurchaseLinks: boolean) =>
         setDeviceSettings((current) => ({ ...current, openExternalPurchaseLinks })),
@@ -233,15 +253,36 @@ export function AppSettingsProvider({ children }: PropsWithChildren) {
         setDeviceSettings((current) => ({ ...current, trackPurchasePrices })),
       toggleFavoriteSeries: (seriesTitle: string) => {
         const seriesKey = normalizeSeriesKey(seriesTitle);
-        setUserSettings((current) => ({
-          ...current,
-          favoriteSeriesKeys: current.favoriteSeriesKeys.includes(seriesKey)
-            ? current.favoriteSeriesKeys.filter((key) => key !== seriesKey)
-            : [...current.favoriteSeriesKeys, seriesKey],
-        }));
+        if (!seriesKey) return;
+        const favorite = !userSettings.favoriteSeriesKeys.includes(seriesKey);
+        setUserSettings((current) => {
+          const currentKeys = current.favoriteSeriesKeys.filter((key) => key !== seriesKey);
+          return {
+            ...current,
+            favoriteSeriesKeys: favorite ? [...currentKeys, seriesKey] : currentKeys,
+          };
+        });
+        if (supabase && userId) {
+          const request = favorite
+            ? supabase.from('favorite_series').upsert({
+                user_id: userId,
+                series_key: seriesKey,
+                series_title: seriesTitle,
+              })
+            : supabase
+                .from('favorite_series')
+                .delete()
+                .eq('user_id', userId)
+                .eq('series_key', seriesKey);
+          void request.then(({ error }) => {
+            if (error && !isMissingSupabaseRelationError(error)) {
+              console.warn('Failed to sync favorite series', error);
+            }
+          });
+        }
       },
     }),
-    [deviceSettings, hydrated, newReleaseNotificationStorageKey, userSettings, userStorageKey],
+    [deviceSettings, hydrated, newReleaseNotificationStorageKey, userId, userSettings, userStorageKey],
   );
 
   return <AppSettingsContext.Provider value={value}>{children}</AppSettingsContext.Provider>;

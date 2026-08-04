@@ -479,8 +479,14 @@ export default function ScanScreen() {
       return;
     }
 
-    if (volumeNumber && !Number.isInteger(Number(volumeNumber))) {
-      setNotice({ tone: 'warning', message: '巻数は整数で入力してください。' });
+    const parsedVolumeNumber = Number(volumeNumber);
+    if (volumeNumber && (!Number.isInteger(parsedVolumeNumber) || parsedVolumeNumber < 1)) {
+      setNotice({ tone: 'warning', message: '巻数は1以上の整数で入力してください。' });
+      return;
+    }
+
+    if (isbn.trim() && !isBookIsbnBarcode(isbn)) {
+      setNotice({ tone: 'warning', message: '有効なISBNを入力してください。' });
       return;
     }
 
