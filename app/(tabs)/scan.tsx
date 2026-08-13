@@ -322,7 +322,7 @@ export default function ScanScreen() {
         },
         {
           text: '詳細を見る',
-          onPress: () => router.push(`/(tabs)/book/${encodeURIComponent(book.id)}`),
+          onPress: () => router.push(`/book/${encodeURIComponent(book.id)}`),
         },
         { text: 'OK' },
       ]);

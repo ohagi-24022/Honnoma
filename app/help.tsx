@@ -3,9 +3,8 @@ import { router, useNavigation } from 'expo-router';
 import { useCallback, useLayoutEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { EdgeSwipeBack } from '../../src/components/EdgeSwipeBack';
-import { HeaderBackButton } from '../../src/components/HeaderBackButton';
-import { useAppTheme } from '../../src/store/ThemeContext';
+import { HeaderBackButton } from '../src/components/HeaderBackButton';
+import { useAppTheme } from '../src/store/ThemeContext';
 
 type HelpCategory = {
   icon: keyof typeof Ionicons.glyphMap;
@@ -212,7 +211,7 @@ export default function HelpScreen() {
   }, [goBack, navigation]);
 
   return (
-    <EdgeSwipeBack onBack={goBack} style={{ backgroundColor: colors.background }}>
+    <View style={[styles.screen, { backgroundColor: colors.background }]}>
       <ScrollView
         style={[styles.screen, { backgroundColor: colors.background }]}
         contentContainerStyle={styles.content}
@@ -259,7 +258,7 @@ export default function HelpScreen() {
         </View>
       ))}
       </ScrollView>
-    </EdgeSwipeBack>
+    </View>
   );
 }
 

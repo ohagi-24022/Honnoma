@@ -3,22 +3,21 @@ import { Stack, useLocalSearchParams, useNavigation, useRouter } from 'expo-rout
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { EdgeSwipeBack } from '../../../src/components/EdgeSwipeBack';
-import { RankingCard } from '../../../src/components/RankingCard';
-import { buildPurchaseUrl } from '../../../src/lib/bookApis';
+import { RankingCard } from '../../src/components/RankingCard';
+import { buildPurchaseUrl } from '../../src/lib/bookApis';
 import {
   buildRankingRows,
   GlobalRankingRow,
   RankingCategory,
   rankingCategoryLabels,
-} from '../../../src/lib/rankings';
-import { normalizeSeriesKey } from '../../../src/lib/series';
-import { buildSeriesGroups } from '../../../src/lib/seriesSelectors';
-import { supabase } from '../../../src/lib/supabase';
-import { isMissingSupabaseFunctionError } from '../../../src/lib/supabaseErrors';
-import { useLibrary } from '../../../src/store/LibraryContext';
-import { useAppTheme } from '../../../src/store/ThemeContext';
-import { useWishlist } from '../../../src/store/WishlistContext';
+} from '../../src/lib/rankings';
+import { normalizeSeriesKey } from '../../src/lib/series';
+import { buildSeriesGroups } from '../../src/lib/seriesSelectors';
+import { supabase } from '../../src/lib/supabase';
+import { isMissingSupabaseFunctionError } from '../../src/lib/supabaseErrors';
+import { useLibrary } from '../../src/store/LibraryContext';
+import { useAppTheme } from '../../src/store/ThemeContext';
+import { useWishlist } from '../../src/store/WishlistContext';
 
 const PAGE_SIZE = 10;
 
@@ -155,7 +154,7 @@ export default function RankingCategoryScreen() {
   }, [pageCount]);
 
   return (
-    <EdgeSwipeBack onBack={goBackToRanking} style={{ backgroundColor: colors.background }}>
+    <View style={[styles.screen, { backgroundColor: colors.background }]}>
       <Stack.Screen options={{ title: label.title }} />
       <ScrollView
         style={styles.screen}
@@ -219,7 +218,7 @@ export default function RankingCategoryScreen() {
           </View>
         )}
       </ScrollView>
-    </EdgeSwipeBack>
+    </View>
   );
 }
 

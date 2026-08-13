@@ -324,7 +324,7 @@ function RankingShelf({
             {rows.length > 10 ? (
               <Pressable
                 accessibilityLabel={`${title}をもっと見る`}
-                onPress={() => router.push(`/(tabs)/ranking/${category}`)}
+                onPress={() => router.push(`/ranking/${category}`)}
                 style={styles.moreHeaderButton}
               >
                 <Text style={[styles.moreHeaderText, { color: colors.primary }]}>もっと見る</Text>
@@ -364,7 +364,7 @@ function RankingShelf({
           {rows.length > 10 ? (
             <Pressable
               accessibilityLabel={`${title}をもっと見る`}
-              onPress={() => router.push(`/(tabs)/ranking/${category}`)}
+              onPress={() => router.push(`/ranking/${category}`)}
               style={[styles.moreTailCard, { borderColor: colors.border }]}
             >
               <Ionicons color={colors.text} name="chevron-forward-circle-outline" size={24} />

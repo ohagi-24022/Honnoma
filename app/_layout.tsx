@@ -61,6 +61,17 @@ function RootStack() {
     };
   }, []);
 
+  const panelScreenOptions = {
+    animation: 'slide_from_right' as const,
+    contentStyle: { backgroundColor: colors.background },
+    fullScreenGestureEnabled: true,
+    gestureEnabled: true,
+    headerShadowVisible: false,
+    headerStyle: { backgroundColor: colors.background },
+    headerTintColor: colors.text,
+    headerTitleStyle: { fontWeight: '700' as const },
+  };
+
   return (
     <>
       <StatusBar style={resolvedMode === 'dark' ? 'light' : 'dark'} />
@@ -75,6 +86,13 @@ function RootStack() {
         }}
       >
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="series/[title]" options={{ ...panelScreenOptions, title: '\u30b7\u30ea\u30fc\u30ba' }} />
+        <Stack.Screen name="book/[id]" options={{ ...panelScreenOptions, title: '\u5dfb\u306e\u60c5\u5831' }} />
+        <Stack.Screen name="report" options={{ ...panelScreenOptions, title: '\u60c5\u5831\u306e\u5831\u544a' }} />
+        <Stack.Screen name="account" options={{ ...panelScreenOptions, title: '\u30de\u30a4\u30da\u30fc\u30b8' }} />
+        <Stack.Screen name="help" options={{ ...panelScreenOptions, title: '\u30d8\u30eb\u30d7' }} />
+        <Stack.Screen name="notifications" options={{ ...panelScreenOptions, title: '\u65b0\u520a\u901a\u77e5' }} />
+        <Stack.Screen name="ranking/[category]" options={{ ...panelScreenOptions, title: '\u30e9\u30f3\u30ad\u30f3\u30b0' }} />
         <Stack.Screen name="privacy" options={{ title: 'プライバシーポリシー' }} />
       </Stack>
     </>

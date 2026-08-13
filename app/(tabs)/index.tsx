@@ -829,7 +829,7 @@ export default function HomeScreen() {
         onQueryChange={setQuery}
         onSeriesDisplayModeChange={() => setSeriesDisplayMode((current) => getNextSeriesDisplayMode(current))}
         onViewModeChange={selectViewMode}
-        onOpenMyPage={() => router.navigate({ pathname: '/(tabs)/account', params: { from: 'home' } })}
+        onOpenMyPage={() => router.navigate({ pathname: '/account', params: { from: 'home' } })}
         onOpenFilter={() => setOpenMenu('filter')}
         onOpenSort={() => setOpenMenu('sort')}
       />
@@ -861,7 +861,7 @@ export default function HomeScreen() {
               return (
                 <Pressable
                   accessibilityLabel={`${item.title}の詳細を開く`}
-                  onPress={() => router.navigate(`/(tabs)/series/${encodeURIComponent(item.title)}`)}
+                  onPress={() => router.navigate(`/series/${encodeURIComponent(item.title)}`)}
                   style={[styles.coverTile, { width: coverTileWidth }]}
                 >
                   <BookCover
@@ -877,7 +877,7 @@ export default function HomeScreen() {
                 <View style={[styles.titleRow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
                   <Pressable
                     accessibilityLabel={`${item.title}の詳細を開く`}
-                    onPress={() => router.navigate(`/(tabs)/series/${encodeURIComponent(item.title)}`)}
+                    onPress={() => router.navigate(`/series/${encodeURIComponent(item.title)}`)}
                     style={styles.titleRowBody}
                   >
                     <Text numberOfLines={1} style={[styles.titleRowText, { color: colors.text }]}>
@@ -919,6 +919,15 @@ export default function HomeScreen() {
                           <Ionicons color={colors.text} name="refresh" size={16} />
                         )}
                     </TouchableOpacity>
+                    <TouchableOpacity
+                      accessibilityLabel={`${item.title}\u306e\u60c5\u5831\u3092\u5831\u544a`}
+                      activeOpacity={0.7}
+                      hitSlop={10}
+                      onPress={() => router.navigate({ pathname: '/report', params: { series: item.title, reason: 'other', from: 'home' } })}
+                      style={styles.titleReportButton}
+                    >
+                      <Ionicons color={colors.muted} name="flag-outline" size={15} />
+                    </TouchableOpacity>
                   </View>
                 </View>
               );
@@ -943,6 +952,7 @@ export default function HomeScreen() {
                 onToggleFavorite={() => void toggleSeriesFavorite(item)}
                 onToggleNotification={() => void toggleSeriesNotification(item)}
                 onRefresh={() => void refreshSeriesPublication(item.title, item.latestVolume)}
+                onReport={() => router.navigate({ pathname: '/report', params: { series: item.title, reason: 'other', from: 'home' } })}
               />
             );
           }}
@@ -1088,7 +1098,8 @@ const styles = StyleSheet.create({
   titleRowBody: { flex: 1, minWidth: 0 },
   titleRowText: { fontSize: 15, fontWeight: '800', lineHeight: 20 },
   titleRowMeta: { fontSize: 12, marginTop: 2 },
-  titleRowActions: { flexDirection: 'row', gap: 6 },
+  titleRowActions: { alignItems: 'center', flexDirection: 'row', gap: 6 },
+  titleReportButton: { alignItems: 'center', height: 28, justifyContent: 'center', width: 24 },
   titleIconButton: {
     alignItems: 'center',
     borderRadius: 6,

@@ -27,6 +27,7 @@ type SeriesCardProps = {
   onToggleFavorite: () => void;
   onToggleNotification: () => void;
   onRefresh: () => void;
+  onReport: () => void;
 };
 
 function formatVolumeList(label: string, volumes: number[]) {
@@ -53,6 +54,7 @@ export function SeriesCard({
   onToggleFavorite,
   onToggleNotification,
   onRefresh,
+  onReport,
 }: SeriesCardProps) {
   const { colors } = useAppTheme();
   const router = useRouter();
@@ -73,10 +75,19 @@ export function SeriesCard({
     unownedVolumes.length > 0 ||
     publicationInfo?.isCompleted;
 
-  const openSeries = () => router.navigate(`/(tabs)/series/${encodeURIComponent(group.title)}`);
+  const openSeries = () => router.navigate(`/series/${encodeURIComponent(group.title)}`);
 
   return (
     <View style={[styles.row, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+      <TouchableOpacity
+        accessibilityLabel={`${group.title}\u306e\u60c5\u5831\u3092\u5831\u544a`}
+        activeOpacity={0.7}
+        hitSlop={10}
+        onPress={onReport}
+        style={styles.reportButton}
+      >
+        <Ionicons color={colors.muted} name="flag-outline" size={15} />
+      </TouchableOpacity>
       <Pressable accessibilityLabel={`${group.title}の詳細を開く`} onPress={openSeries} style={styles.coverPress}>
         <BookCover
           thumbnailUrl={seriesCoverUrl ?? group.representative.thumbnailUrl}
@@ -199,6 +210,7 @@ const styles = StyleSheet.create({
     minHeight: 144,
     padding: 10,
     overflow: 'hidden',
+    position: 'relative',
   },
   coverPress: { borderRadius: 4 },
   cover: { borderRadius: 4, height: 120, width: 82 },
@@ -208,6 +220,16 @@ const styles = StyleSheet.create({
   titlePress: { flex: 1 },
   title: { fontSize: 15, fontWeight: '800', lineHeight: 19 },
   actions: { alignItems: 'center', flexDirection: 'row', gap: 6, zIndex: 2 },
+  reportButton: {
+    alignItems: 'center',
+    height: 26,
+    justifyContent: 'center',
+    position: 'absolute',
+    right: 6,
+    top: 6,
+    width: 26,
+    zIndex: 3,
+  },
   iconButton: {
     alignItems: 'center',
     borderRadius: 6,

@@ -10,12 +10,11 @@ import {
   View,
 } from 'react-native';
 
-import { BookCover } from '../../../src/components/BookCover';
-import { EdgeSwipeBack } from '../../../src/components/EdgeSwipeBack';
-import { BookVolumeDetails } from '../../../src/lib/bookApis';
-import { getBookVolumeDetails } from '../../../src/lib/bookDetailsCache';
-import { useLibrary } from '../../../src/store/LibraryContext';
-import { useAppTheme } from '../../../src/store/ThemeContext';
+import { BookCover } from '../../src/components/BookCover';
+import { BookVolumeDetails } from '../../src/lib/bookApis';
+import { getBookVolumeDetails } from '../../src/lib/bookDetailsCache';
+import { useLibrary } from '../../src/store/LibraryContext';
+import { useAppTheme } from '../../src/store/ThemeContext';
 
 const statusLabels = {
   unread: '未読',
@@ -39,7 +38,7 @@ export default function BookDetailsScreen() {
   const goBack = useCallback(() => {
     const fromSeries = Array.isArray(params.fromSeries) ? params.fromSeries[0] : params.fromSeries;
     if (fromSeries) {
-      router.replace(`/(tabs)/series/${encodeURIComponent(fromSeries)}`);
+      router.replace(`/series/${encodeURIComponent(fromSeries)}`);
       return;
     }
     if (navigation.canGoBack()) {
@@ -47,7 +46,7 @@ export default function BookDetailsScreen() {
       return;
     }
     if (book?.seriesTitle) {
-      router.replace(`/(tabs)/series/${encodeURIComponent(book.seriesTitle)}`);
+      router.replace(`/series/${encodeURIComponent(book.seriesTitle)}`);
       return;
     }
     router.replace('/(tabs)');
@@ -66,8 +65,18 @@ export default function BookDetailsScreen() {
           <Text style={[styles.headerBackText, { color: colors.text }]}>戻る</Text>
         </Pressable>
       ),
+      headerRight: () => (
+        <Pressable
+          accessibilityLabel="巻情報の違いを報告"
+          hitSlop={10}
+          onPress={() => router.navigate({ pathname: '/report', params: { series: book?.seriesTitle ?? '', reason: 'other', from: 'book' } })}
+          style={styles.headerReportButton}
+        >
+          <Ionicons color={colors.muted} name="flag-outline" size={17} />
+        </Pressable>
+      ),
     });
-  }, [book?.volumeNumber, colors.text, goBack, navigation]);
+  }, [book?.seriesTitle, book?.volumeNumber, colors.muted, colors.text, goBack, navigation]);
 
   useEffect(() => {
     activeBookIdRef.current = routeBookId;
@@ -151,7 +160,7 @@ export default function BookDetailsScreen() {
   const displayCover = details?.thumbnailUrl ?? book.thumbnailUrl;
 
   return (
-    <EdgeSwipeBack onBack={goBack} style={{ backgroundColor: colors.background }}>
+    <View style={[styles.screen, { backgroundColor: colors.background }]}>
       <ScrollView
         style={styles.screen}
         contentContainerStyle={styles.content}
@@ -215,7 +224,7 @@ export default function BookDetailsScreen() {
         </Text>
       )}
       </ScrollView>
-    </EdgeSwipeBack>
+    </View>
   );
 }
 
@@ -303,4 +312,5 @@ const styles = StyleSheet.create({
     paddingRight: 8,
   },
   headerBackText: { fontSize: 15, fontWeight: '700' },
+  headerReportButton: { alignItems: 'center', height: 34, justifyContent: 'center', width: 30 },
 });

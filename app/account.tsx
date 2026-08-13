@@ -15,17 +15,16 @@ import {
   View,
 } from 'react-native';
 
-import { EdgeSwipeBack } from '../../src/components/EdgeSwipeBack';
-import { HeaderBackButton } from '../../src/components/HeaderBackButton';
-import { deleteCurrentAccount } from '../../src/lib/account';
+import { HeaderBackButton } from '../src/components/HeaderBackButton';
+import { deleteCurrentAccount } from '../src/lib/account';
 import {
   getNewReleaseNotificationLogs,
   NewReleaseNotificationLog,
-} from '../../src/lib/newReleaseNotifications';
-import { useAppSettings } from '../../src/store/AppSettingsContext';
-import { useAuth } from '../../src/store/AuthContext';
-import { useLibrary } from '../../src/store/LibraryContext';
-import { useAppTheme } from '../../src/store/ThemeContext';
+} from '../src/lib/newReleaseNotifications';
+import { useAppSettings } from '../src/store/AppSettingsContext';
+import { useAuth } from '../src/store/AuthContext';
+import { useLibrary } from '../src/store/LibraryContext';
+import { useAppTheme } from '../src/store/ThemeContext';
 
 const ESTIMATED_BOOK_PRICE = 600;
 
@@ -37,15 +36,15 @@ type AppIconOption = {
 };
 
 const APP_ICON_OPTIONS: AppIconOption[] = [
-  { label: '\u9752', name: null, image: require('../../assets/app-icons/blue.png'), tone: '\u6a19\u6e96' },
-  { label: '\u7dd1', name: 'Green', image: require('../../assets/ios-alternate-icons/green.png'), tone: '\u68ee' },
-  { label: '\u91d1', name: 'Gold', image: require('../../assets/ios-alternate-icons/gold.png'), tone: '\u91d1' },
-  { label: '\u30ed\u30fc\u30ba', name: 'Rose', image: require('../../assets/ios-alternate-icons/rose.png'), tone: '\u6de1\u6843' },
-  { label: '\u30d6\u30e9\u30a6\u30f3', name: 'Brown', image: require('../../assets/ios-alternate-icons/brown.png'), tone: '\u7d19' },
-  { label: '\u30c6\u30a3\u30fc\u30eb', name: 'Teal', image: require('../../assets/ios-alternate-icons/teal.png'), tone: '\u9752\u7dd1' },
-  { label: '\u7d2b', name: 'Purple', image: require('../../assets/ios-alternate-icons/purple.png'), tone: '\u7d2b' },
-  { label: '\u30b0\u30ec\u30fc', name: 'Gray', image: require('../../assets/ios-alternate-icons/gray.png'), tone: '\u7070' },
-  { label: '\u9ec4', name: 'Yellow', image: require('../../assets/ios-alternate-icons/yellow.png'), tone: '\u9ec4' },
+  { label: '\u9752', name: null, image: require('../assets/app-icons/blue.png'), tone: '\u6a19\u6e96' },
+  { label: '\u7dd1', name: 'Green', image: require('../assets/app-icons/green.png'), tone: '\u68ee' },
+  { label: '\u91d1', name: 'Gold', image: require('../assets/app-icons/gold.png'), tone: '\u91d1' },
+  { label: '\u30ed\u30fc\u30ba', name: 'Rose', image: require('../assets/app-icons/rose.png'), tone: '\u6de1\u6843' },
+  { label: '\u30d6\u30e9\u30a6\u30f3', name: 'Brown', image: require('../assets/app-icons/brown.png'), tone: '\u7d19' },
+  { label: '\u30c6\u30a3\u30fc\u30eb', name: 'Teal', image: require('../assets/app-icons/teal.png'), tone: '\u9752\u7dd1' },
+  { label: '\u7d2b', name: 'Purple', image: require('../assets/app-icons/purple.png'), tone: '\u7d2b' },
+  { label: '\u30b0\u30ec\u30fc', name: 'Gray', image: require('../assets/app-icons/gray.png'), tone: '\u7070' },
+  { label: '\u9ec4', name: 'Yellow', image: require('../assets/app-icons/yellow.png'), tone: '\u9ec4' },
 ];
 
 type AlternateAppIconsModule = {
@@ -217,7 +216,7 @@ export default function AccountScreen() {
 
   if (!user) {
     return (
-      <EdgeSwipeBack onBack={goBack} style={{ backgroundColor: colors.background }}>
+      <View style={[styles.screen, { backgroundColor: colors.background }]}>
         <View style={[styles.centerScreen, { backgroundColor: colors.background }]}>
           <Ionicons color={colors.muted} name="person-circle-outline" size={42} />
           <Text style={[styles.emptyTitle, { color: colors.text }]}>ログインが必要です</Text>
@@ -230,12 +229,12 @@ export default function AccountScreen() {
             </Pressable>
           </Link>
         </View>
-      </EdgeSwipeBack>
+      </View>
     );
   }
 
   return (
-    <EdgeSwipeBack onBack={goBack} style={{ backgroundColor: colors.background }}>
+    <View style={[styles.screen, { backgroundColor: colors.background }]}>
       <ScrollView
         refreshControl={<RefreshControl refreshing={loading} onRefresh={() => void loadLogs()} />}
         style={[styles.screen, { backgroundColor: colors.background }]}
@@ -398,7 +397,7 @@ export default function AccountScreen() {
         </Pressable>
       </View>
       </ScrollView>
-    </EdgeSwipeBack>
+    </View>
   );
 }
 

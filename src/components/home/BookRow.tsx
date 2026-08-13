@@ -9,7 +9,7 @@ export function BookRow({ book }: { book: Book }) {
   const { colors } = useAppTheme();
 
   return (
-    <Link href={`/(tabs)/book/${encodeURIComponent(book.id)}`} asChild>
+    <Link href={`/book/${encodeURIComponent(book.id)}`} asChild>
       <Pressable style={[styles.row, { backgroundColor: colors.surface, borderColor: colors.border }]}>
         <BookCover thumbnailUrl={book.thumbnailUrl} isbn={book.isbn} style={styles.cover} />
         <View style={styles.body}>

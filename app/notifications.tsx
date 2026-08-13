@@ -11,14 +11,13 @@ import {
   View,
 } from 'react-native';
 
-import { EdgeSwipeBack } from '../../src/components/EdgeSwipeBack';
-import { HeaderBackButton } from '../../src/components/HeaderBackButton';
+import { HeaderBackButton } from '../src/components/HeaderBackButton';
 import {
   getNewReleaseNotificationLogs,
   NewReleaseNotificationLog,
-} from '../../src/lib/newReleaseNotifications';
-import { useAuth } from '../../src/store/AuthContext';
-import { useAppTheme } from '../../src/store/ThemeContext';
+} from '../src/lib/newReleaseNotifications';
+import { useAuth } from '../src/store/AuthContext';
+import { useAppTheme } from '../src/store/ThemeContext';
 
 export default function NotificationsScreen() {
   const navigation = useNavigation();
@@ -56,7 +55,7 @@ export default function NotificationsScreen() {
 
   if (!user) {
     return (
-      <EdgeSwipeBack onBack={goBack} style={{ backgroundColor: colors.background }}>
+      <View style={[styles.screen, { backgroundColor: colors.background }]}>
         <View style={[styles.centerScreen, { backgroundColor: colors.background }]}>
           <Ionicons color={colors.muted} name="notifications-outline" size={42} />
           <Text style={[styles.emptyTitle, { color: colors.text }]}>ログインが必要です</Text>
@@ -69,12 +68,12 @@ export default function NotificationsScreen() {
             </Pressable>
           </Link>
         </View>
-      </EdgeSwipeBack>
+      </View>
     );
   }
 
   return (
-    <EdgeSwipeBack onBack={goBack} style={{ backgroundColor: colors.background }}>
+    <View style={[styles.screen, { backgroundColor: colors.background }]}>
       <ScrollView
         refreshControl={<RefreshControl refreshing={loading} onRefresh={() => void loadLogs()} />}
         style={[styles.screen, { backgroundColor: colors.background }]}
@@ -133,7 +132,7 @@ export default function NotificationsScreen() {
         </View>
       )}
       </ScrollView>
-    </EdgeSwipeBack>
+    </View>
   );
 }
 
