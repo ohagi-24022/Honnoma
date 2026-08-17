@@ -923,7 +923,7 @@ export default function HomeScreen() {
                       accessibilityLabel={`${item.title}\u306e\u60c5\u5831\u3092\u5831\u544a`}
                       activeOpacity={0.7}
                       hitSlop={10}
-                      onPress={() => router.navigate({ pathname: '/report', params: { series: item.title, reason: 'other', from: 'home' } })}
+                      onPress={() => router.navigate({ pathname: '/report', params: { series: item.title, reason: 'title', from: 'home' } })}
                       style={styles.titleReportButton}
                     >
                       <Ionicons color={colors.muted} name="flag-outline" size={15} />
@@ -952,7 +952,7 @@ export default function HomeScreen() {
                 onToggleFavorite={() => void toggleSeriesFavorite(item)}
                 onToggleNotification={() => void toggleSeriesNotification(item)}
                 onRefresh={() => void refreshSeriesPublication(item.title, item.latestVolume)}
-                onReport={() => router.navigate({ pathname: '/report', params: { series: item.title, reason: 'other', from: 'home' } })}
+                onReport={() => router.navigate({ pathname: '/report', params: { series: item.title, reason: 'title', from: 'home' } })}
               />
             );
           }}

@@ -185,7 +185,7 @@ export default function SeriesScreen() {
           <Pressable
             accessibilityLabel="シリーズ情報の違いを報告"
             hitSlop={10}
-            onPress={() => router.navigate({ pathname: '/report', params: { series: seriesTitle, reason: 'other', from: 'series' } })}
+            onPress={() => router.navigate({ pathname: '/report', params: { series: seriesTitle, reason: 'publication', from: 'series' } })}
             style={styles.headerReportButton}
           >
             <Ionicons color={colors.muted} name="flag-outline" size={17} />

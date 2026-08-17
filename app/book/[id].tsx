@@ -69,7 +69,7 @@ export default function BookDetailsScreen() {
         <Pressable
           accessibilityLabel="巻情報の違いを報告"
           hitSlop={10}
-          onPress={() => router.navigate({ pathname: '/report', params: { series: book?.seriesTitle ?? '', reason: 'other', from: 'book' } })}
+          onPress={() => router.navigate({ pathname: '/report', params: { series: book?.seriesTitle ?? '', title: book?.title ?? '', volume: book?.volumeNumber ? String(book.volumeNumber) : '', isbn: book?.isbn ?? '', reason: 'book', from: 'book' } })}
           style={styles.headerReportButton}
         >
           <Ionicons color={colors.muted} name="flag-outline" size={17} />
