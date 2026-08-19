@@ -15,181 +15,153 @@ type HelpCategory = {
   }>;
 };
 
+const t = {
+  title: '\u84d0\u96c6\u67b6\u306e\u4f7f\u3044\u65b9',
+  copy: '\u3088\u304f\u4f7f\u3046\u6a5f\u80fd\u3092\u9805\u76ee\u3054\u3068\u306b\u78ba\u8a8d\u3067\u304d\u307e\u3059\u3002\u521d\u3081\u3066\u4f7f\u3046\u3068\u304d\u3084\u64cd\u4f5c\u306b\u8ff7\u3063\u305f\u3068\u304d\u306b\u898b\u3066\u304f\u3060\u3055\u3044\u3002',
+  backToSettings: '\u8a2d\u5b9a\u306b\u623b\u308b',
+  openCategorySuffix: '\u306e\u30d8\u30eb\u30d7\u3092\u958b\u304f',
+};
+
 const helpCategories: HelpCategory[] = [
   {
     icon: 'barcode-outline',
-    title: '登録',
+    title: '\u767b\u9332',
     sections: [
       {
-        title: 'ISBNバーコードで登録する',
-        body:
-          '登録タブでISBNバーコードを読み取ると、タイトル、作者、出版社、表紙、シリーズ名、巻数を自動取得します。取得後は確認画面で内容を見てから追加できます。',
+        title: 'ISBN\u30b9\u30ad\u30e3\u30f3\u3067\u767b\u9332\u3059\u308b',
+        body: 'ISBN\u30d0\u30fc\u30b3\u30fc\u30c9\u3092\u8aad\u307f\u53d6\u308b\u3068\u3001\u30bf\u30a4\u30c8\u30eb\u3001\u4f5c\u8005\u3001\u51fa\u7248\u793e\u3001\u8868\u7d19\u3001\u30b7\u30ea\u30fc\u30ba\u540d\u3001\u5dfb\u6570\u3092\u53d6\u5f97\u3057\u307e\u3059\u3002\u30b9\u30ad\u30e3\u30f3\u5f8c\u306f\u78ba\u8a8d\u753b\u9762\u3067\u5185\u5bb9\u3092\u898b\u3066\u304b\u3089\u8ffd\u52a0\u3067\u304d\u307e\u3059\u3002',
       },
       {
-        title: '連続スキャンと確認して追加',
-        body:
-          '連続スキャンでは、画面を移動せずに次の本を読み取れます。1冊ずつ内容を確認したい場合は、確認画面から「追加」または「修正して追加」を選んでください。',
+        title: '\u9023\u7d9a\u30b9\u30ad\u30e3\u30f3\u3068\u4e00\u6642\u30ea\u30b9\u30c8',
+        body: '\u9023\u7d9a\u30b9\u30ad\u30e3\u30f3\u3067\u306f\u3001\u8aad\u307f\u53d6\u3063\u305f\u672c\u3092\u4e00\u6642\u30ea\u30b9\u30c8\u306b\u305f\u3081\u3066\u78ba\u8a8d\u3067\u304d\u307e\u3059\u3002\u540c\u3058ISBN\u306f\u4e00\u6642\u30ea\u30b9\u30c8\u5185\u3067\u3082\u91cd\u8907\u3068\u3057\u3066\u6271\u3046\u305f\u3081\u3001\u5927\u91cf\u767b\u9332\u6642\u306b\u8aad\u307f\u53d6\u308a\u304c\u6b62\u307e\u308a\u306b\u304f\u304f\u306a\u308a\u307e\u3059\u3002',
       },
       {
-        title: '手動登録',
-        body:
-          'バーコードがない本や検索できない本は、手動入力をONにして追加できます。タイトル、シリーズ名、巻数を入れておくと、本棚のシリーズ管理や巻抜け検出に反映されます。',
+        title: '\u624b\u52d5\u767b\u9332\u3068ISBN\u691c\u7d22',
+        body: '\u624b\u52d5\u5165\u529b\u3092ON\u306b\u3059\u308b\u3068\u3001\u30d0\u30fc\u30b3\u30fc\u30c9\u304c\u306a\u3044\u672c\u3084\u53d6\u5f97\u3067\u304d\u306a\u3044\u672c\u3092\u767b\u9332\u3067\u304d\u307e\u3059\u3002ISBN\u3092\u5165\u529b\u3057\u3066\u691c\u7d22\u3059\u308b\u3053\u3068\u3082\u3067\u304d\u307e\u3059\u3002',
       },
       {
-        title: '重複した本',
-        body:
-          '同じISBN、または同じシリーズ名と巻数の本は重複として扱われます。削除した本を再登録したい場合は、削除後にもう一度スキャンしてください。',
+        title: '\u4fa1\u683c\u8a18\u9332',
+        body: '\u8a2d\u5b9a\u3067\u8cfc\u5165\u4fa1\u683c\u306e\u8a18\u9332\u3092ON\u306b\u3059\u308b\u3068\u3001\u767b\u9332\u6642\u306b\u901a\u5e38\u4fa1\u683c\u307e\u305f\u306f\u4e2d\u53e4\u4fa1\u683c\u3092\u8a18\u9332\u3067\u304d\u307e\u3059\u3002\u901a\u5e38\u4fa1\u683c\u306f\u53d6\u5f97\u3067\u304d\u308b\u5834\u5408\u306bAPI\u306e\u60c5\u5831\u3092\u4f7f\u3044\u307e\u3059\u3002',
       },
     ],
   },
   {
     icon: 'library-outline',
-    title: '本棚',
+    title: '\u672c\u68da',
     sections: [
       {
-        title: 'シリーズ表示と全冊表示',
-        body:
-          '本棚では、シリーズごとにまとめる「シリーズ」と、登録した本を1冊ずつ見る「全冊」を切り替えられます。検索、表示条件、並び替えは上部のアイコンから変更できます。',
+        title: '\u30b7\u30ea\u30fc\u30ba\u8868\u793a\u3068\u5168\u518a\u8868\u793a',
+        body: '\u672c\u68da\u3067\u306f\u3001\u30b7\u30ea\u30fc\u30ba\u3054\u3068\u306b\u307e\u3068\u3081\u3066\u898b\u308b\u8868\u793a\u3068\u3001\u767b\u9332\u3057\u305f\u672c\u3092\u3059\u3079\u3066\u898b\u308b\u8868\u793a\u3092\u5207\u308a\u66ff\u3048\u3089\u308c\u307e\u3059\u3002\u8868\u793a\u6761\u4ef6\u3084\u4e26\u3073\u66ff\u3048\u3001\u8868\u793a\u65b9\u6cd5\u306e\u5909\u66f4\u3082\u4e0a\u90e8\u306e\u30a2\u30a4\u30b3\u30f3\u304b\u3089\u884c\u3048\u307e\u3059\u3002',
       },
       {
-        title: '表示方法を変える',
-        body:
-          'シリーズ表示中は、検索欄右側の表示方法アイコンで「詳細表示」「表紙のみ」「タイトルのみ」を切り替えられます。表紙のみは一覧性を重視し、表紙を小さめに並べて表示します。',
+        title: '\u8868\u793a\u65b9\u6cd5\u3092\u5909\u3048\u308b',
+        body: '\u30b7\u30ea\u30fc\u30ba\u306f\u3001\u8a73\u7d30\u8868\u793a\u3001\u8868\u7d19\u306e\u307f\u3001\u30bf\u30a4\u30c8\u30eb\u306e\u307f\u306e3\u7a2e\u985e\u3067\u8868\u793a\u3067\u304d\u307e\u3059\u3002\u8868\u7d19\u306e\u307f\u306f\u4e00\u89a7\u6027\u3092\u91cd\u8996\u3057\u3001\u30bf\u30a4\u30c8\u30eb\u306e\u307f\u306f\u6587\u5b57\u3067\u7d20\u65e9\u304f\u63a2\u3057\u305f\u3044\u3068\u304d\u306b\u5411\u3044\u3066\u3044\u307e\u3059\u3002',
       },
       {
-        title: '巻抜けと未所持巻',
-        body:
-          '途中の巻が抜けている場合は「不足」として表示されます。刊行最新巻を表示している場合、所持している最終巻より先の巻も未所持巻として確認できます。',
+        title: '\u5dfb\u629c\u3051\u3068\u672a\u6240\u6301\u5dfb',
+        body: '\u767b\u9332\u3057\u305f\u5dfb\u6570\u306e\u9593\u306b\u629c\u3051\u304c\u3042\u308b\u5834\u5408\u3001\u672a\u6240\u6301\u5dfb\u3068\u3057\u3066\u8868\u793a\u3057\u307e\u3059\u3002\u672a\u6240\u6301\u5dfb\u304b\u3089\u6b32\u3057\u3044\u30ea\u30b9\u30c8\u3078\u8ffd\u52a0\u3057\u305f\u308a\u3001\u8cfc\u5165\u5019\u88dc\u3092\u63a2\u3059\u304d\u3063\u304b\u3051\u306b\u3067\u304d\u307e\u3059\u3002',
       },
       {
-        title: '刊行最新巻と代表表紙',
-        body:
-          'シリーズカードの更新アイコンを押すと、刊行最新巻や完結情報を取得します。同時にシリーズの代表になりやすい最初の巻の表紙も再取得します。',
+        title: '\u304a\u6c17\u306b\u5165\u308a\u3068\u65b0\u520a\u901a\u77e5',
+        body: '\u30b7\u30ea\u30fc\u30ba\u30ab\u30fc\u30c9\u306e\u3057\u304a\u308a\u30a2\u30a4\u30b3\u30f3\u3067\u304a\u6c17\u306b\u5165\u308a\u3001\u30d9\u30eb\u30a2\u30a4\u30b3\u30f3\u3067\u30b7\u30ea\u30fc\u30ba\u3054\u3068\u306e\u65b0\u520a\u901a\u77e5\u3092ON/OFF\u3067\u304d\u307e\u3059\u3002\u5168\u4f53\u306e\u65b0\u520a\u901a\u77e5\u306f\u8a2d\u5b9a\u3067\u5207\u308a\u66ff\u3048\u307e\u3059\u3002',
       },
       {
-        title: 'お気に入り',
-        body:
-          'しおりアイコンでシリーズをお気に入りにできます。お気に入りは本棚の表示条件や並び替え、ランキングの「お気に入りランキング」にも反映されます。',
+        title: '\u60c5\u5831\u3092\u5831\u544a\u3059\u308b',
+        body: '\u672c\u68da\u3001\u30b7\u30ea\u30fc\u30ba\u8a73\u7d30\u3001\u5dfb\u306e\u8a73\u7d30\u306e\u65d7\u30a2\u30a4\u30b3\u30f3\u304b\u3089\u3001\u8868\u7d19\u3084\u5dfb\u6570\u3001\u5b8c\u7d50\u60c5\u5831\u306a\u3069\u306e\u8aa4\u308a\u3092\u5831\u544a\u3067\u304d\u307e\u3059\u3002\u88dc\u6b63\u306f\u958b\u767a\u5074\u3067\u78ba\u8a8d\u3057\u3066\u53cd\u6620\u3057\u307e\u3059\u3002',
       },
     ],
   },
   {
     icon: 'albums-outline',
-    title: 'シリーズ',
+    title: '\u30b7\u30ea\u30fc\u30ba\u8a73\u7d30',
     sections: [
       {
-        title: '巻を選択する',
-        body:
-          'シリーズ詳細では、巻のカードを押すと選択できます。選択中だけステータス変更ボタンが表示され、未読、読書中、読了へまとめて変更できます。',
+        title: '\u5dfb\u3092\u9078\u629e\u3059\u308b',
+        body: '\u30b7\u30ea\u30fc\u30ba\u8a73\u7d30\u3067\u672c\u306e\u30ab\u30fc\u30c9\u3092\u62bc\u3059\u3068\u9078\u629e\u3067\u304d\u307e\u3059\u3002\u9078\u629e\u4e2d\u3060\u3051\u3001\u672a\u8aad\u306b\u3059\u308b\u30fb\u8aad\u4e86\u306b\u3059\u308b\u306a\u3069\u306e\u4e00\u62ec\u5909\u66f4\u30dc\u30bf\u30f3\u304c\u8868\u793a\u3055\u308c\u307e\u3059\u3002',
       },
       {
-        title: '巻の詳細を見る',
-        body:
-          '各巻の「詳細」から、表紙、タイトル、作者、出版社、ISBN、紹介文を確認できます。紹介文は詳細を開いた時に取得するため、古い本やAPIに情報がない本では表示されない場合があります。',
+        title: '\u5dfb\u306e\u8a73\u7d30\u3092\u898b\u308b',
+        body: '\u300c\u8a73\u7d30\u300d\u30dc\u30bf\u30f3\u304b\u3089\u8868\u7d19\u3001\u30bf\u30a4\u30c8\u30eb\u3001\u4f5c\u8005\u3001\u51fa\u7248\u793e\u3001ISBN\u3001\u7d39\u4ecb\u6587\u3092\u78ba\u8a8d\u3067\u304d\u307e\u3059\u3002\u7d39\u4ecb\u6587\u306f\u8868\u793a\u6642\u306b\u53d6\u5f97\u3059\u308b\u305f\u3081\u3001\u5916\u90e8API\u306b\u60c5\u5831\u304c\u306a\u3044\u5834\u5408\u306f\u8868\u793a\u3055\u308c\u306a\u3044\u3053\u3068\u304c\u3042\u308a\u307e\u3059\u3002',
       },
       {
-        title: '未所持巻を扱う',
-        body:
-          'グレー表示の巻はまだ本棚にない巻です。「欲しいへ」から欲しい漫画リストに追加したり、購入候補を探すきっかけにできます。',
+        title: '\u9577\u62bc\u3057\u3067\u7de8\u96c6\u3059\u308b',
+        body: '\u6240\u6301\u3057\u3066\u3044\u308b\u5dfb\u3092\u9577\u62bc\u3057\u3059\u308b\u3068\u3001\u5dfb\u6570\u3084\u30bf\u30a4\u30c8\u30eb\u3001\u95a2\u9023\u5dfb\u306e\u8a2d\u5b9a\u3001\u8cfc\u5165\u4fa1\u683c\u3092\u7de8\u96c6\u3067\u304d\u307e\u3059\u3002\u95a2\u9023\u5dfb\u306f\u520a\u884c\u5dfb\u6570\u306b\u542b\u3081\u305a\u3001\u30b7\u30ea\u30fc\u30ba\u306e\u5f8c\u308d\u306b\u8868\u793a\u3055\u308c\u307e\u3059\u3002',
       },
       {
-        title: 'シリーズ名を直す',
-        body:
-          'APIの表記ゆれで別シリーズになった場合は、シリーズ詳細のシリーズ名変更からまとめ直せます。変更後は本棚や通知設定にも反映されます。',
+        title: '\u6700\u65b0\u5dfb\u30fb\u5b8c\u7d50\u60c5\u5831\u306e\u66f4\u65b0',
+        body: '\u66f4\u65b0\u30a2\u30a4\u30b3\u30f3\u304b\u3089\u30b7\u30ea\u30fc\u30ba\u306e\u520a\u884c\u6700\u65b0\u5dfb\u3084\u5b8c\u7d50\u60c5\u5831\u3092\u53d6\u5f97\u3067\u304d\u307e\u3059\u3002\u53d6\u5f97\u7d50\u679c\u306f\u672a\u6240\u6301\u5dfb\u306e\u8868\u793a\u306b\u3082\u53cd\u6620\u3055\u308c\u307e\u3059\u3002',
       },
     ],
   },
   {
     icon: 'cart-outline',
-    title: '欲しい',
+    title: '\u6b32\u3057\u3044',
     sections: [
       {
-        title: '欲しい漫画を追加する',
-        body:
-          '欲しいタブでは、まだ持っていない漫画や集めたいシリーズを保存できます。タイトルだけでも追加でき、登録済みの蔵書に表紙がある場合はその表紙を利用します。',
+        title: '\u6b32\u3057\u3044\u30b7\u30ea\u30fc\u30ba\u3092\u8ffd\u52a0\u3059\u308b',
+        body: '\u6b32\u3057\u3044\u30bf\u30d6\u3067\u30b7\u30ea\u30fc\u30ba\u540d\u3092\u5165\u529b\u3059\u308b\u3068\u691c\u7d22\u5019\u88dc\u304c\u8868\u793a\u3055\u308c\u307e\u3059\u3002\u57fa\u672c\u306f\u30b7\u30ea\u30fc\u30ba\u5358\u4f4d\u3067\u767b\u9332\u3057\u3001\u7279\u5b9a\u306e\u5dfb\u304c\u6b32\u3057\u3044\u5834\u5408\u306f\u672a\u6240\u6301\u5dfb\u304b\u3089\u8ffd\u52a0\u3059\u308b\u306e\u304c\u30b9\u30e0\u30fc\u30ba\u3067\u3059\u3002',
       },
       {
-        title: 'スコアと優先度',
-        body:
-          '欲しい漫画にはスコアがあり、数値が高いほど優先度が高くなります。上下の矢印でスコアを調整し、買いたい順を整理できます。',
+        title: '\u30b9\u30b3\u30a2\u3068\u512a\u5148\u5ea6',
+        body: '\u6b32\u3057\u3044\u30ea\u30b9\u30c8\u306e\u30b9\u30b3\u30a2\u304c\u9ad8\u3044\u307b\u3069\u512a\u5148\u5ea6\u304c\u9ad8\u304f\u8868\u793a\u3055\u308c\u307e\u3059\u3002\u7de8\u96c6\u30e2\u30fc\u30c9\u3067\u30b9\u30b3\u30a2\u3092\u5909\u66f4\u3057\u3001\u5b8c\u4e86\u3059\u308b\u3068\u4e26\u3073\u9806\u304c\u53cd\u6620\u3055\u308c\u307e\u3059\u3002',
       },
       {
-        title: '本棚から追加する',
-        body:
-          'シリーズ詳細の未所持巻から「欲しいへ」を押すと、その巻を購入候補として欲しいリストに追加できます。',
+        title: '\u7de8\u96c6\u30e2\u30fc\u30c9',
+        body: '\u7de8\u96c6\u30dc\u30bf\u30f3\u307e\u305f\u306f\u30ab\u30fc\u30c9\u306e\u9577\u62bc\u3057\u3067\u7de8\u96c6\u30e2\u30fc\u30c9\u306b\u5165\u308c\u307e\u3059\u3002\u7de8\u96c6\u4e2d\u306f\u6574\u7406\u306b\u96c6\u4e2d\u3067\u304d\u308b\u3088\u3046\u3001\u4e00\u90e8\u306e\u6848\u5185\u8868\u793a\u3092\u96a0\u3057\u307e\u3059\u3002',
       },
     ],
   },
   {
     icon: 'podium-outline',
-    title: 'ランキング',
+    title: '\u30e9\u30f3\u30ad\u30f3\u30b0',
     sections: [
       {
-        title: 'ランキングの見方',
-        body:
-          'ランキングタブでは、欲しい登録、所持人数、登録冊数、お気に入り数などの集計を確認できます。カテゴリごとに上位10件を横スクロールで表示します。',
+        title: '\u30e9\u30f3\u30ad\u30f3\u30b0\u306e\u7a2e\u985e',
+        body: '\u30e9\u30f3\u30ad\u30f3\u30b0\u30bf\u30d6\u3067\u306f\u3001\u6b32\u3057\u3044\u767b\u9332\u3001\u6240\u6301\u3057\u3066\u3044\u308b\u4eba\u6570\u3001\u767b\u9332\u518a\u6570\u3001\u304a\u6c17\u306b\u5165\u308a\u6570\u306a\u3069\u3092\u30b7\u30ea\u30fc\u30ba\u5358\u4f4d\u3067\u78ba\u8a8d\u3067\u304d\u307e\u3059\u3002',
       },
       {
-        title: 'もっと見る',
-        body:
-          '各ランキングの「もっと見る」から、10件ずつページを切り替えて確認できます。ページ上部と下部の矢印で前後のページへ移動できます。',
+        title: '\u3082\u3063\u3068\u898b\u308b',
+        body: '\u5404\u30e9\u30f3\u30ad\u30f3\u30b0\u306f\u4e0a\u4f4d10\u4ef6\u3092\u6a2a\u30b9\u30af\u30ed\u30fc\u30eb\u3067\u8868\u793a\u3057\u307e\u3059\u3002\u3082\u3063\u3068\u898b\u308b\u304b\u3089\u8a73\u7d30\u30da\u30fc\u30b8\u3092\u958b\u304f\u3068\u300110\u4ef6\u305a\u3064\u30da\u30fc\u30b8\u5207\u308a\u66ff\u3048\u3067\u78ba\u8a8d\u3067\u304d\u307e\u3059\u3002',
       },
       {
-        title: '欲しいに追加',
-        body:
-          'ランキングの作品をタップすると「欲しいに追加」ボタンを表示できます。すでに自分の欲しいリストにある作品には追加ボタンは表示されません。',
+        title: '\u6b32\u3057\u3044\u306b\u8ffd\u52a0',
+        body: '\u30e9\u30f3\u30ad\u30f3\u30b0\u306e\u30ab\u30fc\u30c9\u3092\u62bc\u3059\u3068\u3001\u6b32\u3057\u3044\u30ea\u30b9\u30c8\u306b\u8ffd\u52a0\u3067\u304d\u307e\u3059\u3002\u3059\u3067\u306b\u6240\u6301\u3057\u3066\u3044\u308b\u30b7\u30ea\u30fc\u30ba\u306f\u300c\u6240\u6301\u6e08\u307f\u300d\u3068\u8868\u793a\u3055\u308c\u3001\u8ffd\u52a0\u3067\u304d\u306a\u3044\u72b6\u614b\u306b\u306a\u308a\u307e\u3059\u3002',
       },
     ],
   },
   {
     icon: 'notifications-outline',
-    title: '通知',
+    title: '\u65b0\u520a\u901a\u77e5',
     sections: [
       {
-        title: '大本の通知設定',
-        body:
-          '設定タブの新刊通知をONにすると、端末通知を受け取れるようになります。ログイン中のみ利用でき、端末側の通知許可も必要です。',
+        title: '\u901a\u77e5\u306e\u5168\u4f53\u8a2d\u5b9a',
+        body: '\u8a2d\u5b9a\u30bf\u30d6\u3067\u65b0\u520a\u901a\u77e5\u3092ON\u306b\u3059\u308b\u3068\u3001\u901a\u77e5\u3092\u53d7\u3051\u53d6\u308c\u308b\u3088\u3046\u306b\u306a\u308a\u307e\u3059\u3002\u30ed\u30b0\u30a4\u30f3\u4e2d\u306e\u307f\u5229\u7528\u3067\u304d\u3001\u7aef\u672b\u5074\u306e\u901a\u77e5\u8a31\u53ef\u3082\u5fc5\u8981\u3067\u3059\u3002',
       },
       {
-        title: 'シリーズごとの通知',
-        body:
-          '本棚のシリーズカードにあるベルで、シリーズごとの新刊通知をON/OFFできます。黄色のベルは通知ON、グレーのベルは通知OFFです。新しいシリーズは初期状態ではOFFです。',
+        title: '\u30b7\u30ea\u30fc\u30ba\u3054\u3068\u306e\u901a\u77e5',
+        body: '\u901a\u77e5\u3057\u305f\u3044\u30b7\u30ea\u30fc\u30ba\u306f\u3001\u672c\u68da\u306e\u30b7\u30ea\u30fc\u30ba\u30ab\u30fc\u30c9\u306b\u3042\u308b\u30d9\u30eb\u30a2\u30a4\u30b3\u30f3\u3067\u9078\u3073\u307e\u3059\u3002\u30b7\u30ea\u30fc\u30ba\u3054\u3068\u306e\u901a\u77e5\u306f\u521d\u671f\u72b6\u614b\u3067\u306fOFF\u3067\u3059\u3002',
       },
       {
-        title: '通知の内容',
-        body:
-          '通知は正午ごろにまとめて届きます。通知本文ではシリーズ名を伏せ、どのシリーズの新刊かは「新刊通知を確認する」画面で確認します。',
-      },
-      {
-        title: '通知テスト',
-        body:
-          '設定タブの通知テストを使うと、新刊を待たずに端末で通知が表示されるか確認できます。',
+        title: '\u65b0\u520a\u901a\u77e5\u3092\u78ba\u8a8d\u3059\u308b',
+        body: '\u8a2d\u5b9a\u306e\u300c\u65b0\u520a\u901a\u77e5\u3092\u78ba\u8a8d\u3059\u308b\u300d\u304b\u3089\u3001\u901a\u77e5\u3055\u308c\u305f\u30b7\u30ea\u30fc\u30ba\u3084\u5dfb\u6570\u306e\u8a73\u7d30\u3092\u78ba\u8a8d\u3067\u304d\u307e\u3059\u3002\u30d7\u30c3\u30b7\u30e5\u901a\u77e5\u306e\u672c\u6587\u306b\u306f\u8a73\u7d30\u3092\u51fa\u3057\u3059\u304e\u306a\u3044\u8a2d\u8a08\u3067\u3059\u3002',
       },
     ],
   },
   {
     icon: 'settings-outline',
-    title: '設定',
+    title: '\u8a2d\u5b9a\u30fb\u30de\u30a4\u30da\u30fc\u30b8',
     sections: [
       {
-        title: 'クラウド同期',
-        body:
-          'ログインすると蔵書や通知設定をクラウドに保存できます。未ログインで登録した本は、ログイン後にローカル蔵書の移行からクラウドへ反映できます。',
+        title: '\u30af\u30e9\u30a6\u30c9\u540c\u671f',
+        body: '\u30ed\u30b0\u30a4\u30f3\u3059\u308b\u3068\u672c\u68da\u3084\u901a\u77e5\u8a2d\u5b9a\u3092\u30af\u30e9\u30a6\u30c9\u306b\u4fdd\u5b58\u3067\u304d\u307e\u3059\u3002\u672a\u30ed\u30b0\u30a4\u30f3\u3067\u767b\u9332\u3057\u305f\u672c\u306f\u3001\u30ed\u30b0\u30a4\u30f3\u5f8c\u306b\u30ed\u30fc\u30ab\u30eb\u8535\u66f8\u306e\u79fb\u884c\u304b\u3089\u53cd\u6620\u3067\u304d\u307e\u3059\u3002',
       },
       {
-        title: '表示とテーマ',
-        body:
-          '刊行最新巻の表示は設定タブでON/OFFできます。テーマはライト、ダーク、システム準拠から選べます。',
+        title: '\u30de\u30a4\u30da\u30fc\u30b8',
+        body: '\u30de\u30a4\u30da\u30fc\u30b8\u3067\u306f\u30a2\u30ab\u30a6\u30f3\u30c8\u60c5\u5831\u3001\u901a\u77e5\u5c65\u6b74\u3001\u8cfc\u5165\u30fb\u652f\u51fa\u30b5\u30de\u30ea\u30fc\u3001\u30a2\u30d7\u30ea\u30a2\u30a4\u30b3\u30f3\u306e\u5909\u66f4\u3001\u30a2\u30ab\u30a6\u30f3\u30c8\u524a\u9664\u3092\u78ba\u8a8d\u3067\u304d\u307e\u3059\u3002\u8cfc\u5165\u30fb\u652f\u51fa\u30b5\u30de\u30ea\u30fc\u306f\u4fa1\u683c\u8a18\u9332\u304cON\u306e\u3068\u304d\u3060\u3051\u8868\u793a\u3055\u308c\u307e\u3059\u3002',
       },
       {
-        title: 'マイページ',
-        body:
-          'マイページでは、通知履歴、アカウント情報、購入・支出サマリー、アカウント削除を確認できます。新刊通知の詳細もここから確認できます。',
-      },
-      {
-        title: 'プライバシーポリシー',
-        body:
-          '設定タブ下部のプライバシーポリシーから、保存する情報、外部API、通知、ランキング集計の扱いを確認できます。',
+        title: '\u30d7\u30e9\u30a4\u30d0\u30b7\u30fc\u30dd\u30ea\u30b7\u30fc\u3068\u554f\u3044\u5408\u308f\u305b',
+        body: '\u8a2d\u5b9a\u306e\u4e0b\u90e8\u304b\u3089\u30d7\u30e9\u30a4\u30d0\u30b7\u30fc\u30dd\u30ea\u30b7\u30fc\u3092\u78ba\u8a8d\u3067\u304d\u307e\u3059\u3002\u554f\u3044\u5408\u308f\u305b\u5148\u3084\u5831\u544a\u30d5\u30a9\u30fc\u30e0\u3082\u3053\u3053\u304b\u3089\u78ba\u8a8d\u3067\u304d\u308b\u3088\u3046\u306b\u3057\u3066\u3044\u307e\u3059\u3002',
       },
     ],
   },
@@ -206,7 +178,7 @@ export default function HelpScreen() {
 
   useLayoutEffect(() => {
     navigation.setOptions({
-      headerLeft: () => <HeaderBackButton accessibilityLabel="設定に戻る" onPress={goBack} />,
+      headerLeft: () => <HeaderBackButton accessibilityLabel={t.backToSettings} onPress={goBack} />,
     });
   }, [goBack, navigation]);
 
@@ -216,47 +188,45 @@ export default function HelpScreen() {
         style={[styles.screen, { backgroundColor: colors.background }]}
         contentContainerStyle={styles.content}
       >
-      <View style={styles.header}>
-        <Text style={[styles.title, { color: colors.text }]}>蒐集架の使い方</Text>
-        <Text style={[styles.copy, { color: colors.muted }]}>
-          知りたい項目を選ぶと、その機能の使い方を確認できます。
-        </Text>
-      </View>
-
-      <View style={styles.categoryGrid}>
-        {helpCategories.map((category, index) => {
-          const selected = index === selectedIndex;
-          return (
-            <Pressable
-              accessibilityLabel={`${category.title}のヘルプを開く`}
-              key={category.title}
-              onPress={() => setSelectedIndex(index)}
-              style={[
-                styles.categoryButton,
-                { borderColor: selected ? colors.text : colors.border },
-                selected && { backgroundColor: colors.text },
-              ]}
-            >
-              <Ionicons color={selected ? colors.background : colors.text} name={category.icon} size={18} />
-              <Text style={[styles.categoryText, { color: selected ? colors.background : colors.text }]} numberOfLines={1}>
-                {category.title}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
-
-      <View style={styles.sectionHeader}>
-        <Ionicons color={colors.text} name={selectedCategory.icon} size={22} />
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>{selectedCategory.title}</Text>
-      </View>
-
-      {selectedCategory.sections.map((section) => (
-        <View key={section.title} style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <Text style={[styles.cardTitle, { color: colors.text }]}>{section.title}</Text>
-          <Text style={[styles.cardCopy, { color: colors.muted }]}>{section.body}</Text>
+        <View style={styles.header}>
+          <Text style={[styles.title, { color: colors.text }]}>{t.title}</Text>
+          <Text style={[styles.copy, { color: colors.muted }]}>{t.copy}</Text>
         </View>
-      ))}
+
+        <View style={styles.categoryGrid}>
+          {helpCategories.map((category, index) => {
+            const selected = index === selectedIndex;
+            return (
+              <Pressable
+                accessibilityLabel={`${category.title}${t.openCategorySuffix}`}
+                key={category.title}
+                onPress={() => setSelectedIndex(index)}
+                style={[
+                  styles.categoryButton,
+                  { borderColor: selected ? colors.text : colors.border },
+                  selected && { backgroundColor: colors.text },
+                ]}
+              >
+                <Ionicons color={selected ? colors.background : colors.text} name={category.icon} size={18} />
+                <Text style={[styles.categoryText, { color: selected ? colors.background : colors.text }]} numberOfLines={1}>
+                  {category.title}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        <View style={styles.sectionHeader}>
+          <Ionicons color={colors.text} name={selectedCategory.icon} size={22} />
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>{selectedCategory.title}</Text>
+        </View>
+
+        {selectedCategory.sections.map((section) => (
+          <View key={section.title} style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <Text style={[styles.cardTitle, { color: colors.text }]}>{section.title}</Text>
+            <Text style={[styles.cardCopy, { color: colors.muted }]}>{section.body}</Text>
+          </View>
+        ))}
       </ScrollView>
     </View>
   );

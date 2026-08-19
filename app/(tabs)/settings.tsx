@@ -348,12 +348,14 @@ export default function SettingsScreen() {
                   <Ionicons color={colors.text} name="person-circle-outline" size={22} />
                 </View>
                 <View style={styles.rowText}>
-                  <Text style={[styles.rowTitle, { color: colors.text }]}>マイページ</Text>
+                  <View style={styles.navigationTitleRow}>
+                    <Ionicons color={colors.muted} name="chevron-forward" size={16} />
+                    <Text style={[styles.rowTitle, { color: colors.text }]}>{'\u30de\u30a4\u30da\u30fc\u30b8'}</Text>
+                  </View>
                   <Text style={[styles.rowCopy, { color: colors.muted }]}>
-                    通知履歴、支出サマリー、アカウント情報を確認できます。
+                    {'\u901a\u77e5\u5c65\u6b74\u3001\u8cfc\u5165\u30fb\u652f\u51fa\u30b5\u30de\u30ea\u30fc\u3001\u30a2\u30ab\u30a6\u30f3\u30c8\u60c5\u5831\u3092\u78ba\u8a8d\u3067\u304d\u307e\u3059\u3002'}
                   </Text>
                 </View>
-                <Ionicons color={colors.muted} name="chevron-forward" size={18} />
               </Pressable>
             </Link>
             <Pressable disabled={authSubmitting} style={[styles.neutralButton, { borderColor: colors.border }]} onPress={submitSignOut}>
@@ -536,12 +538,14 @@ export default function SettingsScreen() {
               <Ionicons color={colors.text} name="help-circle-outline" size={21} />
             </View>
             <View style={styles.rowText}>
-              <Text style={[styles.rowTitle, { color: colors.text }]}>蒐集架の使い方</Text>
+              <View style={styles.navigationTitleRow}>
+                <Ionicons color={colors.muted} name="chevron-forward" size={16} />
+                <Text style={[styles.rowTitle, { color: colors.text }]}>{'\u84d0\u96c6\u67b6\u306e\u4f7f\u3044\u65b9'}</Text>
+              </View>
               <Text style={[styles.helpCopy, { color: colors.muted }]} numberOfLines={2}>
-                登録、本棚、シリーズ編集などの操作を確認できます。
+                {'\u767b\u9332\u3001\u672c\u68da\u3001\u6b32\u3057\u3044\u3001\u30e9\u30f3\u30ad\u30f3\u30b0\u3001\u901a\u77e5\u306a\u3069\u306e\u64cd\u4f5c\u3092\u78ba\u8a8d\u3067\u304d\u307e\u3059\u3002'}
               </Text>
             </View>
-            <Ionicons color={colors.muted} name="chevron-forward" size={18} />
           </Pressable>
         </Link>
       </View>
@@ -592,12 +596,14 @@ export default function SettingsScreen() {
               <Ionicons color="#ffcc00" name="notifications" size={22} />
             </View>
             <View style={styles.rowText}>
-              <Text style={[styles.largeNavigationTitle, { color: colors.text }]}>新刊通知を確認する</Text>
+              <View style={styles.navigationTitleRow}>
+                <Ionicons color={colors.muted} name="chevron-forward" size={16} />
+                <Text style={[styles.largeNavigationTitle, { color: colors.text }]}>{'\u65b0\u520a\u901a\u77e5\u3092\u78ba\u8a8d\u3059\u308b'}</Text>
+              </View>
               <Text style={[styles.rowCopy, { color: colors.muted }]}>
-                通知されたシリーズと巻数の詳細を一覧で確認できます。
+                {'\u901a\u77e5\u3055\u308c\u305f\u30b7\u30ea\u30fc\u30ba\u3068\u5dfb\u6570\u306e\u8a73\u7d30\u3092\u4e00\u89a7\u3067\u78ba\u8a8d\u3067\u304d\u307e\u3059\u3002'}
               </Text>
             </View>
-            <Ionicons color={colors.muted} name="chevron-forward" size={18} />
           </Pressable>
         </Link>
         <Pressable
@@ -694,12 +700,14 @@ export default function SettingsScreen() {
               <Ionicons color={colors.text} name="document-text-outline" size={21} />
             </View>
             <View style={styles.rowText}>
-              <Text style={[styles.rowTitle, { color: colors.text }]}>プライバシーポリシー</Text>
+              <View style={styles.navigationTitleRow}>
+                <Ionicons color={colors.muted} name="chevron-forward" size={16} />
+                <Text style={[styles.rowTitle, { color: colors.text }]}>{'\u30d7\u30e9\u30a4\u30d0\u30b7\u30fc\u30dd\u30ea\u30b7\u30fc'}</Text>
+              </View>
               <Text style={[styles.rowCopy, { color: colors.muted }]} numberOfLines={2}>
-                取得する情報、通知、ランキング集計、外部サービス利用について確認できます。
+                {'\u53d6\u5f97\u3059\u308b\u60c5\u5831\u3001\u901a\u77e5\u3001\u30e9\u30f3\u30ad\u30f3\u30b0\u96c6\u8a08\u3001\u5916\u90e8\u30b5\u30fc\u30d3\u30b9\u5229\u7528\u306b\u3064\u3044\u3066\u78ba\u8a8d\u3067\u304d\u307e\u3059\u3002'}
               </Text>
             </View>
-            <Ionicons color={colors.muted} name="chevron-forward" size={18} />
           </Pressable>
         </Link>
       </View>
@@ -715,6 +723,7 @@ const styles = StyleSheet.create({
   row: { alignItems: 'center', flexDirection: 'row', gap: 12, minHeight: 56 },
   rowText: { flex: 1 },
   rowTitle: { fontSize: 15, fontWeight: '800' },
+  navigationTitleRow: { alignItems: 'center', flexDirection: 'row', gap: 3 },
   rowCopy: { fontSize: 13, lineHeight: 18, marginTop: 3 },
   loadingRow: { alignItems: 'center', height: 56, justifyContent: 'center' },
   input: {
