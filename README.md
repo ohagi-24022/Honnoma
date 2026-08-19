@@ -1,6 +1,6 @@
-# 蒐集架 Shushuka
+# 本の間
 
-蒐集架 Shushuka is a mobile app for managing owned books, unread books, and completed books by series.
+本の間 is a mobile app, under the 蒐集架 brand, for managing owned books, unread books, and completed books by series.
 It is designed for readers who buy manga, light novels, and other multi-volume series and want to quickly see owned volumes, missing volumes, and reading status.
 
 ## Features
@@ -116,11 +116,11 @@ The production notification flow is split into two phases:
 - `notification_logs` is also used as the in-app notification detail list.
 - Old notification logs are pruned by the Edge Function after 90 days.
 
-Book cover images are not copied into Supabase Storage. 蒐集架 Shushuka stores provider image URLs in `books.thumbnail_url` and renders those URLs directly, following the safer URL-cache approach for Google Books, Rakuten Books, and OpenBD metadata.
+Book cover images are not copied into Supabase Storage. 本の間 stores provider image URLs in `books.thumbnail_url` and renders those URLs directly, following the safer URL-cache approach for Google Books, Rakuten Books, and OpenBD metadata.
 
 ## Operations and Scale Strategy
 
-蒐集架 Shushuka is designed to start on Supabase and keep a migration path open for heavier server-side work.
+本の間 is designed to start on Supabase and keep a migration path open for heavier server-side work.
 
 Operational logs are stored in `server_operation_logs`:
 
@@ -147,7 +147,7 @@ Preferred migration path:
 
 ## Account Deletion
 
-蒐集架 Shushuka supports account deletion from the settings screen.
+本の間 supports account deletion from the settings screen.
 Deletion is handled by the `delete-account` Supabase Edge Function so the service role key never needs to be stored in the app.
 
 Deploy the function:
@@ -201,7 +201,7 @@ npm run eas:build:production
 
 ## Project Status
 
-蒐集架 Shushuka is under active development. Current focus areas are:
+本の間 is under active development. Current focus areas are:
 
 - More reliable series grouping
 - Better cover image retrieval for Japanese books

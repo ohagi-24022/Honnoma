@@ -165,7 +165,7 @@ export async function sendNewReleaseDebugNotification() {
     content: {
       body: 'この通知が表示されれば、端末側の通知表示は動作しています。',
       data: { url: '/(tabs)' },
-      title: '蒐集架 通知テスト',
+      title: '本の間 通知テスト',
     },
     trigger: null,
   });

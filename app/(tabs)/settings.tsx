@@ -74,7 +74,7 @@ export default function SettingsScreen() {
 
   const submitAuth = async (authMode: 'signIn' | 'signUp') => {
     if (!email.trim() || !password) {
-      Alert.alert('蒐集架', 'メールアドレスとパスワードを入力してください。');
+      Alert.alert('本の間', 'メールアドレスとパスワードを入力してください。');
       return;
     }
 
@@ -84,11 +84,11 @@ export default function SettingsScreen() {
         await signIn(email.trim(), password);
       } else {
         await signUp(email.trim(), password);
-        Alert.alert('蒐集架', '確認メールが有効な場合は、メールを確認してください。');
+        Alert.alert('本の間', '確認メールが有効な場合は、メールを確認してください。');
       }
       setPassword('');
     } catch (error) {
-      Alert.alert('蒐集架', error instanceof Error ? error.message : '認証に失敗しました。');
+      Alert.alert('本の間', error instanceof Error ? error.message : '認証に失敗しました。');
     } finally {
       setAuthSubmitting(false);
     }
@@ -99,7 +99,7 @@ export default function SettingsScreen() {
     try {
       await signOut();
     } catch (error) {
-      Alert.alert('蒐集架', error instanceof Error ? error.message : 'ログアウトに失敗しました。');
+      Alert.alert('本の間', error instanceof Error ? error.message : 'ログアウトに失敗しました。');
     } finally {
       setAuthSubmitting(false);
     }
@@ -157,14 +157,14 @@ export default function SettingsScreen() {
     );
 
     await Share.share({
-      title: '蒐集架 CSV Export',
+      title: '本の間 CSV Export',
       message: [header.join(','), ...rows].join('\n'),
     });
   };
 
   const exportJson = async () => {
     await Share.share({
-      title: '蒐集架 JSON Backup',
+      title: '本の間 JSON Backup',
       message: JSON.stringify({ exportedAt: new Date().toISOString(), books }, null, 2),
     });
   };
@@ -234,7 +234,7 @@ export default function SettingsScreen() {
       await sendNewReleaseDebugNotification();
       Alert.alert(
         '通知テストを送信しました',
-        '端末に「蒐集架 通知テスト」が表示されれば、端末側の通知表示は動作しています。',
+        '端末に「本の間 通知テスト」が表示されれば、端末側の通知表示は動作しています。',
       );
     } catch (error) {
       Alert.alert(
@@ -540,7 +540,7 @@ export default function SettingsScreen() {
             <View style={styles.rowText}>
               <View style={styles.navigationTitleRow}>
                 <Ionicons color={colors.muted} name="chevron-forward" size={16} />
-                <Text style={[styles.rowTitle, { color: colors.text }]}>{'\u84d0\u96c6\u67b6\u306e\u4f7f\u3044\u65b9'}</Text>
+                <Text style={[styles.rowTitle, { color: colors.text }]}>本の間の使い方</Text>
               </View>
               <Text style={[styles.helpCopy, { color: colors.muted }]} numberOfLines={2}>
                 {'\u767b\u9332\u3001\u672c\u68da\u3001\u6b32\u3057\u3044\u3001\u30e9\u30f3\u30ad\u30f3\u30b0\u3001\u901a\u77e5\u306a\u3069\u306e\u64cd\u4f5c\u3092\u78ba\u8a8d\u3067\u304d\u307e\u3059\u3002'}
@@ -556,7 +556,7 @@ export default function SettingsScreen() {
           <View style={styles.rowText}>
             <Text style={[styles.rowTitle, { color: colors.text }]}>外部アプリで直接開く</Text>
             <Text style={[styles.rowCopy, { color: colors.muted }]}>
-              ONは購入アプリへ直接遷移、OFFは蒐集架内ブラウザで開きます。
+              ONは購入アプリへ直接遷移、OFFは本の間内ブラウザで開きます。
             </Text>
           </View>
           <Switch

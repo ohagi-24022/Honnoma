@@ -1,5 +1,5 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { ActivityIndicator, Animated, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Animated, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { useAppTheme } from '../../store/ThemeContext';
 
@@ -73,7 +73,7 @@ export function HomeToolbar({
     >
       <View style={styles.titleRow}>
         <View style={styles.titleBlock}>
-          <Text adjustsFontSizeToFit minimumFontScale={0.82} numberOfLines={1} style={[styles.title, { color: colors.text }]}>蒐集架</Text>
+          <Text adjustsFontSizeToFit minimumFontScale={0.82} numberOfLines={1} style={[styles.title, { color: colors.text }]}>本の間</Text>
           <Text numberOfLines={1} style={[styles.subtitle, { color: colors.muted }]}>{countLabel}</Text>
         </View>
         <Pressable
@@ -175,12 +175,11 @@ const styles = StyleSheet.create({
   titleRow: { alignItems: 'center', flexDirection: 'row', gap: 12, justifyContent: 'space-between' },
   titleBlock: { flex: 1 },
   title: {
-    fontFamily: Platform.select({ android: 'serif', ios: 'Hiragino Mincho ProN', default: 'serif' }),
     fontSize: 28,
-    fontWeight: '600',
+    fontWeight: '900',
     letterSpacing: 0,
   },
-  subtitle: { alignSelf: 'flex-start', fontSize: 11, marginTop: 6, opacity: 0.68 },
+  subtitle: { alignSelf: 'flex-start', fontSize: 11, marginTop: 4, opacity: 0.68 },
   accountButton: {
     alignItems: 'center',
     borderRadius: 999,

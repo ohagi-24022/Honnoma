@@ -207,7 +207,7 @@ export default function WishlistScreen() {
 
   const searchCandidates = async () => {
     if (!trimmedTitle) {
-      Alert.alert('蒐集架', 'タイトルまたはシリーズ名を入力してください。');
+      Alert.alert('本の間', 'タイトルまたはシリーズ名を入力してください。');
       return;
     }
     setCandidateLoading(true);
@@ -228,7 +228,7 @@ export default function WishlistScreen() {
 
   const submit = () => {
     if (!trimmedTitle) {
-      Alert.alert('蒐集架', '欲しい漫画のタイトルを入力してください。');
+      Alert.alert('本の間', '欲しい漫画のタイトルを入力してください。');
       return;
     }
     if (candidates.length > 1 && !selectedCandidate) {
