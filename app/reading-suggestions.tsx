@@ -68,7 +68,7 @@ export default function ReadingSuggestionsScreen() {
     const targets = query
       ? libraryTargets.filter((target) => target.title.normalize('NFKC').toLowerCase().includes(query))
       : libraryTargets;
-    return targets.slice(0, 4);
+    return targets;
   }, [libraryQuery, libraryTargets]);
 
   const currentReading = useMemo(() => {
@@ -252,7 +252,7 @@ export default function ReadingSuggestionsScreen() {
             {libraryTargets.length > 0 && filteredLibraryTargets.length === 0 ? (
               <Text style={[styles.copy, { color: colors.muted }]}>一致するシリーズがありません。</Text>
             ) : null}
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalSeriesList}>
+            <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={false} style={styles.librarySeriesScroll} contentContainerStyle={styles.seriesList}>
               {filteredLibraryTargets.map(renderTarget)}
             </ScrollView>
           </View>
@@ -346,8 +346,8 @@ const styles = StyleSheet.create({
   modeButton: { alignItems: 'center', borderRadius: 7, flex: 1, flexDirection: 'row', gap: 6, height: 34, justifyContent: 'center' },
   modeButtonText: { fontSize: 13, fontWeight: '900' },
   seriesList: { gap: 6 },
-  horizontalSeriesList: { gap: 6, paddingRight: 2 },
-  seriesRow: { alignItems: 'center', borderRadius: 8, borderWidth: 1, flexDirection: 'row', gap: 8, minHeight: 36, paddingHorizontal: 10, width: 190 },
+  librarySeriesScroll: { maxHeight: 166 },
+  seriesRow: { alignItems: 'center', borderRadius: 8, borderWidth: 1, flexDirection: 'row', gap: 8, minHeight: 36, paddingHorizontal: 10 },
   seriesTitle: { flex: 1, fontSize: 14, fontWeight: '800' },
   textButton: { alignItems: 'center', flexDirection: 'row', gap: 4, minHeight: 36, paddingHorizontal: 4 },
   textButtonLabel: { fontSize: 13, fontWeight: '900' },
