@@ -81,6 +81,8 @@ type MetadataRepairResult = {
   volumeKind?: 'main' | 'extra';
   author?: string;
   publisher?: string;
+  titleReading?: string | null;
+  seriesReading?: string | null;
   publishedDate?: string | null;
   beforePurchasePrice?: number | null;
   afterPurchasePrice?: number | null;
@@ -118,11 +120,41 @@ const LibraryContext = createContext<LibraryContextValue | null>(null);
 
 const now = () => new Date().toISOString();
 
-async function safeLookupBookByIsbn(isbn: string) {
+function describeMetadataNeeds(book: Pick<Book, 'thumbnailUrl' | 'volumeNumber' | 'publisher' | 'seriesTitle' | 'title'>) {
+  return [
+    !book.thumbnailUrl || isKnownUnavailableCoverUrl(book.thumbnailUrl) ? 'cover' : null,
+    !book.volumeNumber ? 'volume' : null,
+    !book.publisher ? 'publisher' : null,
+    book.seriesTitle.trim() === book.title.trim() ? 'series' : null,
+  ].filter((reason): reason is string => !!reason);
+}
+
+function usableReading(value?: string | null) {
+  const normalized = value?.normalize('NFKC').trim();
+  if (!normalized || /[㐀-鿿]/.test(normalized)) return undefined;
+  return normalized;
+}
+
+async function safeLookupBookByIsbn(isbn: string, context?: { source: string; title?: string; reasons?: string[] }) {
+  if (__DEV__) {
+    console.info('[metadata] ISBN lookup started', {
+      isbn,
+      source: context?.source ?? 'unknown',
+      title: context?.title,
+      reasons: context?.reasons,
+    });
+  }
+
   try {
     return await lookupBookByIsbn(isbn);
   } catch (error) {
-    console.warn('ISBN metadata lookup failed', error);
+    console.warn('ISBN metadata lookup failed', {
+      isbn,
+      source: context?.source ?? 'unknown',
+      title: context?.title,
+      reasons: context?.reasons,
+      error,
+    });
     return null;
   }
 }
@@ -495,18 +527,24 @@ export function LibraryProvider({ children }: PropsWithChildren) {
       .filter(
         (book) =>
           book.isbn &&
-          (
-            !book.thumbnailUrl ||
-            isKnownUnavailableCoverUrl(book.thumbnailUrl) ||
-            !book.volumeNumber ||
-            !book.publisher ||
-            book.seriesTitle.trim() === book.title.trim()
-          ) &&
+          describeMetadataNeeds(book).length > 0 &&
           !enrichedIsbnsRef.current.has(book.isbn),
       )
       .slice(0, 10);
 
     if (booksNeedingMetadata.length === 0) return;
+
+    if (__DEV__) {
+      console.info(
+        '[metadata] auto enrichment targets',
+        booksNeedingMetadata.map((book) => ({
+          isbn: book.isbn,
+          title: book.title,
+          seriesTitle: book.seriesTitle,
+          reasons: describeMetadataNeeds(book),
+        })),
+      );
+    }
 
     booksNeedingMetadata.forEach((book) => {
       if (book.isbn) enrichedIsbnsRef.current.add(book.isbn);
@@ -519,7 +557,7 @@ export function LibraryProvider({ children }: PropsWithChildren) {
         try {
           const lookupTitle = buildMetadataLookupTitle(book);
           const metadata =
-            (await safeLookupBookByIsbn(book.isbn)) ??
+            (await safeLookupBookByIsbn(book.isbn, { source: 'library-auto-enrichment', title: book.title, reasons: describeMetadataNeeds(book) })) ??
             (await lookupBookByTitle(lookupTitle, book.isbn)) ??
             (lookupTitle === book.title ? null : await lookupBookByTitle(book.title, book.isbn));
           if (!metadata) continue;
@@ -529,6 +567,8 @@ export function LibraryProvider({ children }: PropsWithChildren) {
             volumeNumber: book.volumeNumber ?? metadata.volumeNumber,
             author: metadata.author ?? book.author,
             publisher: metadata.publisher ?? book.publisher,
+            titleReading: usableReading(metadata.titleReading) ?? usableReading(book.titleReading),
+            seriesReading: usableReading(metadata.seriesReading) ?? usableReading(book.seriesReading),
             seriesTitle:
               book.seriesTitle.trim() === book.title.trim() || parseSeriesTitle(book.seriesTitle).volumeNumber
                 ? metadata.seriesTitle
@@ -813,8 +853,9 @@ export function LibraryProvider({ children }: PropsWithChildren) {
     if (!book) throw new Error('対象の本が見つかりません。');
 
     const lookupTitle = buildMetadataLookupTitle(book);
+    const lookupSource = options.preserveIdentity ? 'home-reading-repair' : 'manual-metadata-repair';
     const metadata =
-      (book.isbn ? await safeLookupBookByIsbn(book.isbn) : null) ??
+      (book.isbn ? await safeLookupBookByIsbn(book.isbn, { source: lookupSource, title: book.title, reasons: describeMetadataNeeds(book) }) : null) ??
       (await lookupBookByTitle(lookupTitle, book.isbn)) ??
       (lookupTitle === book.title ? null : await lookupBookByTitle(book.title, book.isbn));
     if (!metadata) throw new Error('書籍情報を再取得できませんでした。');
@@ -831,6 +872,8 @@ export function LibraryProvider({ children }: PropsWithChildren) {
       volumeKind: options.preserveIdentity ? book.volumeKind : normalizeVolumeKind(metadata.volumeKind, metadata.title),
       author: metadata.author ?? book.author,
       publisher: metadata.publisher ?? book.publisher,
+      titleReading: usableReading(metadata.titleReading) ?? usableReading(book.titleReading) ?? usableReading(metadata.title) ?? usableReading(book.title),
+      seriesReading: usableReading(metadata.seriesReading) ?? usableReading(book.seriesReading) ?? usableReading(metadata.seriesTitle) ?? usableReading(book.seriesTitle),
       thumbnailUrl: metadata.thumbnailUrl ?? book.thumbnailUrl,
       ...(shouldUpdateListPrice
         ? {
@@ -858,6 +901,8 @@ export function LibraryProvider({ children }: PropsWithChildren) {
       volumeKind: updates.volumeKind,
       author: updates.author,
       publisher: updates.publisher,
+      titleReading: updates.titleReading,
+      seriesReading: updates.seriesReading,
       beforePurchasePrice,
       afterPurchasePrice,
       purchasePriceLookupAttempted: !!options.updatePurchasePrice,

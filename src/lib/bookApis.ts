@@ -415,6 +415,7 @@ function mergeBookMetadata(primary: BookInput, fallback: BookInput | null): Book
 
   return {
     ...primary,
+    titleReading: primary.titleReading ?? fallback.titleReading,
     seriesTitle: primary.seriesTitle || fallback.seriesTitle,
     seriesReading: primary.seriesReading ?? fallback.seriesReading,
     volumeNumber: primary.volumeNumber ?? fallback.volumeNumber,

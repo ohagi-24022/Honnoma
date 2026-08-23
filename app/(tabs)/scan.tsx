@@ -525,13 +525,16 @@ export default function ScanScreen() {
       <ScrollView ref={scrollRef} contentContainerStyle={styles.content}>
         {cameraVisible && <View style={styles.cameraShell}>
           {permission?.granted ? (
-            <CameraView
-              barcodeScannerSettings={{ barcodeTypes: ['ean13', 'ean8', 'upc_a', 'upc_e'] }}
-              onBarcodeScanned={handleBarcode}
-              style={styles.camera}
-            >
-              <View style={[styles.scanFrame, { borderColor: colors.primary }]} />
-            </CameraView>
+            <>
+              <CameraView
+                barcodeScannerSettings={{ barcodeTypes: ['ean13', 'ean8', 'upc_a', 'upc_e'] }}
+                onBarcodeScanned={handleBarcode}
+                style={styles.camera}
+              />
+              <View pointerEvents="none" style={styles.scanOverlay}>
+                <View style={[styles.scanFrame, { borderColor: colors.primary }]} />
+              </View>
+            </>
           ) : (
             <View style={styles.permissionBox}>
               <Text style={styles.permissionText}>ISBNスキャンにはカメラ権限が必要です。</Text>
@@ -905,9 +908,14 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     overflow: 'hidden',
   },
-  camera: { flex: 1, justifyContent: 'center', padding: 32 },
+  camera: { ...StyleSheet.absoluteFillObject },
+  scanOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 32,
+  },
   scanFrame: {
-    alignSelf: 'center',
     borderRadius: 8,
     borderWidth: 3,
     height: 140,

@@ -79,15 +79,6 @@ export function SeriesCard({
 
   return (
     <View style={[styles.row, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-      <TouchableOpacity
-        accessibilityLabel={`${group.title}\u306e\u60c5\u5831\u3092\u5831\u544a`}
-        activeOpacity={0.7}
-        hitSlop={10}
-        onPress={onReport}
-        style={styles.reportButton}
-      >
-        <Ionicons color={colors.muted} name="flag-outline" size={15} />
-      </TouchableOpacity>
       <Pressable accessibilityLabel={`${group.title}の詳細を開く`} onPress={openSeries} style={styles.coverPress}>
         <BookCover
           thumbnailUrl={seriesCoverUrl ?? group.representative.thumbnailUrl}
@@ -96,21 +87,32 @@ export function SeriesCard({
         />
       </Pressable>
       <View style={styles.body}>
-        <Pressable accessibilityLabel={`${group.title}の詳細を開く`} onPress={openSeries}>
-          {hasTopBadges ? (
-            <View style={styles.topBadgeRow}>
-              {group.unreadCount > 0 && <Text style={styles.unreadBadge}>未読 {group.unreadCount}</Text>}
-              {isAllRead && <Text style={styles.readBadge}>読了</Text>}
-              {missingVolumes.length > 0 && (
-                <Text style={styles.missingBadge}>{formatVolumeList('不足', missingVolumes)}</Text>
-              )}
-              {unownedVolumes.length > 0 && (
-                <Text style={styles.unownedBadge}>{formatVolumeList('未所持', unownedVolumes)}</Text>
-              )}
-              {publicationInfo?.isCompleted && <Text style={styles.completedBadge}>完結</Text>}
-            </View>
-          ) : null}
-        </Pressable>
+        <View style={styles.topLine}>
+          <Pressable accessibilityLabel={`${group.title}の詳細を開く`} onPress={openSeries} style={styles.badgePress}>
+            {hasTopBadges ? (
+              <View style={styles.topBadgeRow}>
+                {group.unreadCount > 0 && <Text style={styles.unreadBadge}>未読 {group.unreadCount}</Text>}
+                {isAllRead && <Text style={styles.readBadge}>読了</Text>}
+                {missingVolumes.length > 0 && (
+                  <Text style={styles.missingBadge}>{formatVolumeList('不足', missingVolumes)}</Text>
+                )}
+                {unownedVolumes.length > 0 && (
+                  <Text style={styles.unownedBadge}>{formatVolumeList('未所持', unownedVolumes)}</Text>
+                )}
+                {publicationInfo?.isCompleted && <Text style={styles.completedBadge}>完結</Text>}
+              </View>
+            ) : null}
+          </Pressable>
+          <TouchableOpacity
+            accessibilityLabel={`${group.title}の情報を報告`}
+            activeOpacity={0.7}
+            hitSlop={10}
+            onPress={onReport}
+            style={styles.reportButton}
+          >
+            <Ionicons color={colors.muted} name="flag-outline" size={15} />
+          </TouchableOpacity>
+        </View>
 
         <View style={styles.headingRow}>
           <Pressable accessibilityLabel={`${group.title}の詳細を開く`} onPress={openSeries} style={styles.titlePress}>
@@ -215,6 +217,8 @@ const styles = StyleSheet.create({
   coverPress: { borderRadius: 4 },
   cover: { borderRadius: 4, height: 120, width: 82 },
   body: { flex: 1, minWidth: 0, paddingBottom: 4 },
+  topLine: { alignItems: 'flex-start', flexDirection: 'row', gap: 6, marginBottom: 8, minHeight: 26 },
+  badgePress: { flex: 1, minWidth: 0 },
   topBadgeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 },
   headingRow: { alignItems: 'flex-start', flexDirection: 'row', gap: 8 },
   titlePress: { flex: 1 },
@@ -224,11 +228,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     height: 26,
     justifyContent: 'center',
-    position: 'absolute',
-    right: 6,
-    top: 6,
     width: 26,
-    zIndex: 3,
   },
   iconButton: {
     alignItems: 'center',

@@ -551,6 +551,31 @@ export default function SettingsScreen() {
       </View>
 
       <View style={[styles.section, { borderBottomColor: colors.border }]}>
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>データ補正</Text>
+        <Link href="/reading-suggestions" asChild>
+          <Pressable
+            style={[
+              styles.helpLink,
+              { backgroundColor: colors.surface, borderColor: colors.border },
+            ]}
+          >
+            <View style={[styles.accountIcon, { backgroundColor: colors.surface }]}>
+              <Ionicons color={colors.text} name="text-outline" size={21} />
+            </View>
+            <View style={styles.rowText}>
+              <View style={styles.navigationTitleRow}>
+                <Ionicons color={colors.muted} name="chevron-forward" size={16} />
+                <Text style={[styles.rowTitle, { color: colors.text }]}>シリーズ名の読み方を報告</Text>
+              </View>
+              <Text style={[styles.helpCopy, { color: colors.muted }]} numberOfLines={2}>
+                五十音順の並び替えに使う読み方の候補を送信できます。
+              </Text>
+            </View>
+          </Pressable>
+        </Link>
+      </View>
+
+      <View style={[styles.section, { borderBottomColor: colors.border }]}>
         <Text style={[styles.sectionTitle, { color: colors.text }]}>外部EC</Text>
         <View style={styles.row}>
           <View style={styles.rowText}>

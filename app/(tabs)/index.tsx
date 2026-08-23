@@ -145,16 +145,26 @@ function toHiraganaSortText(value: string) {
   return value.replace(/[\u30a1-\u30f6]/g, (character) => String.fromCharCode(character.charCodeAt(0) - 0x60));
 }
 
-function buildJapaneseSortKey(value?: string) {
-  if (!value) return '\uffff';
+function normalizeSortText(value?: string) {
+  if (!value) return '';
   return toHiraganaSortText(value.normalize('NFKC').trim().toLowerCase())
     .replace(/^[\s!-/:-@[-`{-~\u300c\u300d\u300e\u300f\u3010\u3011\uff08\uff09()\uff3b\uff3d\[\]\u30fb\uff65]+/g, '')
     .replace(/\s+/g, ' ');
 }
 
-function compareText(left: string | undefined, right: string | undefined) {
-  const leftKey = buildJapaneseSortKey(left);
-  const rightKey = buildJapaneseSortKey(right);
+function usableReading(value?: string | null) {
+  const normalized = normalizeSortText(value ?? undefined);
+  if (!normalized || /[\u3400-\u9fff]/.test(normalized)) return undefined;
+  return normalized;
+}
+
+function buildJapaneseSortKey(value?: string, reading?: string | null) {
+  return usableReading(reading) ?? (normalizeSortText(value) || '\uffff');
+}
+
+function compareText(left: string | undefined, right: string | undefined, leftReading?: string | null, rightReading?: string | null) {
+  const leftKey = buildJapaneseSortKey(left, leftReading);
+  const rightKey = buildJapaneseSortKey(right, rightReading);
   return japaneseSortCollator.compare(leftKey, rightKey) || japaneseSortCollator.compare(left ?? '', right ?? '');
 }
 
@@ -219,7 +229,7 @@ function getSeriesReadingSortText(books: Book[], seriesTitle: string) {
         (left.volumeNumber ?? Number.MAX_SAFE_INTEGER) - (right.volumeNumber ?? Number.MAX_SAFE_INTEGER),
     )
     .find((book) => book.seriesReading || book.titleReading);
-  return reading?.seriesReading ?? reading?.titleReading ?? seriesTitle;
+  return usableReading(reading?.seriesReading) ?? usableReading(reading?.titleReading) ?? seriesTitle;
 }
 
 
@@ -573,11 +583,11 @@ export default function HomeScreen() {
     return filtered.sort((left, right) => {
       let comparison = 0;
       if (bookSort === 'title') {
-        comparison = compareText(left.titleReading ?? left.title, right.titleReading ?? right.title);
+        comparison = compareText(left.title, right.title, left.titleReading, right.titleReading);
       } else if (bookSort === 'series') {
-        comparison = compareText(left.seriesReading ?? left.seriesTitle, right.seriesReading ?? right.seriesTitle) || (left.volumeNumber ?? 0) - (right.volumeNumber ?? 0);
+        comparison = compareText(left.seriesTitle, right.seriesTitle, left.seriesReading, right.seriesReading) || (left.volumeNumber ?? 0) - (right.volumeNumber ?? 0);
       } else if (bookSort === 'volume') {
-        comparison = compareText(left.seriesReading ?? left.seriesTitle, right.seriesReading ?? right.seriesTitle) || (left.volumeNumber ?? 0) - (right.volumeNumber ?? 0);
+        comparison = compareText(left.seriesTitle, right.seriesTitle, left.seriesReading, right.seriesReading) || (left.volumeNumber ?? 0) - (right.volumeNumber ?? 0);
       } else if (bookSort === 'status') {
         comparison = readingStatusOrder[left.status] - readingStatusOrder[right.status];
       } else if (bookSort === 'favorite') {
@@ -591,7 +601,7 @@ export default function HomeScreen() {
       } else {
         comparison = left.createdAt.localeCompare(right.createdAt);
       }
-      return applySortDirection(comparison, bookSortDirection) || compareText(left.titleReading ?? left.title, right.titleReading ?? right.title);
+      return applySortDirection(comparison, bookSortDirection) || compareText(left.title, right.title, left.titleReading, right.titleReading);
     });
   }, [bookSort, bookSortDirection, books, effectivePublicationCache, favoriteSeriesKeySet, filters, query, seriesStats]);
 
@@ -679,18 +689,48 @@ export default function HomeScreen() {
       .filter(
         (book): book is Book =>
           !!book &&
-          !book.seriesReading &&
-          !book.titleReading &&
+          !usableReading(book.seriesReading) &&
+          !usableReading(book.titleReading) &&
           !metadataRepairFailedRef.current.has(book.id),
       )
       .slice(0, 2);
+
+    if (__DEV__ && targets.length > 0) {
+      console.info(
+        '[metadata] home reading repair targets',
+        targets.map((book) => ({
+          id: book.id,
+          isbn: book.isbn,
+          title: book.title,
+          seriesTitle: book.seriesTitle,
+          reason: 'missing-reading',
+        })),
+      );
+    }
 
     targets.forEach((book) => {
       if (metadataRepairingRef.current.has(book.id)) return;
       metadataRepairingRef.current.add(book.id);
       repairBookMetadata(book.id, { preserveIdentity: true })
-        .then(() => metadataRepairFailedRef.current.delete(book.id))
-        .catch(() => metadataRepairFailedRef.current.add(book.id))
+        .then((result) => {
+          if (usableReading(result.seriesReading) || usableReading(result.titleReading)) {
+            metadataRepairFailedRef.current.delete(book.id);
+          } else {
+            metadataRepairFailedRef.current.add(book.id);
+          }
+        })
+        .catch((metadataError) => {
+          if (__DEV__) {
+            console.warn('[metadata] home reading repair failed', {
+              id: book.id,
+              isbn: book.isbn,
+              title: book.title,
+              seriesTitle: book.seriesTitle,
+              error: metadataError,
+            });
+          }
+          metadataRepairFailedRef.current.add(book.id);
+        })
         .finally(() => metadataRepairingRef.current.delete(book.id));
     });
   }, [books, loading, repairBookMetadata, seriesGroups, seriesSort]);
