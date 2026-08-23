@@ -30,7 +30,8 @@ import {
   setNewReleaseSeriesSubscription,
   syncNewReleaseSubscriptions,
 } from '../../src/lib/newReleaseNotifications';
-import { getMissingVolumes, normalizeSeriesKey } from '../../src/lib/series';
+import { getKnownSeriesReading, getMissingVolumes, normalizeSeriesKey } from '../../src/lib/series';
+import { loadSeriesReadingCorrections, SeriesReadingCorrection } from '../../src/lib/seriesReadingCorrections';
 import {
   loadSeriesMetadata,
   mergeSeriesPublicationInfo,
@@ -218,7 +219,15 @@ function normalizeText(value: string) {
   return value.normalize('NFKC').toLowerCase();
 }
 
-function getSeriesReadingSortText(books: Book[], seriesTitle: string) {
+function getSeriesReadingSortText(
+  books: Book[],
+  seriesTitle: string,
+  readingCorrections: Map<string, SeriesReadingCorrection>,
+) {
+  const knownReading = usableReading(getKnownSeriesReading(seriesTitle));
+  if (knownReading) return knownReading;
+  const correctedReading = usableReading(readingCorrections.get(normalizeSeriesKey(seriesTitle))?.correctedReading);
+  if (correctedReading) return correctedReading;
   const targetSeriesKey = normalizeSeriesKey(seriesTitle);
   const reading = books
     .filter((book) => normalizeSeriesKey(book.seriesTitle) === targetSeriesKey)
@@ -285,6 +294,7 @@ export default function HomeScreen() {
   const [toolbarHeight, setToolbarHeight] = useState(152);
   const [publicationCache, setPublicationCache] = useState<SeriesPublicationCache>({});
   const [seriesMetadataCache, setSeriesMetadataCache] = useState<SeriesMetadataCache>({});
+  const [readingCorrections, setReadingCorrections] = useState(new Map<string, SeriesReadingCorrection>());
   const [visibleFavoriteSeriesKeys, setVisibleFavoriteSeriesKeys] = useState<string[]>(favoriteSeriesKeys);
   const [refreshingSeriesTitle, setRefreshingSeriesTitle] = useState<string | null>(null);
   const [notificationSeriesKeys, setNotificationSeriesKeys] = useState<string[]>([]);
@@ -308,6 +318,21 @@ export default function HomeScreen() {
   useEffect(() => {
     setVisibleFavoriteSeriesKeys(favoriteSeriesKeys);
   }, [favoriteSeriesKeys]);
+
+
+  useEffect(() => {
+    let mounted = true;
+    loadSeriesReadingCorrections()
+      .then((corrections) => {
+        if (mounted) setReadingCorrections(corrections);
+      })
+      .catch((correctionError) => {
+        console.warn('Failed to load series reading corrections', correctionError);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!appSettingsHydrated || !user || !supabase || seriesGroups.length === 0) return;
@@ -547,11 +572,14 @@ export default function HomeScreen() {
       } else if (seriesSort === 'publisher') {
         comparison = compareText(left.publishers[0], right.publishers[0]);
       } else {
-        comparison = compareText(getSeriesReadingSortText(books, left.title), getSeriesReadingSortText(books, right.title));
+        comparison = compareText(
+          getSeriesReadingSortText(books, left.title, readingCorrections),
+          getSeriesReadingSortText(books, right.title, readingCorrections),
+        );
       }
       return applySortDirection(comparison, seriesSortDirection) || compareText(left.title, right.title);
     });
-  }, [books, effectivePublicationCache, favoriteSeriesKeySet, filters, query, seriesGroups, seriesSort, seriesSortDirection, seriesStats]);
+  }, [books, effectivePublicationCache, favoriteSeriesKeySet, filters, query, readingCorrections, seriesGroups, seriesSort, seriesSortDirection, seriesStats]);
 
   const visibleBooks = useMemo(() => {
     const activeFilters = getActiveFilters(filters);

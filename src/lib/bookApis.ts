@@ -173,6 +173,22 @@ const SERIES_SEARCH_ALIASES: Record<string, string[]> = {
 
 const KNOWN_BOOK_FALLBACKS: BookInput[] = [
   {
+    isbn: '9784088927343',
+    title: 'GIFT 久保さんは僕(モブ)を許さない 完結記念公式ファンブック',
+    titleReading: 'ぎふと くぼさんはもぶをゆるさない かんけつきねんこうしきふぁんぶっく',
+    seriesTitle: '久保さんは僕(モブ)を許さない',
+    seriesReading: 'くぼさんはもぶをゆるさない',
+    volumeKind: 'extra',
+    author: '雪森寧々',
+    publisher: '集英社',
+    publishedDate: '2023-04-18',
+    thumbnailUrl: 'https://thumbnail.image.rakuten.co.jp/@0_mall/book/cabinet/7343/9784088927343.jpg?_ex=300x300',
+    listPrice: 990,
+    priceSource: 'manual',
+    priceFetchedAt: '2026-08-23T00:00:00.000Z',
+    status: 'unread',
+  },
+  {
     isbn: '9784048996495',
     title: '\u50d5\u306e\u3044\u3051\u305a\u306a\u5a5a\u7d04\u8005 1',
     seriesTitle: '\u50d5\u306e\u3044\u3051\u305a\u306a\u5a5a\u7d04\u8005',
@@ -1649,7 +1665,7 @@ export async function lookupBookByIsbn(isbn: string): Promise<BookInput | null> 
   });
 
   const ndlPrimaryResult = ndlResult ? mergeBookMetadata(ndlResult, knownFallback) : null;
-  const bibliographicResult = ndlPrimaryResult ?? knownFallback;
+  const bibliographicResult = knownFallback ?? ndlPrimaryResult;
   if (bibliographicResult) {
     const titleFallback = keepThumbnailOnlyForSafeMatch(
       await lookupBookByTitle(bibliographicResult.title, normalizedIsbn),

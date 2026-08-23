@@ -76,7 +76,16 @@ export function normalizeSeriesKey(seriesTitle: string) {
     .toLocaleLowerCase()
     .replace(EDITION_SUFFIX_PATTERN, '')
     .replace(/[\s・･:：\-–—_'"“”‘’()[\]{}「」『』【】〈〉《》!?！？。.．]/g, '')
+    .replace(/僕モブを/g, '僕を')
     .trim();
+}
+
+const KNOWN_SERIES_READINGS_BY_KEY: Record<string, string> = {
+  久保さんは僕を許さない: 'くぼさんはもぶをゆるさない',
+};
+
+export function getKnownSeriesReading(seriesTitle: string) {
+  return KNOWN_SERIES_READINGS_BY_KEY[normalizeSeriesKey(seriesTitle)];
 }
 
 export function getMissingVolumes(volumes: number[]) {
