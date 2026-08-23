@@ -252,7 +252,7 @@ export default function ReadingSuggestionsScreen() {
             {libraryTargets.length > 0 && filteredLibraryTargets.length === 0 ? (
               <Text style={[styles.copy, { color: colors.muted }]}>一致するシリーズがありません。</Text>
             ) : null}
-            <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={false} style={styles.librarySeriesScroll} contentContainerStyle={styles.seriesList}>
+            <ScrollView nestedScrollEnabled persistentScrollbar showsVerticalScrollIndicator style={styles.librarySeriesScroll} contentContainerStyle={styles.seriesList}>
               {filteredLibraryTargets.map(renderTarget)}
             </ScrollView>
           </View>

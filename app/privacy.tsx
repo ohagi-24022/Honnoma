@@ -22,7 +22,7 @@ const sections = [
   {
     title: '外部サービス',
     body:
-      'Supabase、Expo Push Notifications、OpenBD、Google Books API、Rakuten Books API、外部ECサイトまたはブラウザを利用する場合があります。',
+      'Supabase、Expo Push Notifications、OpenBD、Google Books API、Rakuten Books API、NDL Search、外部ECサイトまたはブラウザを利用する場合があります。',
   },
   {
     title: '削除',
@@ -50,7 +50,7 @@ export default function PrivacyScreen() {
         </View>
         <Text style={[styles.title, { color: colors.text }]}>プライバシーポリシー</Text>
         <Text style={[styles.copy, { color: colors.muted }]}>
-          最終更新日: 2026年8月4日
+          最終更新日: 2026年8月24日
         </Text>
         <Text style={[styles.copy, { color: colors.muted }]}>
           本ポリシーは、本の間における利用者情報の取り扱いについて説明するものです。お問い合わせは下記のフォームまたはメールアドレスからご連絡ください。
