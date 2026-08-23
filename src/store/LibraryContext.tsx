@@ -17,6 +17,7 @@ import {
   normalizeBookInput,
 } from '../lib/duplicate';
 import { parseSeriesTitle } from '../lib/series';
+import { formatNetworkAwareError, isNetworkError } from '../lib/errorMessages';
 import { normalizeVolumeKind } from '../lib/volumeKind';
 import {
   buildSeriesGroups,
@@ -237,8 +238,8 @@ function formatSupabaseError(error: unknown, fallback: string) {
   if (supabaseError.code === '23505') {
     return '同じISBNの本がすでに登録されています。';
   }
-  if (/fetch|network|timeout/i.test(supabaseError.message ?? '')) {
-    return '通信できませんでした。接続を確認して、もう一度お試しください。';
+  if (isNetworkError(error)) {
+    return formatNetworkAwareError(error, fallback);
   }
   return fallback;
 }
@@ -411,7 +412,7 @@ export function LibraryProvider({ children }: PropsWithChildren) {
           }
 
           if (fetchError) {
-            throw new Error(formatSupabaseError(fetchError, 'Failed to load books.'));
+            throw new Error(formatSupabaseError(fetchError, '蔵書を読み込めませんでした。'));
           }
 
           const pageRows = (data ?? []) as BookRow[];
@@ -476,7 +477,7 @@ export function LibraryProvider({ children }: PropsWithChildren) {
         }
         setBooks([...booksToImport, ...cloudBooks]);
       } catch (fetchError) {
-        setError(fetchError instanceof Error ? fetchError.message : 'Failed to load books.');
+        setError(formatNetworkAwareError(fetchError, '蔵書を読み込めませんでした。'));
       } finally {
         setLoading(false);
       }

@@ -24,6 +24,7 @@ type HomeToolbarProps = {
   onOpenMyPage: () => void;
   onOpenFilter: () => void;
   onOpenSort: () => void;
+  onRetry: () => void;
 };
 
 export function HomeToolbar({
@@ -45,6 +46,7 @@ export function HomeToolbar({
   onOpenMyPage,
   onOpenFilter,
   onOpenSort,
+  onRetry,
 }: HomeToolbarProps) {
   const { colors } = useAppTheme();
   const countLabel = requiresAuth
@@ -93,8 +95,13 @@ export function HomeToolbar({
       )}
 
       {!!error && (
-        <View style={[styles.notice, { backgroundColor: '#ffeceb' }]}>
-          <Text style={[styles.noticeText, { color: colors.danger }]}>{error}</Text>
+        <View style={[styles.notice, styles.errorNotice, { backgroundColor: '#ffeceb' }]}>
+          <Text style={[styles.noticeText, styles.errorNoticeText, { color: colors.danger }]}>{error}</Text>
+          <Pressable accessibilityLabel="蔵書を再読み込み" onPress={onRetry} style={[styles.retryPill, { borderColor: colors.danger }]}
+          >
+            <Ionicons color={colors.danger} name="refresh" size={13} />
+            <Text style={[styles.retryPillText, { color: colors.danger }]}>再試行</Text>
+          </Pressable>
         </View>
       )}
 
@@ -197,6 +204,10 @@ const styles = StyleSheet.create({
   },
   loadingNotice: { alignItems: 'center', flexDirection: 'row', gap: 10 },
   noticeText: { fontSize: 13, fontWeight: '700' },
+  errorNotice: { alignItems: 'center', flexDirection: 'row', gap: 10, justifyContent: 'space-between' },
+  errorNoticeText: { flex: 1, lineHeight: 18 },
+  retryPill: { alignItems: 'center', borderRadius: 999, borderWidth: 1, flexDirection: 'row', gap: 4, height: 28, justifyContent: 'center', paddingHorizontal: 10 },
+  retryPillText: { fontSize: 12, fontWeight: '900' },
   searchRow: { alignItems: 'center', flexDirection: 'row', gap: 6, marginTop: 8 },
   search: {
     borderRadius: 8,

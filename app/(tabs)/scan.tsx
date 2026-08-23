@@ -17,6 +17,7 @@ import {
 
 import { BookCover } from '../../src/components/BookCover';
 import { isBookIsbnBarcode, lookupBookByIsbn } from '../../src/lib/bookApis';
+import { formatNetworkAwareError, NETWORK_ERROR_MESSAGE } from '../../src/lib/errorMessages';
 import { registerScanQueueReviewHandler } from '../../src/lib/scanQueueReviewBridge';
 import { parseSeriesTitle } from '../../src/lib/series';
 import { normalizeVolumeKind } from '../../src/lib/volumeKind';
@@ -45,6 +46,11 @@ type QueuedScanItem = BookInput & {
 
 function normalizeBarcode(data: string) {
   return data.replace(/[^0-9X]/gi, '').toUpperCase();
+}
+
+function formatLookupNotice(error: unknown) {
+  const message = formatNetworkAwareError(error, '検索に失敗しました。');
+  return message === NETWORK_ERROR_MESSAGE ? message : `検索に失敗しました: ${message}`;
 }
 
 export default function ScanScreen() {
@@ -264,7 +270,7 @@ export default function ScanScreen() {
     } catch (error) {
       setNotice({
         tone: 'error',
-        message: error instanceof Error ? error.message : '連続スキャンした本の登録に失敗しました。',
+        message: formatNetworkAwareError(error, '連続スキャンした本の登録に失敗しました。'),
       });
     } finally {
       setIsSubmitting(false);
@@ -329,7 +335,7 @@ export default function ScanScreen() {
     } catch (error) {
       setNotice({
         tone: 'error',
-        message: error instanceof Error ? error.message : '登録に失敗しました。',
+        message: formatNetworkAwareError(error, '登録に失敗しました。'),
       });
     } finally {
       setIsSubmitting(false);
@@ -392,7 +398,7 @@ export default function ScanScreen() {
     } catch (error) {
       setNotice({
         tone: 'error',
-        message: error instanceof Error ? `検索に失敗しました: ${error.message}` : '検索に失敗しました。',
+        message: formatLookupNotice(error),
       });
     } finally {
       setIsSubmitting(false);
@@ -458,10 +464,7 @@ export default function ScanScreen() {
         setIsbn(normalized);
         setNotice({
           tone: 'error',
-          message:
-            error instanceof Error
-              ? `検索に失敗しました: ${error.message}`
-              : '検索に失敗しました。通信状態を確認してください。',
+          message: formatLookupNotice(error),
         });
       } finally {
         setIsSubmitting(false);

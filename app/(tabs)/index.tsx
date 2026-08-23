@@ -832,6 +832,7 @@ export default function HomeScreen() {
         onOpenMyPage={() => router.navigate({ pathname: '/account', params: { from: 'home' } })}
         onOpenFilter={() => setOpenMenu('filter')}
         onOpenSort={() => setOpenMenu('sort')}
+        onRetry={refreshLibrary}
       />
 
       {viewMode === 'series' ? (

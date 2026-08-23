@@ -1,8 +1,8 @@
 import Constants from 'expo-constants';
-import { router, Stack } from 'expo-router';
+import { router, Stack, type ErrorBoundaryProps } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
-import { Platform } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import 'react-native-gesture-handler';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
@@ -11,6 +11,23 @@ import { AuthProvider } from '../src/store/AuthContext';
 import { LibraryProvider } from '../src/store/LibraryContext';
 import { ThemeProvider, useAppTheme } from '../src/store/ThemeContext';
 import { WishlistProvider } from '../src/store/WishlistContext';
+
+export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
+  return (
+    <View style={styles.errorScreen}>
+      <View style={styles.errorCard}>
+        <Text style={styles.errorTitle}>問題が発生しました</Text>
+        <Text style={styles.errorCopy}>
+          画面の表示中に予期しないエラーが発生しました。再読み込みしても直らない場合は、アプリを再起動してください。
+        </Text>
+        {__DEV__ && <Text selectable style={styles.errorDetail}>{error.message}</Text>}
+        <Pressable accessibilityLabel="画面を再読み込み" onPress={retry} style={styles.retryButton}>
+          <Text style={styles.retryButtonText}>再読み込み</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
 
 export default function RootLayout() {
   return (
@@ -98,3 +115,34 @@ function RootStack() {
     </>
   );
 }
+
+const styles = StyleSheet.create({
+  errorScreen: {
+    alignItems: 'center',
+    backgroundColor: '#f7f7f7',
+    flex: 1,
+    justifyContent: 'center',
+    padding: 24,
+  },
+  errorCard: {
+    backgroundColor: '#ffffff',
+    borderColor: '#e5e5e5',
+    borderRadius: 12,
+    borderWidth: 1,
+    maxWidth: 420,
+    padding: 20,
+    width: '100%',
+  },
+  errorTitle: { color: '#111111', fontSize: 20, fontWeight: '900' },
+  errorCopy: { color: '#555555', fontSize: 14, lineHeight: 21, marginTop: 10 },
+  errorDetail: { color: '#777777', fontSize: 12, lineHeight: 18, marginTop: 12 },
+  retryButton: {
+    alignItems: 'center',
+    backgroundColor: '#111111',
+    borderRadius: 8,
+    height: 44,
+    justifyContent: 'center',
+    marginTop: 18,
+  },
+  retryButtonText: { color: '#ffffff', fontSize: 14, fontWeight: '900' },
+});
