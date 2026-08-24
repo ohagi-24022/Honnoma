@@ -142,15 +142,37 @@ const japaneseSortCollator = new Intl.Collator('ja-JP', {
   usage: 'sort',
 });
 
+const japaneseStrictSortCollator = new Intl.Collator('ja-JP', {
+  ignorePunctuation: true,
+  numeric: true,
+  sensitivity: 'variant',
+  usage: 'sort',
+});
+
 function toHiraganaSortText(value: string) {
-  return value.replace(/[\u30a1-\u30f6]/g, (character) => String.fromCharCode(character.charCodeAt(0) - 0x60));
+  return value.replace(/[\u30a1-\u30fa\u30fd-\u30ff]/g, (character) => {
+    const code = character.charCodeAt(0);
+    if (code >= 0x30a1 && code <= 0x30f6) {
+      return String.fromCharCode(code - 0x60);
+    }
+    if (code === 0x30f7) return `\u308f${String.fromCharCode(0x3099)}`;
+    if (code === 0x30f8) return `\u3090${String.fromCharCode(0x3099)}`;
+    if (code === 0x30f9) return `\u3091${String.fromCharCode(0x3099)}`;
+    if (code === 0x30fa) return `\u3092${String.fromCharCode(0x3099)}`;
+    if (code === 0x30fd || code === 0x30fe) {
+      return String.fromCharCode(code - 0x60);
+    }
+    return character;
+  });
 }
 
 function normalizeSortText(value?: string) {
   if (!value) return '';
   return toHiraganaSortText(value.normalize('NFKC').trim().toLowerCase())
-    .replace(/^[\s!-/:-@[-`{-~\u300c\u300d\u300e\u300f\u3010\u3011\uff08\uff09()\uff3b\uff3d\[\]\u30fb\uff65]+/g, '')
-    .replace(/\s+/g, ' ');
+    .normalize('NFKD')
+    .replace(/[\u30fc\u2010-\u2015\u2212\uff0d-\uff70]/g, '')
+    .replace(/[\s!-/:-@[-`{-~\u3000-\u303f\uff01-\uff65]+/g, '')
+    .normalize('NFKC');
 }
 
 function usableReading(value?: string | null) {
@@ -166,7 +188,12 @@ function buildJapaneseSortKey(value?: string, reading?: string | null) {
 function compareText(left: string | undefined, right: string | undefined, leftReading?: string | null, rightReading?: string | null) {
   const leftKey = buildJapaneseSortKey(left, leftReading);
   const rightKey = buildJapaneseSortKey(right, rightReading);
-  return japaneseSortCollator.compare(leftKey, rightKey) || japaneseSortCollator.compare(left ?? '', right ?? '');
+  return (
+    japaneseSortCollator.compare(leftKey, rightKey) ||
+    japaneseStrictSortCollator.compare(leftKey, rightKey) ||
+    japaneseSortCollator.compare(left ?? '', right ?? '') ||
+    japaneseStrictSortCollator.compare(left ?? '', right ?? '')
+  );
 }
 
 
