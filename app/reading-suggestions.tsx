@@ -3,6 +3,7 @@ import { useNavigation, useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
+import { normalizeKanaReading } from '../src/lib/kana';
 import { GlobalRankingRow } from '../src/lib/rankings';
 import { loadSeriesReadingCorrections, SeriesReadingCorrection } from '../src/lib/seriesReadingCorrections';
 import { getKnownSeriesReading, normalizeSeriesKey } from '../src/lib/series';
@@ -19,9 +20,7 @@ type ReadingTarget = {
 };
 
 function normalizeReading(value?: string | null) {
-  const normalized = value?.normalize('NFKC').replace(/\s+/g, ' ').trim();
-  if (!normalized || /[\u3400-\u9fff]/.test(normalized)) return '';
-  return normalized;
+  return normalizeKanaReading(value) ?? '';
 }
 
 function shuffleTargets(targets: ReadingTarget[]) {
@@ -141,14 +140,14 @@ export default function ReadingSuggestionsScreen() {
       Alert.alert('シリーズを選択してください', '対象シリーズを選んでから報告できます。');
       return;
     }
-    if (!suggestedReading.trim()) {
+    const cleanedReading = normalizeKanaReading(suggestedReading);
+    if (!cleanedReading) {
       Alert.alert('読み方を入力してください', '例: とにかくかわいい');
       return;
     }
 
     setSubmitting(true);
     try {
-      const cleanedReading = suggestedReading.normalize('NFKC').replace(/\s+/g, ' ').trim();
       await submitSeriesReadingSuggestion({
         userId: user.id,
         seriesTitle: selectedTarget.title,

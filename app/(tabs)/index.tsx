@@ -185,12 +185,17 @@ function buildJapaneseSortKey(value?: string, reading?: string | null) {
   return usableReading(reading) ?? (normalizeSortText(value) || '\uffff');
 }
 
+function compareSortKey(leftKey: string, rightKey: string) {
+  if (leftKey < rightKey) return -1;
+  if (leftKey > rightKey) return 1;
+  return 0;
+}
+
 function compareText(left: string | undefined, right: string | undefined, leftReading?: string | null, rightReading?: string | null) {
   const leftKey = buildJapaneseSortKey(left, leftReading);
   const rightKey = buildJapaneseSortKey(right, rightReading);
   return (
-    japaneseSortCollator.compare(leftKey, rightKey) ||
-    japaneseStrictSortCollator.compare(leftKey, rightKey) ||
+    compareSortKey(leftKey, rightKey) ||
     japaneseSortCollator.compare(left ?? '', right ?? '') ||
     japaneseStrictSortCollator.compare(left ?? '', right ?? '')
   );

@@ -1,6 +1,7 @@
 import { Book, BookInput } from '../types';
 import { normalizeAuthor } from './bookMetadata';
 import { env } from './env';
+import { normalizeKanaReading } from './kana';
 import { normalizeSeriesKey, parseSeriesTitle } from './series';
 import { normalizeVolumeKind } from './volumeKind';
 import { supabase } from './supabase';
@@ -511,9 +512,9 @@ function rakutenItemToBookInput(item: RakutenItem, fallbackIsbn?: string): BookI
   return {
     isbn: item.isbn ?? fallbackIsbn,
     title: item.title ?? '',
-    titleReading: item.titleKana,
+    titleReading: normalizeKanaReading(item.titleKana),
     seriesTitle: parsed.seriesTitle,
-    seriesReading: item.titleKana ? parseSeriesTitle(item.titleKana).seriesTitle : undefined,
+    seriesReading: item.titleKana ? normalizeKanaReading(parseSeriesTitle(item.titleKana).seriesTitle) : undefined,
     volumeNumber: parsed.volumeNumber,
     volumeKind: normalizeVolumeKind(undefined, item.title),
     author: normalizeAuthor(item.author),

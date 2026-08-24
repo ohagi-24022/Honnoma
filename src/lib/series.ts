@@ -80,9 +80,24 @@ export function normalizeSeriesKey(seriesTitle: string) {
     .trim();
 }
 
-const KNOWN_SERIES_READINGS_BY_KEY: Record<string, string> = {
-  久保さんは僕を許さない: 'くぼさんはもぶをゆるさない',
+const KNOWN_SERIES_READINGS: Record<string, string> = {
+  '久保さんは僕を許さない': 'くぼさんはもぶをゆるさない',
+  '久保さんは僕(モブ)を許さない': 'くぼさんはもぶをゆるさない',
+  '黒子のバスケ': 'くろこのばすけ',
+  'シド・クラフトの最終推理': 'しどくらふとのさいしゅうすいり',
+  '双星の陰陽師': 'そうせいのおんみょうじ',
+  'トニカクカワイイ': 'とにかくかわいい',
+  '僕のいけずな婚約者': 'ぼくのいけずなこんやくしゃ',
+  'ライバーダイバーラバー': 'らいばーだいばーらばー',
+  'LIVER DIVER LOVER': 'らいばーだいばーらばー',
+  'りゅうおうのおしごと！': 'りゅうおうのおしごと',
+  'りゅうおうのおしごと!': 'りゅうおうのおしごと',
+  'ワールドトリガー': 'わーるどとりがー',
 };
+
+const KNOWN_SERIES_READINGS_BY_KEY: Record<string, string> = Object.fromEntries(
+  Object.entries(KNOWN_SERIES_READINGS).map(([title, reading]) => [normalizeSeriesKey(title), reading]),
+);
 
 export function getKnownSeriesReading(seriesTitle: string) {
   return KNOWN_SERIES_READINGS_BY_KEY[normalizeSeriesKey(seriesTitle)];

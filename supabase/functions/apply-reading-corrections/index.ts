@@ -66,8 +66,8 @@ function buildCorrections(rows: SuggestionRow[], minCount: number) {
 
   for (const row of rows) {
     const seriesKey = cleanText(row.series_key);
-    const reading = cleanText(row.suggested_reading);
-    if (!seriesKey || !reading || hasKanji(reading)) continue;
+    const reading = cleanReading(row.suggested_reading);
+    if (!seriesKey || !reading) continue;
 
     const byReading = bySeries.get(seriesKey) ?? new Map();
     const current = byReading.get(reading) ?? {
@@ -110,6 +110,26 @@ function buildCorrections(rows: SuggestionRow[], minCount: number) {
 function cleanText(value?: string | null) {
   const cleaned = value?.normalize('NFKC').replace(/\s+/g, ' ').trim();
   return cleaned || null;
+}
+
+
+function cleanReading(value?: string | null) {
+  const cleaned = cleanText(value);
+  if (!cleaned || hasKanji(cleaned)) return null;
+  return toHiragana(cleaned);
+}
+
+function toHiragana(value: string) {
+  return value.replace(/[ァ-ヺヽ-ヿ]/g, (character) => {
+    const code = character.charCodeAt(0);
+    if (code >= 0x30a1 && code <= 0x30f6) return String.fromCharCode(code - 0x60);
+    if (code === 0x30f7) return `わ${String.fromCharCode(0x3099)}`;
+    if (code === 0x30f8) return `ゐ${String.fromCharCode(0x3099)}`;
+    if (code === 0x30f9) return `ゑ${String.fromCharCode(0x3099)}`;
+    if (code === 0x30fa) return `を${String.fromCharCode(0x3099)}`;
+    if (code === 0x30fd || code === 0x30fe) return String.fromCharCode(code - 0x60);
+    return character;
+  }).normalize('NFKC');
 }
 
 function hasKanji(value: string) {

@@ -16,6 +16,7 @@ import {
   findDuplicateBook as findDuplicate,
   normalizeBookInput,
 } from '../lib/duplicate';
+import { normalizeKanaReading } from '../lib/kana';
 import { parseSeriesTitle } from '../lib/series';
 import { formatNetworkAwareError, isNetworkError } from '../lib/errorMessages';
 import { normalizeVolumeKind } from '../lib/volumeKind';
@@ -130,9 +131,7 @@ function describeMetadataNeeds(book: Pick<Book, 'thumbnailUrl' | 'volumeNumber' 
 }
 
 function usableReading(value?: string | null) {
-  const normalized = value?.normalize('NFKC').trim();
-  if (!normalized || /[㐀-鿿]/.test(normalized)) return undefined;
-  return normalized;
+  return normalizeKanaReading(value);
 }
 
 async function safeLookupBookByIsbn(isbn: string, context?: { source: string; title?: string; reasons?: string[] }) {
@@ -172,9 +171,9 @@ function fromBookRow(row: BookRow): Book {
     userId: row.user_id,
     isbn: row.isbn ?? undefined,
     title: row.title,
-    titleReading: row.title_reading ?? undefined,
+    titleReading: normalizeKanaReading(row.title_reading),
     seriesTitle: shouldRepairSeriesTitle ? parsedSeries.seriesTitle || parsedTitle.seriesTitle : row.series_title,
-    seriesReading: row.series_reading ?? undefined,
+    seriesReading: normalizeKanaReading(row.series_reading),
     volumeNumber: row.volume_number ?? parsedTitle.volumeNumber ?? parsedSeries.volumeNumber,
     volumeKind: normalizeVolumeKind(row.volume_kind, row.title),
     author: normalizeAuthor(row.author ?? undefined),
@@ -200,9 +199,9 @@ function toBookInsert(bookInput: BookInput, userId: string, bookId: string) {
     user_id: userId,
     isbn: bookInput.isbn ?? null,
     title: bookInput.title,
-    title_reading: bookInput.titleReading ?? null,
+    title_reading: normalizeKanaReading(bookInput.titleReading) ?? null,
     series_title: seriesTitle,
-    series_reading: bookInput.seriesReading ?? null,
+    series_reading: normalizeKanaReading(bookInput.seriesReading) ?? null,
     volume_number: volumeNumber,
     volume_kind: normalizeVolumeKind(bookInput.volumeKind, bookInput.title),
     author: bookInput.author ?? null,
@@ -221,9 +220,9 @@ function toBookUpdate(updates: Partial<BookInput>) {
   return {
     ...(updates.isbn !== undefined ? { isbn: updates.isbn || null } : {}),
     ...(updates.title !== undefined ? { title: updates.title } : {}),
-    ...(updates.titleReading !== undefined ? { title_reading: updates.titleReading || null } : {}),
+    ...(updates.titleReading !== undefined ? { title_reading: normalizeKanaReading(updates.titleReading) ?? null } : {}),
     ...(updates.seriesTitle !== undefined ? { series_title: updates.seriesTitle } : {}),
-    ...(updates.seriesReading !== undefined ? { series_reading: updates.seriesReading || null } : {}),
+    ...(updates.seriesReading !== undefined ? { series_reading: normalizeKanaReading(updates.seriesReading) ?? null } : {}),
     ...(updates.volumeNumber !== undefined ? { volume_number: updates.volumeNumber ?? null } : {}),
     ...(updates.volumeKind !== undefined ? { volume_kind: normalizeVolumeKind(updates.volumeKind, updates.title) } : {}),
     ...(updates.author !== undefined ? { author: updates.author || null } : {}),
@@ -235,6 +234,22 @@ function toBookUpdate(updates: Partial<BookInput>) {
     ...(updates.priceFetchedAt !== undefined ? { price_fetched_at: updates.priceFetchedAt ?? null } : {}),
     ...(updates.thumbnailUrl !== undefined ? { thumbnail_url: updates.thumbnailUrl || null } : {}),
     ...(updates.status !== undefined ? { status: updates.status } : {}),
+  };
+}
+
+function normalizeReadingBookInput<T extends Partial<BookInput>>(input: T): T {
+  return {
+    ...input,
+    ...(input.titleReading !== undefined ? { titleReading: normalizeKanaReading(input.titleReading) } : {}),
+    ...(input.seriesReading !== undefined ? { seriesReading: normalizeKanaReading(input.seriesReading) } : {}),
+  };
+}
+
+function normalizeBookReadings(book: Book): Book {
+  return {
+    ...book,
+    titleReading: normalizeKanaReading(book.titleReading),
+    seriesReading: normalizeKanaReading(book.seriesReading),
   };
 }
 
@@ -387,7 +402,7 @@ export function LibraryProvider({ children }: PropsWithChildren) {
     AsyncStorage.getItem(STORAGE_KEY)
       .then((storedBooks) => {
         if (!storedBooks) return;
-        const parsedBooks = JSON.parse(storedBooks) as Book[];
+        const parsedBooks = (JSON.parse(storedBooks) as Book[]).map(normalizeBookReadings);
         if (configured) {
           const localBooks = parsedBooks.filter((book) => !book.id.startsWith('demo-'));
           setPendingLocalBooks(localBooks);
@@ -609,7 +624,7 @@ export function LibraryProvider({ children }: PropsWithChildren) {
   );
 
   const addBook = useCallback(async (bookInput: BookInput, options: AddBookOptions = {}) => {
-    const normalizedBookInput = normalizeBookInput(bookInput);
+    const normalizedBookInput = normalizeReadingBookInput(normalizeBookInput(bookInput));
     if (!options.allowDuplicate && findDuplicate(books, normalizedBookInput)) {
       throw new Error('同じISBN、または同じシリーズ・巻数の本がすでに登録されています。');
     }
@@ -739,15 +754,16 @@ export function LibraryProvider({ children }: PropsWithChildren) {
 
   const updateBook = useCallback(async (bookId: string, updates: Partial<BookInput>) => {
     const book = books.find((candidate) => candidate.id === bookId);
+    const normalizedUpdates = normalizeReadingBookInput(updates);
     const changesIdentity =
-      updates.isbn !== undefined ||
-      updates.seriesTitle !== undefined ||
-      updates.volumeNumber !== undefined;
+      normalizedUpdates.isbn !== undefined ||
+      normalizedUpdates.seriesTitle !== undefined ||
+      normalizedUpdates.volumeNumber !== undefined;
 
     if (book && changesIdentity) {
       const duplicate = findDuplicate(
         books.filter((candidate) => candidate.id !== bookId),
-        normalizeBookInput({ ...book, ...updates }),
+        normalizeBookInput({ ...book, ...normalizedUpdates }),
       );
       if (duplicate) {
         throw new Error(`${duplicate.title} と同じシリーズ・巻数、またはISBNになっています。`);
@@ -756,12 +772,12 @@ export function LibraryProvider({ children }: PropsWithChildren) {
 
     if (configured) {
       if (supabase && user) {
-        const query = supabase.from('books').update(toBookUpdate(updates)).eq('user_id', user.id);
+        const query = supabase.from('books').update(toBookUpdate(normalizedUpdates)).eq('user_id', user.id);
         const { error: updateError } =
           isUuid(bookId) || !book?.isbn ? await query.eq('id', bookId) : await query.eq('isbn', book.isbn);
 
         if (updateError) {
-          if ((updates.purchasePrice !== undefined || updates.listPrice !== undefined || updates.priceSource !== undefined || updates.priceFetchedAt !== undefined || updates.volumeKind !== undefined || updates.publishedDate !== undefined || updates.titleReading !== undefined || updates.seriesReading !== undefined) && isMissingOptionalSchemaColumnError(updateError)) {
+          if ((normalizedUpdates.purchasePrice !== undefined || normalizedUpdates.listPrice !== undefined || normalizedUpdates.priceSource !== undefined || normalizedUpdates.priceFetchedAt !== undefined || normalizedUpdates.volumeKind !== undefined || normalizedUpdates.publishedDate !== undefined || normalizedUpdates.titleReading !== undefined || normalizedUpdates.seriesReading !== undefined) && isMissingOptionalSchemaColumnError(updateError)) {
             throw new Error('購入価格を保存するにはSupabaseの最新migrationを適用してください。');
           }
           throw new Error(formatSupabaseError(updateError, 'Supabaseの更新に失敗しました。'));
@@ -770,11 +786,11 @@ export function LibraryProvider({ children }: PropsWithChildren) {
     }
 
     setBooks((currentBooks) =>
-      currentBooks.map((book) => (book.id === bookId ? { ...book, ...updates } : book)),
+      currentBooks.map((book) => (book.id === bookId ? { ...book, ...normalizedUpdates } : book)),
     );
     if (configured && !user) {
       setPendingLocalBooks((currentBooks) =>
-        currentBooks.map((book) => (book.id === bookId ? { ...book, ...updates } : book)),
+        currentBooks.map((book) => (book.id === bookId ? { ...book, ...normalizedUpdates } : book)),
       );
     }
   }, [books, configured, user]);

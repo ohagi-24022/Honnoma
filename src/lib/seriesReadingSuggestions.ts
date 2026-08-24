@@ -1,3 +1,4 @@
+import { normalizeKanaReading } from './kana';
 import { normalizeSeriesKey } from './series';
 import { supabase } from './supabase';
 
@@ -14,11 +15,15 @@ function cleanText(value?: string | null) {
   return cleaned || null;
 }
 
+function cleanReading(value?: string | null) {
+  return normalizeKanaReading(value) ?? null;
+}
+
 export async function submitSeriesReadingSuggestion(input: SeriesReadingSuggestionInput) {
   if (!supabase) throw new Error('Supabaseが設定されていません。');
 
   const seriesTitle = cleanText(input.seriesTitle);
-  const suggestedReading = cleanText(input.suggestedReading);
+  const suggestedReading = cleanReading(input.suggestedReading);
   if (!seriesTitle) throw new Error('シリーズを選択してください。');
   if (!suggestedReading) throw new Error('読み方を入力してください。');
 
@@ -27,7 +32,7 @@ export async function submitSeriesReadingSuggestion(input: SeriesReadingSuggesti
       user_id: input.userId,
       series_key: normalizeSeriesKey(seriesTitle),
       series_title: seriesTitle,
-      current_reading: cleanText(input.currentReading),
+      current_reading: cleanReading(input.currentReading),
       suggested_reading: suggestedReading,
       note: cleanText(input.note),
       updated_at: new Date().toISOString(),

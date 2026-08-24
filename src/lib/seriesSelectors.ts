@@ -1,6 +1,6 @@
 import { Book, MissingBook, ShelfItem } from '../types';
 import { normalizeAuthors } from './bookMetadata';
-import { getMissingVolumes, normalizeSeriesKey } from './series';
+import { getKnownSeriesReading, getMissingVolumes, normalizeSeriesKey } from './series';
 
 export type SeriesGroup = {
   id: string;
@@ -16,6 +16,51 @@ export type SeriesGroup = {
   latestVolume?: number;
   latestAddedAt: string;
 };
+
+function toHiraganaSortText(value: string) {
+  return value.replace(/[ァ-ヺヽ-ヿ]/g, (character) => {
+    const code = character.charCodeAt(0);
+    if (code >= 0x30a1 && code <= 0x30f6) return String.fromCharCode(code - 0x60);
+    if (code === 0x30f7) return `わ${String.fromCharCode(0x3099)}`;
+    if (code === 0x30f8) return `ゐ${String.fromCharCode(0x3099)}`;
+    if (code === 0x30f9) return `ゑ${String.fromCharCode(0x3099)}`;
+    if (code === 0x30fa) return `を${String.fromCharCode(0x3099)}`;
+    if (code === 0x30fd || code === 0x30fe) return String.fromCharCode(code - 0x60);
+    return character;
+  });
+}
+
+function normalizeSortText(value?: string | null) {
+  if (!value) return '';
+  return toHiraganaSortText(value.normalize('NFKC').trim().toLowerCase())
+    .normalize('NFKD')
+    .replace(/[ー‐-―−－-ｰ]/g, '')
+    .replace(/[\s!-/:-@[-`{-~　-〿！-･]+/g, '')
+    .normalize('NFKC');
+}
+
+function usableReading(value?: string | null) {
+  const normalized = normalizeSortText(value);
+  if (!normalized || /[㐀-鿿]/.test(normalized)) return undefined;
+  return normalized;
+}
+
+function getSeriesGroupSortKey(group: SeriesGroup) {
+  const knownReading = usableReading(getKnownSeriesReading(group.title));
+  if (knownReading) return knownReading;
+  const bookReading = usableReading(group.representative.seriesReading) ?? usableReading(group.representative.titleReading);
+  return bookReading ?? normalizeSortText(group.title);
+}
+
+function compareSortKey(leftKey: string, rightKey: string) {
+  if (leftKey < rightKey) return -1;
+  if (leftKey > rightKey) return 1;
+  return 0;
+}
+
+function compareSeriesGroupsByName(left: SeriesGroup, right: SeriesGroup) {
+  return compareSortKey(getSeriesGroupSortKey(left), getSeriesGroupSortKey(right)) || left.title.localeCompare(right.title, 'ja-JP');
+}
 
 function mainVolumeBooks(books: Book[]) {
   return books.filter((book) => book.volumeKind !== 'extra');
@@ -73,7 +118,7 @@ export function buildSeriesGroups(books: Book[]): SeriesGroup[] {
         ),
       };
     })
-    .sort((left, right) => left.title.localeCompare(right.title));
+    .sort(compareSeriesGroupsByName);
 }
 
 export function buildSeriesItems(

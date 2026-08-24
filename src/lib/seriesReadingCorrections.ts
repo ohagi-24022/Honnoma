@@ -1,3 +1,4 @@
+import { normalizeKanaReading } from './kana';
 import { normalizeSeriesKey } from './series';
 import { supabase } from './supabase';
 import { isMissingSupabaseRelationError } from './supabaseErrors';
@@ -42,7 +43,7 @@ export async function loadSeriesReadingCorrections() {
       .map((row) => {
         const seriesTitle = cleanText(row.series_title);
         const seriesKey = cleanText(row.series_key) ?? (seriesTitle ? normalizeSeriesKey(seriesTitle) : undefined);
-        const correctedReading = cleanText(row.corrected_reading);
+        const correctedReading = normalizeKanaReading(row.corrected_reading);
         if (!seriesKey || !seriesTitle || !correctedReading) return null;
         return [
           seriesKey,
