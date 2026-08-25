@@ -32,8 +32,13 @@ import { useAuth } from './AuthContext';
 type SupabaseClient = NonNullable<typeof supabase>;
 
 const STORAGE_KEY = 'booknest.library.v1';
+const METADATA_ENRICHMENT_CACHE_KEY = 'booknest.metadata-enrichment.v1';
 const DEMO_USER_ID = 'local-user';
 const BOOKS_FETCH_PAGE_SIZE = 1000;
+const METADATA_ENRICHMENT_ERROR_RETRY_MS = 24 * 60 * 60 * 1000;
+const METADATA_ENRICHMENT_MISS_RETRY_MS = 7 * 24 * 60 * 60 * 1000;
+const METADATA_ENRICHMENT_SUCCESS_RETRY_MS = 30 * 24 * 60 * 60 * 1000;
+const METADATA_ENRICHMENT_CACHE_LIMIT = 500;
 
 type BookRow = {
   id: string;
@@ -119,12 +124,72 @@ type LibraryContextValue = {
 
 const LibraryContext = createContext<LibraryContextValue | null>(null);
 
+type MetadataEnrichmentStatus = 'success' | 'miss' | 'error';
+
+type MetadataEnrichmentCacheEntry = {
+  lastAttemptAt: string;
+  needsSignature: string;
+  reasons: string[];
+  status: MetadataEnrichmentStatus;
+};
+
+type MetadataEnrichmentCache = Record<string, MetadataEnrichmentCacheEntry>;
+
+type MetadataEnrichmentTarget = {
+  book: Book;
+  cacheKey: string;
+  needsSignature: string;
+  reasons: string[];
+};
+
+function normalizeMetadataCacheKey(isbn: string) {
+  return isbn.replace(/[^0-9X]/gi, '').toUpperCase();
+}
+
+function buildMetadataNeedsSignature(reasons: string[]) {
+  return [...new Set(reasons)].sort().join('|');
+}
+
+function shouldSkipMetadataEnrichment(
+  entry: MetadataEnrichmentCacheEntry | undefined,
+  needsSignature: string,
+  nowMs: number,
+) {
+  if (!entry || entry.needsSignature !== needsSignature) return false;
+  const lastAttemptMs = Date.parse(entry.lastAttemptAt);
+  if (!Number.isFinite(lastAttemptMs)) return false;
+  const retryMs = entry.status === 'success'
+    ? METADATA_ENRICHMENT_SUCCESS_RETRY_MS
+    : entry.status === 'error'
+      ? METADATA_ENRICHMENT_ERROR_RETRY_MS
+      : METADATA_ENRICHMENT_MISS_RETRY_MS;
+  return nowMs - lastAttemptMs < retryMs;
+}
+
+function pruneMetadataEnrichmentCache(cache: MetadataEnrichmentCache) {
+  const entries = Object.entries(cache).sort(
+    (left, right) => Date.parse(right[1].lastAttemptAt) - Date.parse(left[1].lastAttemptAt),
+  );
+  return Object.fromEntries(entries.slice(0, METADATA_ENRICHMENT_CACHE_LIMIT));
+}
+
+function parseMetadataEnrichmentCache(value: string | null) {
+  if (!value) return {};
+  try {
+    const parsed = JSON.parse(value) as MetadataEnrichmentCache;
+    if (!parsed || typeof parsed !== 'object') return {};
+    return parsed;
+  } catch {
+    return {};
+  }
+}
 const now = () => new Date().toISOString();
 
-function describeMetadataNeeds(book: Pick<Book, 'thumbnailUrl' | 'volumeNumber' | 'publisher' | 'seriesTitle' | 'title'>) {
+function describeMetadataNeeds(book: Pick<Book, 'thumbnailUrl' | 'volumeNumber' | 'publisher' | 'seriesTitle' | 'title' | 'volumeKind'>) {
+  const isExtraVolume = book.volumeKind === 'extra';
   return [
     !book.thumbnailUrl || isKnownUnavailableCoverUrl(book.thumbnailUrl) ? 'cover' : null,
-    !book.volumeNumber ? 'volume' : null,
+    !isExtraVolume && !book.volumeNumber ? 'volume' : null,
     !book.publisher ? 'publisher' : null,
     book.seriesTitle.trim() === book.title.trim() ? 'series' : null,
   ].filter((reason): reason is string => !!reason);
@@ -392,12 +457,21 @@ export function LibraryProvider({ children }: PropsWithChildren) {
   const [loading, setLoading] = useState(configured);
   const [error, setError] = useState<string | null>(null);
   const [reloadNonce, setReloadNonce] = useState(0);
+  const [metadataEnrichmentCacheLoaded, setMetadataEnrichmentCacheLoaded] = useState(false);
   const enrichedIsbnsRef = useRef(new Set<string>());
+  const metadataEnrichmentCacheRef = useRef<MetadataEnrichmentCache>({});
   const requiresAuth = false;
   const refreshLibrary = useCallback(() => {
     setReloadNonce((current) => current + 1);
   }, []);
 
+  useEffect(() => {
+    AsyncStorage.getItem(METADATA_ENRICHMENT_CACHE_KEY)
+      .then((storedCache) => {
+        metadataEnrichmentCacheRef.current = parseMetadataEnrichmentCache(storedCache);
+      })
+      .finally(() => setMetadataEnrichmentCacheLoaded(true));
+  }, []);
   useEffect(() => {
     AsyncStorage.getItem(STORAGE_KEY)
       .then((storedBooks) => {
@@ -534,48 +608,74 @@ export function LibraryProvider({ children }: PropsWithChildren) {
   }, [configured, initializing, pendingLocalBooks, reloadNonce, user]);
 
   useEffect(() => {
-    if (!configured || !user || !supabase) return;
+    if (!configured || !user || !supabase || !metadataEnrichmentCacheLoaded) return;
     const client = supabase;
     const userId = user.id;
+    const nowMs = Date.now();
 
-    const booksNeedingMetadata = books
-      .filter(
-        (book) =>
-          book.isbn &&
-          describeMetadataNeeds(book).length > 0 &&
-          !enrichedIsbnsRef.current.has(book.isbn),
-      )
+    const metadataTargets: MetadataEnrichmentTarget[] = books
+      .flatMap((book) => {
+        if (!book.isbn || enrichedIsbnsRef.current.has(book.isbn)) return [];
+        const reasons = describeMetadataNeeds(book);
+        if (reasons.length === 0) return [];
+
+        const cacheKey = normalizeMetadataCacheKey(book.isbn);
+        if (!cacheKey) return [];
+        const needsSignature = buildMetadataNeedsSignature(reasons);
+        if (shouldSkipMetadataEnrichment(metadataEnrichmentCacheRef.current[cacheKey], needsSignature, nowMs)) {
+          return [];
+        }
+
+        return [{ book, cacheKey, needsSignature, reasons }];
+      })
       .slice(0, 10);
 
-    if (booksNeedingMetadata.length === 0) return;
+    if (metadataTargets.length === 0) return;
 
     if (__DEV__) {
       console.info(
         '[metadata] auto enrichment targets',
-        booksNeedingMetadata.map((book) => ({
+        metadataTargets.map(({ book, reasons }) => ({
           isbn: book.isbn,
           title: book.title,
           seriesTitle: book.seriesTitle,
-          reasons: describeMetadataNeeds(book),
+          reasons,
         })),
       );
     }
 
-    booksNeedingMetadata.forEach((book) => {
+    metadataTargets.forEach(({ book }) => {
       if (book.isbn) enrichedIsbnsRef.current.add(book.isbn);
     });
 
+    async function saveMetadataEnrichmentAttempt(target: MetadataEnrichmentTarget, status: MetadataEnrichmentStatus) {
+      metadataEnrichmentCacheRef.current = pruneMetadataEnrichmentCache({
+        ...metadataEnrichmentCacheRef.current,
+        [target.cacheKey]: {
+          lastAttemptAt: now(),
+          needsSignature: target.needsSignature,
+          reasons: target.reasons,
+          status,
+        },
+      });
+      await AsyncStorage.setItem(METADATA_ENRICHMENT_CACHE_KEY, JSON.stringify(metadataEnrichmentCacheRef.current));
+    }
+
     async function enrichBooks() {
-      for (const book of booksNeedingMetadata) {
+      for (const target of metadataTargets) {
+        const { book, reasons } = target;
         if (!book.isbn) continue;
 
         try {
           const lookupTitle = buildMetadataLookupTitle(book);
           const metadata =
-            (await safeLookupBookByIsbn(book.isbn, { source: 'library-auto-enrichment', title: book.title, reasons: describeMetadataNeeds(book) })) ??
+            (await safeLookupBookByIsbn(book.isbn, { source: 'library-auto-enrichment', title: book.title, reasons })) ??
             (await lookupBookByTitle(lookupTitle, book.isbn)) ??
             (lookupTitle === book.title ? null : await lookupBookByTitle(book.title, book.isbn));
-          if (!metadata) continue;
+          if (!metadata) {
+            await saveMetadataEnrichmentAttempt(target, 'miss');
+            continue;
+          }
 
           const updates: Partial<BookInput> = {
             thumbnailUrl: metadata.thumbnailUrl ?? (isKnownUnavailableCoverUrl(book.thumbnailUrl) ? '' : book.thumbnailUrl),
@@ -604,19 +704,21 @@ export function LibraryProvider({ children }: PropsWithChildren) {
             throw new Error(formatSupabaseError(updateError, 'Supabaseの更新に失敗しました。'));
           }
 
+          await saveMetadataEnrichmentAttempt(target, 'success');
           setBooks((currentBooks) =>
             currentBooks.map((currentBook) =>
               currentBook.id === book.id ? { ...currentBook, ...updates } : currentBook,
             ),
           );
         } catch (metadataError) {
+          await saveMetadataEnrichmentAttempt(target, 'error');
           console.warn('Failed to enrich book metadata', metadataError);
         }
       }
     }
 
     enrichBooks();
-  }, [books, configured, user]);
+  }, [books, configured, metadataEnrichmentCacheLoaded, user]);
 
   const findDuplicateBook = useCallback(
     (bookInput: BookInput) => findDuplicate(books, bookInput),
