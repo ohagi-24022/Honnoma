@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { AppState } from 'react-native';
 import {
   createContext,
   PropsWithChildren,
@@ -81,7 +82,9 @@ export function AppSettingsProvider({ children }: PropsWithChildren) {
   const [userSettings, setUserSettings] = useState<UserSettings>(defaultUserSettings);
   const [deviceSettings, setDeviceSettings] = useState<DeviceSettings>(defaultDeviceSettings);
   const [hydrated, setHydrated] = useState(false);
+  const [refreshNonce, setRefreshNonce] = useState(0);
   const hydratedStorageKeyRef = useRef<string | null>(null);
+  const appStateRefreshAtRef = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -176,7 +179,7 @@ export function AppSettingsProvider({ children }: PropsWithChildren) {
     return () => {
       cancelled = true;
     };
-  }, [newReleaseNotificationStorageKey, userId, userStorageKey]);
+  }, [newReleaseNotificationStorageKey, refreshNonce, userId, userStorageKey]);
 
   useEffect(() => {
     if (!hydrated || hydratedStorageKeyRef.current !== userStorageKey) return;
@@ -184,6 +187,17 @@ export function AppSettingsProvider({ children }: PropsWithChildren) {
     AsyncStorage.setItem(newReleaseNotificationStorageKey, String(userSettings.newReleaseNotifications));
     AsyncStorage.setItem(DEVICE_STORAGE_KEY, JSON.stringify(deviceSettings));
   }, [deviceSettings, hydrated, newReleaseNotificationStorageKey, userId, userSettings, userStorageKey]);
+  useEffect(() => {
+    if (!userId) return;
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState !== 'active') return;
+      const currentTime = Date.now();
+      if (currentTime - appStateRefreshAtRef.current < 5000) return;
+      appStateRefreshAtRef.current = currentTime;
+      setRefreshNonce((current) => current + 1);
+    });
+    return () => subscription.remove();
+  }, [userId]);
 
   const value = useMemo(
     () => ({

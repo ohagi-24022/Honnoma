@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { AppState } from 'react-native';
 import {
   createContext,
   PropsWithChildren,
@@ -124,7 +125,9 @@ export function WishlistProvider({ children }: PropsWithChildren) {
   const storageKey = getStorageKey(user?.id);
   const [items, setItems] = useState<WishlistItem[]>([]);
   const [hydrated, setHydrated] = useState(false);
+  const [refreshNonce, setRefreshNonce] = useState(0);
   const hydratedStorageKeyRef = useRef<string | null>(null);
+  const appStateRefreshAtRef = useRef(0);
 
   const persistCloudItem = useCallback(
     async (item: WishlistItem) => {
@@ -176,9 +179,10 @@ export function WishlistProvider({ children }: PropsWithChildren) {
     let cancelled = false;
 
     const hydrate = async () => {
+      const previousStorageKey = hydratedStorageKeyRef.current;
       hydratedStorageKeyRef.current = null;
       setHydrated(false);
-      setItems([]);
+      if (previousStorageKey !== storageKey) setItems([]);
       const storedItems = await AsyncStorage.getItem(storageKey);
       let nextItems = parseStoredItems(storedItems);
 
@@ -203,12 +207,23 @@ export function WishlistProvider({ children }: PropsWithChildren) {
     return () => {
       cancelled = true;
     };
-  }, [storageKey, user]);
+  }, [refreshNonce, storageKey, user]);
 
   useEffect(() => {
     if (!hydrated || hydratedStorageKeyRef.current !== storageKey) return;
     AsyncStorage.setItem(storageKey, JSON.stringify(items));
   }, [hydrated, items, storageKey]);
+  useEffect(() => {
+    if (!user) return;
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState !== 'active') return;
+      const currentTime = Date.now();
+      if (currentTime - appStateRefreshAtRef.current < 5000) return;
+      appStateRefreshAtRef.current = currentTime;
+      setRefreshNonce((current) => current + 1);
+    });
+    return () => subscription.remove();
+  }, [user]);
 
   const value = useMemo(
     () => ({

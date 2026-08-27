@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { AppState } from 'react-native';
 import {
   createContext,
   PropsWithChildren,
@@ -460,11 +461,23 @@ export function LibraryProvider({ children }: PropsWithChildren) {
   const [metadataEnrichmentCacheLoaded, setMetadataEnrichmentCacheLoaded] = useState(false);
   const enrichedIsbnsRef = useRef(new Set<string>());
   const metadataEnrichmentCacheRef = useRef<MetadataEnrichmentCache>({});
+  const appStateRefreshAtRef = useRef(0);
   const requiresAuth = false;
   const refreshLibrary = useCallback(() => {
     setReloadNonce((current) => current + 1);
   }, []);
 
+  useEffect(() => {
+    if (!configured || !user) return;
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState !== 'active') return;
+      const currentTime = Date.now();
+      if (currentTime - appStateRefreshAtRef.current < 5000) return;
+      appStateRefreshAtRef.current = currentTime;
+      refreshLibrary();
+    });
+    return () => subscription.remove();
+  }, [configured, refreshLibrary, user]);
   useEffect(() => {
     AsyncStorage.getItem(METADATA_ENRICHMENT_CACHE_KEY)
       .then((storedCache) => {

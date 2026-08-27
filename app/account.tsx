@@ -112,7 +112,7 @@ export default function AccountScreen() {
     const mostCollectedSeries = [...seriesGroups].sort((left, right) => right.ownedCount - left.ownedCount)[0];
 
     return {
-      accountStatus: 'クラウド同期中',
+      accountStatus: '同期中',
       estimatedTotal,
       estimatedUnrecordedTotal,
       mostCollectedSeries,
@@ -422,7 +422,7 @@ function SummaryTile({ label, value }: { label: string; value: string }) {
   const { colors } = useAppTheme();
   return (
     <View style={[styles.summaryTile, { backgroundColor: colors.background }]}>
-      <Text style={[styles.summaryValue, { color: colors.text }]}>{value}</Text>
+      <Text adjustsFontSizeToFit numberOfLines={1} style={[styles.summaryValue, { color: colors.text }]}>{value}</Text>
       <Text style={[styles.summaryLabel, { color: colors.muted }]}>{label}</Text>
     </View>
   );
@@ -468,7 +468,7 @@ const styles = StyleSheet.create({
   expenseBreakdown: { fontSize: 12, fontWeight: '700', marginTop: -6 },
   summaryGrid: { flexDirection: 'row', gap: 8 },
   summaryTile: { alignItems: 'center', borderRadius: 8, flex: 1, gap: 3, minHeight: 58, justifyContent: 'center', paddingHorizontal: 4 },
-  summaryValue: { fontSize: 16, fontWeight: '900' },
+  summaryValue: { fontSize: 16, fontWeight: '900', textAlign: 'center' },
   summaryLabel: { fontSize: 11, fontWeight: '800' },
   headerRow: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
   iconButton: {
