@@ -9,7 +9,7 @@ import { useAppTheme } from '../../src/store/ThemeContext';
 export default function TabLayout() {
   const { colors } = useAppTheme();
   const insets = useSafeAreaInsets();
-  const bottomInset = Math.max(insets.bottom, Platform.OS === 'android' ? 12 : 0);
+  const safeBottomInset = Math.min(Math.max(insets.bottom, Platform.OS === 'android' ? 10 : 8), 28);
   const interceptTabPress = (targetHref: string) => ({
     tabPress: (event: { preventDefault: () => void }) => {
       if (requestScanQueueReview(targetHref)) {
@@ -29,12 +29,12 @@ export default function TabLayout() {
         tabBarStyle: {
           backgroundColor: colors.surface,
           borderTopColor: colors.border,
-          height: Platform.select({ ios: 70 + bottomInset, default: 60 + bottomInset }),
+          height: 62 + safeBottomInset,
           overflow: 'visible',
-          paddingBottom: bottomInset,
+          paddingBottom: safeBottomInset,
           paddingTop: 8,
         },
-        tabBarLabelStyle: { fontSize: 12, fontWeight: '700' },
+        tabBarLabelStyle: { fontSize: 11, fontWeight: '700', lineHeight: 13, marginTop: 1 },
       }}
     >
       <Tabs.Screen
@@ -129,3 +129,4 @@ export default function TabLayout() {
     </Tabs>
   );
 }
+

@@ -5,6 +5,7 @@ import { useEffect } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import 'react-native-gesture-handler';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AppSettingsProvider } from '../src/store/AppSettingsContext';
 import { AuthProvider } from '../src/store/AuthContext';
@@ -32,7 +33,8 @@ export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
 export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <ThemeProvider>
+      <SafeAreaProvider>
+        <ThemeProvider>
         <AuthProvider>
           <AppSettingsProvider>
             <WishlistProvider>
@@ -43,6 +45,7 @@ export default function RootLayout() {
           </AppSettingsProvider>
         </AuthProvider>
       </ThemeProvider>
+      </SafeAreaProvider>
     </GestureHandlerRootView>
   );
 }
@@ -148,3 +151,4 @@ const styles = StyleSheet.create({
   },
   retryButtonText: { color: '#ffffff', fontSize: 14, fontWeight: '900' },
 });
+
