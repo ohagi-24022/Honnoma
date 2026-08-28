@@ -10,6 +10,9 @@ export type KnownBookMetadataOverride = {
   seriesTitle?: string;
   sourceUrl?: string;
   thumbnailUrl?: string;
+  listPrice?: number;
+  priceSource?: 'rakuten' | 'google' | 'manual';
+  priceFetchedAt?: string;
   title?: string;
 };
 

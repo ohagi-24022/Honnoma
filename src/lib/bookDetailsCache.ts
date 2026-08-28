@@ -28,6 +28,9 @@ type BookMetadataCacheRow = {
   publisher: string | null;
   description: string | null;
   thumbnail_url: string | null;
+  list_price: number | null;
+  price_source: 'rakuten' | 'google' | 'manual' | null;
+  price_fetched_at: string | null;
   source: BookVolumeDetails['source'];
   source_url: string | null;
   fetched_at: string;
@@ -51,6 +54,9 @@ function dbRowToDetails(row: BookMetadataCacheRow): BookVolumeDetails {
     publisher: row.publisher ?? undefined,
     description: row.description ?? undefined,
     thumbnailUrl: row.thumbnail_url ?? undefined,
+    listPrice: row.list_price ?? undefined,
+    priceSource: row.price_source ?? undefined,
+    priceFetchedAt: row.price_fetched_at ?? undefined,
     source: row.source,
     sourceUrl: row.source_url ?? undefined,
     checkedAt: row.fetched_at,
@@ -120,6 +126,9 @@ async function writeSupabaseCache(book: Book, details: BookVolumeDetails | null)
     publisher: details.publisher ?? null,
     description: details.description ?? null,
     thumbnail_url: details.thumbnailUrl ?? null,
+    list_price: details.listPrice ?? null,
+    price_source: details.priceSource ?? null,
+    price_fetched_at: details.priceFetchedAt ?? null,
     source: details.source,
     source_url: details.sourceUrl ?? null,
     fetched_at: details.checkedAt,

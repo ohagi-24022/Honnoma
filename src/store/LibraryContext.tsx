@@ -187,13 +187,14 @@ function parseMetadataEnrichmentCache(value: string | null) {
 }
 const now = () => new Date().toISOString();
 
-function describeMetadataNeeds(book: Pick<Book, 'thumbnailUrl' | 'volumeNumber' | 'publisher' | 'seriesTitle' | 'title' | 'volumeKind'>) {
+function describeMetadataNeeds(book: Pick<Book, 'thumbnailUrl' | 'volumeNumber' | 'publisher' | 'seriesTitle' | 'title' | 'volumeKind' | 'listPrice'>) {
   const isExtraVolume = book.volumeKind === 'extra';
   return [
     !book.thumbnailUrl || isKnownUnavailableCoverUrl(book.thumbnailUrl) ? 'cover' : null,
     !isExtraVolume && !book.volumeNumber ? 'volume' : null,
     !book.publisher ? 'publisher' : null,
     book.seriesTitle.trim() === book.title.trim() ? 'series' : null,
+    typeof book.listPrice !== 'number' ? 'price' : null,
   ].filter((reason): reason is string => !!reason);
 }
 
@@ -693,6 +694,9 @@ export function LibraryProvider({ children }: PropsWithChildren) {
 
           const updates: Partial<BookInput> = {
             thumbnailUrl: metadata.thumbnailUrl ?? (isKnownUnavailableCoverUrl(book.thumbnailUrl) ? '' : book.thumbnailUrl),
+            listPrice: metadata.listPrice ?? book.listPrice,
+            priceSource: metadata.priceSource ?? book.priceSource,
+            priceFetchedAt: metadata.priceFetchedAt ?? book.priceFetchedAt,
             volumeNumber: book.volumeNumber ?? metadata.volumeNumber,
             author: metadata.author ?? book.author,
             publisher: metadata.publisher ?? book.publisher,

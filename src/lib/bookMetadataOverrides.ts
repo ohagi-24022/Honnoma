@@ -15,6 +15,9 @@ type RemoteBookMetadataOverrideResponse = {
     source_url?: string | null;
     subtitle?: string | null;
     thumbnail_url?: string | null;
+    list_price?: number | null;
+    price_source?: 'rakuten' | 'google' | 'manual' | null;
+    price_fetched_at?: string | null;
     title?: string | null;
   } | null;
 };
@@ -111,6 +114,9 @@ async function getRemoteBookMetadataOverride(book: Book): Promise<KnownBookMetad
       seriesTitle: override.series_title ?? undefined,
       sourceUrl: override.source_url ?? undefined,
       thumbnailUrl: override.thumbnail_url ?? undefined,
+      listPrice: typeof override.list_price === 'number' ? override.list_price : undefined,
+      priceSource: override.price_source ?? undefined,
+      priceFetchedAt: override.price_fetched_at ?? undefined,
       title: override.title ?? undefined,
     };
   } catch (error) {
@@ -136,6 +142,9 @@ export async function getBookMetadataOverrideDetails(book: Book): Promise<BookVo
     publisher: override.publisher ?? book.publisher,
     description: override.description ?? sourcePage.description,
     thumbnailUrl: override.thumbnailUrl ?? sourcePage.thumbnailUrl ?? book.thumbnailUrl,
+    listPrice: override.listPrice,
+    priceSource: override.priceSource,
+    priceFetchedAt: override.priceFetchedAt,
     source: 'Developer Override',
     sourceUrl: override.sourceUrl,
     checkedAt: new Date().toISOString(),

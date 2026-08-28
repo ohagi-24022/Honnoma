@@ -143,6 +143,9 @@ export type BookVolumeDetails = {
   publisher?: string;
   description?: string;
   thumbnailUrl?: string;
+  listPrice?: number;
+  priceSource?: 'rakuten' | 'google' | 'manual';
+  priceFetchedAt?: string;
   source: 'Google Books' | 'OpenBD' | 'Rakuten Books' | 'Developer Override';
   sourceUrl?: string;
   checkedAt: string;
@@ -1356,7 +1359,8 @@ async function lookupGoogleBookVolumeDetails(
       isSameSeriesTitle(parsed.seriesTitle, book.seriesTitle)
     );
   });
-  const volume = (isbnMatch ?? volumeMatch ?? bookItems[0])?.volumeInfo;
+  const selectedItem = isbnMatch ?? volumeMatch ?? bookItems[0];
+  const volume = selectedItem?.volumeInfo;
   if (!volume?.title) return null;
 
   return {
@@ -1371,6 +1375,11 @@ async function lookupGoogleBookVolumeDetails(
       volume.imageLinks?.thumbnail,
       volume.imageLinks?.smallThumbnail,
     ),
+    listPrice: typeof selectedItem?.saleInfo?.listPrice?.amount === 'number'
+      ? Math.round(selectedItem.saleInfo.listPrice.amount)
+      : undefined,
+    priceSource: typeof selectedItem?.saleInfo?.listPrice?.amount === 'number' ? 'google' : undefined,
+    priceFetchedAt: typeof selectedItem?.saleInfo?.listPrice?.amount === 'number' ? new Date().toISOString() : undefined,
     source: 'Google Books',
     checkedAt: new Date().toISOString(),
   };
@@ -1441,6 +1450,9 @@ async function lookupRakutenBookVolumeDetails(
     publisher: item.publisherName,
     description: plainTextDescription(item.itemCaption),
     thumbnailUrl: firstCoverUrl(item.largeImageUrl, item.mediumImageUrl, item.smallImageUrl),
+    listPrice: typeof item.itemPrice === 'number' ? item.itemPrice : undefined,
+    priceSource: typeof item.itemPrice === 'number' ? 'rakuten' : undefined,
+    priceFetchedAt: typeof item.itemPrice === 'number' ? new Date().toISOString() : undefined,
     source: 'Rakuten Books',
     checkedAt: new Date().toISOString(),
   };
