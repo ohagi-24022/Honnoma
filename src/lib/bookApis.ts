@@ -2,6 +2,7 @@ import { Book, BookInput } from '../types';
 import { normalizeAuthor } from './bookMetadata';
 import { env } from './env';
 import { normalizeKanaReading } from './kana';
+import { getKnownIsbnCoverOverride } from './knownBookOverrides';
 import { normalizeSeriesKey, parseSeriesTitle } from './series';
 import { normalizeVolumeKind } from './volumeKind';
 import { supabase } from './supabase';
@@ -183,7 +184,7 @@ const KNOWN_BOOK_FALLBACKS: BookInput[] = [
     author: '雪森寧々',
     publisher: '集英社',
     publishedDate: '2023-04-18',
-    thumbnailUrl: 'https://thumbnail.image.rakuten.co.jp/@0_mall/book/cabinet/7343/9784088927343.jpg?_ex=300x300',
+    thumbnailUrl: getKnownIsbnCoverOverride('9784088927343'),
     listPrice: 990,
     priceSource: 'manual',
     priceFetchedAt: '2026-08-23T00:00:00.000Z',

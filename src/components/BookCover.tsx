@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Image, ImageStyle, StyleProp, StyleSheet, Text, View } from 'react-native';
 
+import { getKnownIsbnCoverOverride } from '../lib/knownBookOverrides';
 import { useAppTheme } from '../store/ThemeContext';
 
 type BookCoverProps = {
@@ -61,7 +62,11 @@ export function BookCover({
         isGeneratedGoogleIsbnCoverUrl(thumbnailUrl) || isKnownUnavailableCoverUrl(thumbnailUrl)
           ? undefined
           : normalizeImageUrl(thumbnailUrl);
+      const knownCoverOverride = getKnownIsbnCoverOverride(isbn);
       const isbnCandidates = [buildRakutenCoverUrl(isbn), buildOpenLibraryCoverUrl(isbn)];
+      if (knownCoverOverride) {
+        return uniqueUrls([knownCoverOverride, normalizedThumbnail, ...isbnCandidates]);
+      }
       return uniqueUrls(
         preferIsbnCover
           ? [...isbnCandidates, normalizedThumbnail]

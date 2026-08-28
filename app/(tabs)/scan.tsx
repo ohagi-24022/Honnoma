@@ -1,7 +1,7 @@
 import { useIsFocused, useScrollToTop } from '@react-navigation/native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useRouter } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   KeyboardAvoidingView,
@@ -39,6 +39,8 @@ type ScanNotice = {
 
 type QueuedScanItem = BookInput & {
   queueId: string;
+  lookupStatus: 'pending' | 'ready' | 'error';
+  lookupMessage?: string;
   purchaseMode: 'normal' | 'used';
   scannedAt: number;
   usedPurchasePrice: string;
@@ -79,6 +81,8 @@ export default function ScanScreen() {
   });
   const lastScanRef = useRef<{ isbn: string; at: number }>({ isbn: '', at: 0 });
   const processingRef = useRef(false);
+  const queuedLookupsRef = useRef<Array<{ isbn: string; queueId: string }>>([]);
+  const queueWorkerRunningRef = useRef(false);
 
   const [title, setTitle] = useState('');
   const [author, setAuthor] = useState('');
@@ -166,26 +170,122 @@ export default function ScanScreen() {
     processingRef.current = false;
   };
 
+  const queueSummary = useMemo(() => {
+    const pending = scanQueue.filter((item) => item.lookupStatus === 'pending').length;
+    const failed = scanQueue.filter((item) => item.lookupStatus === 'error').length;
+    return {
+      failed,
+      pending,
+      ready: scanQueue.length - pending - failed,
+    };
+  }, [scanQueue]);
 
-  const queueBookInput = (bookInput: BookInput, scannedIsbn: string) => {
+  const queueBookInput = (bookInput: BookInput, scannedIsbn: string, targetQueueId?: string) => {
     const nextIsbn = bookInput.isbn ?? scannedIsbn;
     setScanQueue((current) => {
+      const readyItem: QueuedScanItem = {
+        ...bookInput,
+        isbn: nextIsbn,
+        queueId: targetQueueId ?? `${nextIsbn || bookInput.title}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        lookupStatus: 'ready',
+        lookupMessage: undefined,
+        volumeKind: normalizeVolumeKind(bookInput.volumeKind, bookInput.title),
+        purchaseMode: 'normal',
+        scannedAt: Date.now(),
+        usedPurchasePrice: '',
+      };
+
+      if (targetQueueId) {
+        return current.map((item) =>
+          item.queueId === targetQueueId
+            ? { ...readyItem, purchaseMode: item.purchaseMode, usedPurchasePrice: item.usedPurchasePrice }
+            : item,
+        );
+      }
+
       if (nextIsbn && current.some((item) => normalizeBarcode(item.isbn ?? '') === normalizeBarcode(nextIsbn))) {
+        return current;
+      }
+
+      return [...current, readyItem];
+    });
+  };
+
+  const runQueuedLookups = useCallback(async () => {
+    if (queueWorkerRunningRef.current) return;
+    queueWorkerRunningRef.current = true;
+
+    try {
+      while (queuedLookupsRef.current.length > 0) {
+        const next = queuedLookupsRef.current.shift();
+        if (!next) continue;
+
+        try {
+          const bookInput = await lookupBookByIsbn(next.isbn);
+          if (bookInput) {
+            queueBookInput({ ...bookInput, isbn: bookInput.isbn ?? next.isbn }, next.isbn, next.queueId);
+            continue;
+          }
+
+          setScanQueue((current) =>
+            current.map((item) =>
+              item.queueId === next.queueId
+                ? {
+                    ...item,
+                    lookupStatus: 'error',
+                    lookupMessage: '書籍データが見つかりませんでした。',
+                    title: `ISBN ${next.isbn}`,
+                    seriesTitle: '未取得',
+                  }
+                : item,
+            ),
+          );
+        } catch (error) {
+          setScanQueue((current) =>
+            current.map((item) =>
+              item.queueId === next.queueId
+                ? {
+                    ...item,
+                    lookupStatus: 'error',
+                    lookupMessage: formatLookupNotice(error),
+                    title: `ISBN ${next.isbn}`,
+                    seriesTitle: '未取得',
+                  }
+                : item,
+            ),
+          );
+        }
+      }
+    } finally {
+      queueWorkerRunningRef.current = false;
+    }
+  }, []);
+
+  const enqueueContinuousScan = (scannedIsbn: string) => {
+    const queueId = `${scannedIsbn}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    setScanQueue((current) => {
+      if (current.some((item) => normalizeBarcode(item.isbn ?? '') === normalizeBarcode(scannedIsbn))) {
         return current;
       }
       return [
         ...current,
         {
-          ...bookInput,
-          isbn: nextIsbn,
-          queueId: `${nextIsbn || bookInput.title}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          volumeKind: normalizeVolumeKind(bookInput.volumeKind, bookInput.title),
+          isbn: scannedIsbn,
+          title: `ISBN ${scannedIsbn}`,
+          seriesTitle: '検索中',
+          status: 'unread',
+          queueId,
+          lookupStatus: 'pending',
+          lookupMessage: undefined,
+          volumeKind: 'main',
           purchaseMode: 'normal',
           scannedAt: Date.now(),
           usedPurchasePrice: '',
         },
       ];
     });
+    queuedLookupsRef.current.push({ isbn: scannedIsbn, queueId });
+    void runQueuedLookups();
   };
 
   const openQueueReview = () => {
@@ -204,6 +304,7 @@ export default function ScanScreen() {
   };
 
   const removeQueuedScan = (queueId: string) => {
+    queuedLookupsRef.current = queuedLookupsRef.current.filter((item) => item.queueId !== queueId);
     setScanQueue((current) => current.filter((item) => item.queueId !== queueId));
   };
 
@@ -234,12 +335,16 @@ export default function ScanScreen() {
   };
 
   const addQueuedBooks = async () => {
-    if (scanQueue.length === 0) return;
+    if (scanQueue.length === 0 || queueSummary.pending > 0) return;
     setIsSubmitting(true);
     let addedCount = 0;
     let skippedCount = 0;
     try {
       for (const item of scanQueue) {
+        if (item.lookupStatus !== 'ready') {
+          skippedCount += 1;
+          continue;
+        }
         const bookInput = queuedBookInput(item);
         const duplicate = findDuplicateBook(bookInput);
         const incomingIsbn = normalizeBarcode(bookInput.isbn ?? '');
@@ -412,7 +517,8 @@ export default function ScanScreen() {
       const wasJustScanned =
         lastScanRef.current.isbn === normalized && now - lastScanRef.current.at < 5000;
 
-      if (!isScanning || processingRef.current || wasJustScanned) return;
+      if (!isScanning || wasJustScanned) return;
+      if (scanMode !== 'continuous' && processingRef.current) return;
       if (normalized.length !== 10 && normalized.length !== 13) return;
 
       lastScanRef.current = { isbn: normalized, at: now };
@@ -428,8 +534,14 @@ export default function ScanScreen() {
         return;
       }
 
-      if (scanMode === 'continuous' && isQueuedIsbn(normalized)) {
-        setNotice({ tone: 'warning', message: 'このISBNはすでに一時リストにあります。' });
+      if (scanMode === 'continuous') {
+        if (isQueuedIsbn(normalized)) {
+          setNotice({ tone: 'warning', message: 'このISBNはすでに一時リストにあります。' });
+          return;
+        }
+        enqueueContinuousScan(normalized);
+        setShowConfirmation(false);
+        setNotice({ tone: 'success', message: `${normalized} を一時リストに追加しました。続けてスキャンできます。` });
         return;
       }
 
@@ -440,18 +552,9 @@ export default function ScanScreen() {
       try {
         const bookInput = await lookupBookByIsbn(normalized);
         if (bookInput) {
-          if (scanMode === 'continuous') {
-            queueBookInput({ ...bookInput, isbn: bookInput.isbn ?? normalized }, normalized);
-            setShowConfirmation(false);
-            setNotice({
-              tone: 'success',
-              message: `${bookInput.title} を一時リストに追加しました。続けてスキャンできます。`,
-            });
-          } else {
-            applyLookupResult({ ...bookInput, isbn: bookInput.isbn ?? normalized });
-            setIsScanning(false);
-            setNotice({ tone: 'success', message: `${bookInput.title} を確認してから追加してください。` });
-          }
+          applyLookupResult({ ...bookInput, isbn: bookInput.isbn ?? normalized });
+          setIsScanning(false);
+          setNotice({ tone: 'success', message: `${bookInput.title} を確認してから追加してください。` });
           return;
         }
 
@@ -473,7 +576,7 @@ export default function ScanScreen() {
         }, 1200);
       }
     },
-    [isScanning, scanMode, scanQueue],
+    [isScanning, scanMode, scanQueue, runQueuedLookups],
   );
 
   const reviewManual = () => {
@@ -587,7 +690,10 @@ export default function ScanScreen() {
             <View style={styles.queueHeaderRow}>
               <View style={styles.queueTitleBlock}>
                 <Text style={[styles.sectionTitle, { color: colors.text }]}>連続スキャンの確認</Text>
-                <Text style={[styles.queueCopy, { color: colors.muted }]}>読み取った本を確認してからまとめて追加します。</Text>
+                <Text style={[styles.queueCopy, { color: colors.muted }]}>読み取ったISBNは裏で検索します。未完了がある場合はここで少し待ってから追加します。</Text>
+                <Text style={[styles.queueStatusText, { color: colors.muted }]}>
+                  取得済み {queueSummary.ready}冊 / 検索中 {queueSummary.pending}冊 / 失敗 {queueSummary.failed}冊
+                </Text>
               </View>
               <View style={[styles.queueCountPill, { backgroundColor: colors.elevated }]}>
                 <Text style={[styles.queueCountText, { color: colors.text }]}>{scanQueue.length}冊</Text>
@@ -603,7 +709,17 @@ export default function ScanScreen() {
                 />
                 <View style={styles.queueItemBody}>
                   <Text style={[styles.queueItemTitle, { color: colors.text }]} numberOfLines={2}>
-                    {index + 1}. {item.title}
+                    {index + 1}. {item.lookupStatus === 'pending' ? '検索中...' : item.title}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.queueLookupStatus,
+                      item.lookupStatus === 'ready' && { color: colors.success },
+                      item.lookupStatus === 'pending' && { color: colors.muted },
+                      item.lookupStatus === 'error' && { color: colors.danger },
+                    ]}
+                  >
+                    {item.lookupStatus === 'ready' ? '取得済み' : item.lookupStatus === 'pending' ? '検索中' : item.lookupMessage ?? '検索失敗'}
                   </Text>
                   <Text style={[styles.queueItemMeta, { color: colors.muted }]} numberOfLines={1}>
                     {item.seriesTitle}{item.volumeNumber ? ` / ${item.volumeNumber}巻` : ''}
@@ -641,11 +757,17 @@ export default function ScanScreen() {
                 <Text style={[styles.secondaryButtonText, { color: colors.text }]}>続けてスキャン</Text>
               </Pressable>
               <Pressable
-                disabled={isSubmitting || scanQueue.length === 0}
+                disabled={isSubmitting || scanQueue.length === 0 || queueSummary.pending > 0}
                 onPress={() => void addQueuedBooks()}
-                style={[styles.confirmAddButton, { backgroundColor: colors.primary }, (isSubmitting || scanQueue.length === 0) && styles.disabled]}
+                style={[
+                  styles.confirmAddButton,
+                  { backgroundColor: colors.primary },
+                  (isSubmitting || scanQueue.length === 0 || queueSummary.pending > 0) && styles.disabled,
+                ]}
               >
-                <Text style={styles.primaryButtonText}>{isSubmitting ? '追加中' : 'まとめて追加'}</Text>
+                <Text style={styles.primaryButtonText}>
+                  {isSubmitting ? '追加中' : queueSummary.pending > 0 ? '検索完了待ち' : 'まとめて追加'}
+                </Text>
               </Pressable>
             </View>
           </View>
@@ -961,6 +1083,7 @@ const styles = StyleSheet.create({
   queueHeaderRow: { alignItems: 'flex-start', flexDirection: 'row', gap: 12, justifyContent: 'space-between' },
   queueTitleBlock: { flex: 1 },
   queueCopy: { fontSize: 12, lineHeight: 17, marginTop: -6 },
+  queueStatusText: { fontSize: 12, fontWeight: '800', lineHeight: 17, marginTop: 2 },
   queueCountPill: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5 },
   queueCountText: { fontSize: 12, fontWeight: '900' },
   queueItem: {
@@ -974,6 +1097,7 @@ const styles = StyleSheet.create({
   queueCover: { borderRadius: 4, height: 92, width: 62 },
   queueItemBody: { flex: 1, minWidth: 0 },
   queueItemTitle: { fontSize: 15, fontWeight: '900', lineHeight: 20 },
+  queueLookupStatus: { fontSize: 12, fontWeight: '900', lineHeight: 17, marginTop: 4 },
   queueItemMeta: { fontSize: 12, lineHeight: 17, marginTop: 4 },
   queueRemoveButton: {
     alignItems: 'center',
