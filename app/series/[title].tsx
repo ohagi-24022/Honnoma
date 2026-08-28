@@ -33,6 +33,7 @@ import { Book, BookInput, MissingBook, ReadingStatus, ShelfItem } from '../../sr
 
 const PAGE_SIZE = 10;
 const SERIES_PUBLICATION_STORAGE_KEY = 'booknest.series-publication.v1';
+const MISSING_VOLUME_QUEUE_INTERVAL_MS = 6500;
 
 const statusLabels: Record<ReadingStatus, string> = {
   unread: '未読',
@@ -42,6 +43,10 @@ const statusLabels: Record<ReadingStatus, string> = {
 
 function isOwnedBook(item: ShelfItem): item is Book {
   return !item.isMissing;
+}
+
+function wait(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function compareSeriesItems(left: ShelfItem, right: ShelfItem) {
@@ -382,6 +387,10 @@ export default function SeriesScreen() {
           } else {
             throw addError;
           }
+        }
+
+        if (index < targets.length - 1) {
+          await wait(MISSING_VOLUME_QUEUE_INTERVAL_MS);
         }
       }
 
@@ -742,6 +751,19 @@ export default function SeriesScreen() {
               ? `${bulkFillProgress.current} / ${bulkFillProgress.total}冊を処理中`
               : `追加予定: ${bulkFillMissingTargets.length}冊`}
           </Text>
+          {bulkFillRunning && bulkFillProgress && (
+            <View style={[styles.bulkFillProgressTrack, { backgroundColor: colors.elevated }]}>
+              <View
+                style={[
+                  styles.bulkFillProgressFill,
+                  {
+                    backgroundColor: colors.primary,
+                    width: `${Math.round((bulkFillProgress.current / Math.max(1, bulkFillProgress.total)) * 100)}%`,
+                  },
+                ]}
+              />
+            </View>
+          )}
         </View>
       )}
 
@@ -972,6 +994,18 @@ export default function SeriesScreen() {
                         <Ionicons color={colors.text} name="refresh" size={19} />
                       )}
                     </Pressable>
+                    {trackPurchasePrices && (
+                      <Pressable
+                        accessibilityLabel={`${item.title}の購入価格を編集`}
+                        onPress={(event) => {
+                          event.stopPropagation();
+                          startEditing(item);
+                        }}
+                        style={[styles.iconActionButton, { borderColor: colors.border }]}
+                      >
+                        <Ionicons color={colors.text} name="pricetag-outline" size={19} />
+                      </Pressable>
+                    )}
                     <Pressable
                       accessibilityLabel={`${item.title}を削除`}
                       onPress={(event) => {
@@ -1188,6 +1222,16 @@ const styles = StyleSheet.create({
   bulkFillButton: { alignItems: 'center', borderRadius: 8, height: 40, justifyContent: 'center', minWidth: 74, paddingHorizontal: 12 },
   bulkFillButtonText: { fontSize: 13, fontWeight: '900' },
   bulkFillMeta: { fontSize: 12, fontWeight: '800' },
+  bulkFillProgressTrack: {
+    borderRadius: 999,
+    height: 5,
+    marginTop: 8,
+    overflow: 'hidden',
+  },
+  bulkFillProgressFill: {
+    borderRadius: 999,
+    height: '100%',
+  },
   rowTitle: { fontSize: 14, fontWeight: '800' },
   renameCopy: { fontSize: 12, lineHeight: 17 },
   renameRow: { flexDirection: 'row', gap: 8 },
