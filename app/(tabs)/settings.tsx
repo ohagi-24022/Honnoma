@@ -41,7 +41,7 @@ export default function SettingsScreen() {
     scrollToTop: () => scrollRef.current?.scrollTo({ y: 0, animated: true }),
   });
   useScrollToTop(tabScrollToTopRef);
-  const { configured, initializing, user, signIn, signOut, signUp } = useAuth();
+  const { configured, initializing, user, signIn, signOut } = useAuth();
   const { books, localImportCount, migrateLocalBooks, seriesGroups } = useLibrary();
   const {
     hydrated: appSettingsHydrated,
@@ -57,6 +57,7 @@ export default function SettingsScreen() {
   const { colors, mode, setMode } = useAppTheme();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [passwordVisible, setPasswordVisible] = useState(false);
   const [authSubmitting, setAuthSubmitting] = useState(false);
   const [migrationSubmitting, setMigrationSubmitting] = useState(false);
   const [notificationDebugSubmitting, setNotificationDebugSubmitting] = useState(false);
@@ -72,7 +73,7 @@ export default function SettingsScreen() {
     }
   }, [newReleaseNotifications, pendingNewReleaseSwitchValue]);
 
-  const submitAuth = async (authMode: 'signIn' | 'signUp') => {
+  const submitAuth = async () => {
     if (!email.trim() || !password) {
       Alert.alert('本の間', 'メールアドレスとパスワードを入力してください。');
       return;
@@ -80,12 +81,7 @@ export default function SettingsScreen() {
 
     setAuthSubmitting(true);
     try {
-      if (authMode === 'signIn') {
-        await signIn(email.trim(), password);
-      } else {
-        await signUp(email.trim(), password);
-        Alert.alert('本の間', '確認メールが有効な場合は、メールを確認してください。');
-      }
+      await signIn(email.trim(), password);
       setPassword('');
     } catch (error) {
       Alert.alert('本の間', error instanceof Error ? error.message : '認証に失敗しました。');
@@ -400,39 +396,57 @@ export default function SettingsScreen() {
               style={[styles.input, { backgroundColor: colors.input, color: colors.text }]}
               value={email}
             />
-            <TextInput
-              onChangeText={setPassword}
-              placeholder="パスワード"
-              placeholderTextColor={colors.muted}
-              secureTextEntry
-              style={[styles.input, { backgroundColor: colors.input, color: colors.text }]}
-              value={password}
-            />
-            <View style={styles.authButtons}>
+            <View style={[styles.passwordInputWrap, { backgroundColor: colors.input }]}>
+              <TextInput
+                autoCapitalize="none"
+                autoCorrect={false}
+                onChangeText={setPassword}
+                placeholder="パスワード"
+                placeholderTextColor={colors.muted}
+                secureTextEntry={!passwordVisible}
+                style={[styles.passwordInput, { color: colors.text }]}
+                textContentType="password"
+                value={password}
+              />
+              <Pressable
+                accessibilityLabel={passwordVisible ? 'パスワードを隠す' : 'パスワードを表示'}
+                accessibilityRole="button"
+                hitSlop={10}
+                onPress={() => setPasswordVisible((current) => !current)}
+                style={styles.passwordToggle}
+              >
+                <Ionicons
+                  color={colors.muted}
+                  name={passwordVisible ? 'eye-outline' : 'eye-off-outline'}
+                  size={21}
+                />
+              </Pressable>
+            </View>
+            <View style={styles.authFormActions}>
               <Pressable
                 disabled={!configured || authSubmitting}
                 style={[
                   styles.neutralButton,
-                  styles.authButton,
                   { borderColor: colors.border },
                   (!configured || authSubmitting) && styles.disabledButton,
                 ]}
-                onPress={() => submitAuth('signIn')}
+                onPress={() => submitAuth()}
               >
                 <Text style={[styles.neutralButtonText, { color: colors.text }]}>ログイン</Text>
               </Pressable>
-              <Pressable
-                disabled={!configured || authSubmitting}
-                style={[
-                  styles.neutralButton,
-                  styles.authButton,
-                  { borderColor: colors.border },
-                  (!configured || authSubmitting) && styles.disabledButton,
-                ]}
-                onPress={() => submitAuth('signUp')}
-              >
-                <Text style={[styles.neutralButtonText, { color: colors.text }]}>新規登録</Text>
-              </Pressable>
+              <Link href="/signup" asChild>
+                <Pressable
+                  disabled={!configured || authSubmitting}
+                  style={[
+                    styles.neutralButton,
+                    styles.signupButton,
+                    { borderColor: colors.border },
+                    (!configured || authSubmitting) && styles.disabledButton,
+                  ]}
+                >
+                  <Text numberOfLines={1} style={[styles.neutralButtonText, styles.signupButtonText, { color: colors.text }]}>{'> 新規登録へ進む'}</Text>
+                </Pressable>
+              </Link>
             </View>
           </View>
         )}
@@ -754,18 +768,32 @@ const styles = StyleSheet.create({
   input: {
     borderRadius: 8,
     fontSize: 16,
-    height: 44,
+    minHeight: 48,
     marginTop: 10,
     paddingHorizontal: 12,
   },
+  passwordInputWrap: {
+    alignItems: 'center',
+    borderRadius: 8,
+    flexDirection: 'row',
+    minHeight: 48,
+    marginTop: 10,
+    paddingLeft: 12,
+    paddingRight: 8,
+  },
+  passwordInput: { flex: 1, fontSize: 16, height: 44, paddingRight: 8 },
+  passwordToggle: { alignItems: 'center', height: 36, justifyContent: 'center', width: 36 },
   authButtons: { flexDirection: 'row', gap: 10, marginTop: 10 },
+  authFormActions: { gap: 8, marginTop: 12 },
   authButton: { flex: 1, marginTop: 0 },
+  signupButton: { alignItems: 'center', justifyContent: 'center' },
+  signupButtonText: { flexShrink: 0, textAlign: 'center' },
   disabledButton: { opacity: 0.35 },
   neutralButton: {
     alignItems: 'center',
     borderRadius: 8,
     borderWidth: 1,
-    height: 44,
+    minHeight: 48,
     justifyContent: 'center',
     marginTop: 10,
   },
@@ -792,7 +820,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderRadius: 8,
     borderWidth: 1,
-    height: 44,
+    minHeight: 48,
     justifyContent: 'center',
     marginTop: 10,
   },

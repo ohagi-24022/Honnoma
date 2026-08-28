@@ -108,6 +108,7 @@ function RootStack() {
         <Stack.Screen name="report" options={{ ...panelScreenOptions, title: '\u60c5\u5831\u306e\u5831\u544a' }} />
         <Stack.Screen name="reading-suggestions" options={{ ...panelScreenOptions, title: '読み方の報告' }} />
         <Stack.Screen name="account" options={{ ...panelScreenOptions, title: '\u30de\u30a4\u30da\u30fc\u30b8' }} />
+        <Stack.Screen name="signup" options={{ ...panelScreenOptions, title: '新規登録' }} />
         <Stack.Screen name="help" options={{ ...panelScreenOptions, title: '\u30d8\u30eb\u30d7' }} />
         <Stack.Screen name="notifications" options={{ ...panelScreenOptions, title: '\u65b0\u520a\u901a\u77e5' }} />
         <Stack.Screen name="ranking/[category]" options={{ ...panelScreenOptions, title: '\u30e9\u30f3\u30ad\u30f3\u30b0' }} />
