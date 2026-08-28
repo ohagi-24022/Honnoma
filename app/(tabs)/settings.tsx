@@ -49,8 +49,6 @@ export default function SettingsScreen() {
     setNewReleaseNotifications,
     openExternalPurchaseLinks,
     setOpenExternalPurchaseLinks,
-    showPublishedLatestVolume,
-    setShowPublishedLatestVolume,
     trackPurchasePrices,
     setTrackPurchasePrices,
   } = useAppSettings();
@@ -687,20 +685,6 @@ export default function SettingsScreen() {
         <Text style={[styles.sectionTitle, { color: colors.text }]}>表示</Text>
         <View style={styles.row}>
           <View style={styles.rowText}>
-            <Text style={[styles.rowTitle, { color: colors.text }]}>刊行最新巻を表示</Text>
-            <Text style={[styles.rowCopy, { color: colors.muted }]}>
-              ONにすると、本棚でAPIから取得した刊行巻数を表示します。各シリーズの更新ボタンで取得できます。
-            </Text>
-          </View>
-          <Switch
-            onValueChange={setShowPublishedLatestVolume}
-            thumbColor="#ffffff"
-            trackColor={{ false: '#d4d4d4', true: '#31c759' }}
-            value={showPublishedLatestVolume}
-          />
-        </View>
-        <View style={styles.row}>
-          <View style={styles.rowText}>
             <Text style={[styles.rowTitle, { color: colors.text }]}>購入価格を記録</Text>
             <Text style={[styles.rowCopy, { color: colors.muted }]}>ONにすると、登録時とシリーズ詳細の編集で通常価格または中古価格を記録できます。</Text>
           </View>
@@ -872,3 +856,5 @@ const styles = StyleSheet.create({
   segment: { alignItems: 'center', borderRadius: 6, flex: 1, height: 38, justifyContent: 'center' },
   segmentText: { fontSize: 13, fontWeight: '800' },
 });
+
+

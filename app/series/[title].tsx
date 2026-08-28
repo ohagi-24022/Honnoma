@@ -60,7 +60,7 @@ export default function SeriesScreen() {
   const { addBook, getSeriesItems, bulkUpdateStatus, updateBook, renameSeries, deleteBook, repairBookMetadata } =
     useLibrary();
   const { addItem: addWishlistItem } = useWishlist();
-  const { isFavoriteSeries, migrateFavoriteSeries, openExternalPurchaseLinks, setFavoriteSeries, showPublishedLatestVolume, trackPurchasePrices } =
+  const { isFavoriteSeries, migrateFavoriteSeries, openExternalPurchaseLinks, setFavoriteSeries, trackPurchasePrices } =
     useAppSettings();
   const { colors } = useAppTheme();
   const listRef = useRef<FlatList<ShelfItem>>(null);
@@ -89,7 +89,7 @@ export default function SeriesScreen() {
     [publicationInfo, seriesMetadata],
   );
   const items = useMemo(() => {
-    if (!showPublishedLatestVolume || !effectivePublicationInfo?.latestVolume) return baseItems;
+    if (!effectivePublicationInfo?.latestVolume) return baseItems;
 
     const existingVolumes = new Set(
       baseItems
@@ -120,7 +120,7 @@ export default function SeriesScreen() {
     }
 
     return [...baseItems, ...trailingMissing].sort(compareSeriesItems);
-  }, [baseItems, effectivePublicationInfo, seriesTitle, showPublishedLatestVolume, user?.id]);
+  }, [baseItems, effectivePublicationInfo, seriesTitle, user?.id]);
   const pageCount = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
   const pageItems = useMemo(() => items.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE), [items, page]);
   const ownedItems = useMemo(() => items.filter(isOwnedBook), [items]);
@@ -1313,3 +1313,5 @@ const styles = StyleSheet.create({
     width: 40,
   },
 });
+
+

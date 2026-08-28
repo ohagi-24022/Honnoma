@@ -80,6 +80,7 @@ export default function ScanScreen() {
     message: 'ISBNバーコードを枠内に入れてください。',
   });
   const lastScanRef = useRef<{ isbn: string; at: number }>({ isbn: '', at: 0 });
+  const continuousScanCooldownUntilRef = useRef(0);
   const processingRef = useRef(false);
   const queuedLookupsRef = useRef<Array<{ isbn: string; queueId: string }>>([]);
   const queueWorkerRunningRef = useRef(false);
@@ -167,15 +168,19 @@ export default function ScanScreen() {
     setShowConfirmation(false);
     setIsScanning(true);
     lastScanRef.current = { isbn: '', at: 0 };
+    continuousScanCooldownUntilRef.current = 0;
     processingRef.current = false;
   };
 
   const queueSummary = useMemo(() => {
     const pending = scanQueue.filter((item) => item.lookupStatus === 'pending').length;
     const failed = scanQueue.filter((item) => item.lookupStatus === 'error').length;
+    const completed = scanQueue.length - pending;
     return {
+      completed,
       failed,
       pending,
+      progress: scanQueue.length > 0 ? Math.round((completed / scanQueue.length) * 100) : 0,
       ready: scanQueue.length - pending - failed,
     };
   }, [scanQueue]);
@@ -514,10 +519,12 @@ export default function ScanScreen() {
     async ({ data }: { data: string }) => {
       const normalized = normalizeBarcode(data);
       const now = Date.now();
+      const repeatScanWindowMs = scanMode === 'continuous' ? 700 : 5000;
       const wasJustScanned =
-        lastScanRef.current.isbn === normalized && now - lastScanRef.current.at < 5000;
+        lastScanRef.current.isbn === normalized && now - lastScanRef.current.at < repeatScanWindowMs;
 
       if (!isScanning || wasJustScanned) return;
+      if (scanMode === 'continuous' && now < continuousScanCooldownUntilRef.current) return;
       if (scanMode !== 'continuous' && processingRef.current) return;
       if (normalized.length !== 10 && normalized.length !== 13) return;
 
@@ -539,6 +546,7 @@ export default function ScanScreen() {
           setNotice({ tone: 'warning', message: 'このISBNはすでに一時リストにあります。' });
           return;
         }
+        continuousScanCooldownUntilRef.current = now + 700;
         enqueueContinuousScan(normalized);
         setShowConfirmation(false);
         setNotice({ tone: 'success', message: `${normalized} を一時リストに追加しました。続けてスキャンできます。` });
@@ -699,7 +707,14 @@ export default function ScanScreen() {
                 <Text style={[styles.queueCountText, { color: colors.text }]}>{scanQueue.length}冊</Text>
               </View>
             </View>
-            {scanQueue.map((item, index) => (
+            <View style={styles.queueProgressBlock}>
+              <View style={[styles.queueProgressTrack, { backgroundColor: colors.elevated }]}>
+                <View style={[styles.queueProgressFill, { backgroundColor: colors.primary, width: `${queueSummary.progress}%` }]} />
+              </View>
+              <Text style={[styles.queueProgressText, { color: colors.muted }]}>検索進捗 {queueSummary.progress}%</Text>
+            </View>
+            <ScrollView style={styles.queueList} contentContainerStyle={styles.queueListContent} nestedScrollEnabled showsVerticalScrollIndicator>
+              {scanQueue.map((item, index) => (
               <View key={item.queueId} style={[styles.queueItem, { borderColor: colors.border }]}>
                 <BookCover
                   thumbnailUrl={item.thumbnailUrl}
@@ -744,7 +759,8 @@ export default function ScanScreen() {
                   <Text style={[styles.queueRemoveText, { color: colors.danger }]}>削除</Text>
                 </Pressable>
               </View>
-            ))}
+              ))}
+            </ScrollView>
             <View style={styles.queueActions}>
               <Pressable
                 onPress={() => {
@@ -1086,6 +1102,12 @@ const styles = StyleSheet.create({
   queueStatusText: { fontSize: 12, fontWeight: '800', lineHeight: 17, marginTop: 2 },
   queueCountPill: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5 },
   queueCountText: { fontSize: 12, fontWeight: '900' },
+  queueProgressBlock: { gap: 6, marginTop: -2 },
+  queueProgressTrack: { borderRadius: 999, height: 8, overflow: 'hidden' },
+  queueProgressFill: { borderRadius: 999, height: '100%' },
+  queueProgressText: { fontSize: 12, fontWeight: '800', lineHeight: 16, textAlign: 'right' },
+  queueList: { maxHeight: 430 },
+  queueListContent: { gap: 10, paddingRight: 2 },
   queueItem: {
     alignItems: 'flex-start',
     borderRadius: 8,
@@ -1188,3 +1210,10 @@ const styles = StyleSheet.create({
   },
   submitButtonText: { fontSize: 15, fontWeight: '800' },
 });
+
+
+
+
+
+
+

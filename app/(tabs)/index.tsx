@@ -60,6 +60,7 @@ type SeriesSort = 'title' | 'recent' | 'missing' | 'unread' | 'completion' | 'fa
 type BookSort = 'recent' | 'title' | 'series' | 'volume' | 'status' | 'favorite' | 'author' | 'publisher';
 type SeriesDisplayMode = 'detail' | 'cover' | 'title';
 type SeriesPublicationCache = Record<string, SeriesPublicationInfo>;
+type SeriesPublicationAttemptCache = Record<string, string>;
 type SeriesMetadataCache = Record<string, SeriesMetadataOverride>;
 type SeriesStats = {
   completionRate: number;
@@ -69,6 +70,9 @@ type SeriesStats = {
 };
 
 export const SERIES_PUBLICATION_STORAGE_KEY = 'booknest.series-publication.v1';
+const SERIES_PUBLICATION_ATTEMPT_STORAGE_KEY = 'booknest.series-publication-attempts.v1';
+const SERIES_PUBLICATION_BACKGROUND_INTERVAL_MS = 6500;
+const SERIES_PUBLICATION_BACKGROUND_RETRY_MS = 12 * 60 * 60 * 1000;
 const filterOptions: Array<{ label: string; value: HomeFilter }> = [
   { label: 'すべて', value: 'all' },
   { label: '未読', value: 'unread' },
@@ -306,11 +310,15 @@ function getNextSeriesDisplayMode(mode: SeriesDisplayMode): SeriesDisplayMode {
   return 'detail';
 }
 
+function wait(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export default function HomeScreen() {
   const { colors } = useAppTheme();
   const router = useRouter();
   const { width: windowWidth } = useWindowDimensions();
-  const { favoriteSeriesKeys, hydrated: appSettingsHydrated, newReleaseNotifications, setFavoriteSeries, showPublishedLatestVolume } =
+  const { favoriteSeriesKeys, hydrated: appSettingsHydrated, newReleaseNotifications, setFavoriteSeries } =
     useAppSettings();
   const { user } = useAuth();
   const { books, error, loading, refreshLibrary, repairBookMetadata, requiresAuth, seriesGroups } = useLibrary();
@@ -325,6 +333,8 @@ export default function HomeScreen() {
   const [openMenu, setOpenMenu] = useState<'filter' | 'sort' | 'author' | 'publisher' | null>(null);
   const [toolbarHeight, setToolbarHeight] = useState(152);
   const [publicationCache, setPublicationCache] = useState<SeriesPublicationCache>({});
+  const [publicationAttemptCache, setPublicationAttemptCache] = useState<SeriesPublicationAttemptCache>({});
+  const [publicationAttemptsHydrated, setPublicationAttemptsHydrated] = useState(false);
   const [seriesMetadataCache, setSeriesMetadataCache] = useState<SeriesMetadataCache>({});
   const [readingCorrections, setReadingCorrections] = useState(new Map<string, SeriesReadingCorrection>());
   const [visibleFavoriteSeriesKeys, setVisibleFavoriteSeriesKeys] = useState<string[]>(favoriteSeriesKeys);
@@ -342,6 +352,9 @@ export default function HomeScreen() {
   const lastDirectionRef = useRef<1 | -1>(1);
   const metadataRepairingRef = useRef(new Set<string>());
   const metadataRepairFailedRef = useRef(new Set<string>());
+  const backgroundPublicationQueueRef = useRef<Array<{ latestVolume?: number; seriesTitle: string }>>([]);
+  const backgroundPublicationQueuedKeyRef = useRef(new Set<string>());
+  const backgroundPublicationRunningRef = useRef(false);
   const favoriteSeriesKeySet = useMemo(() => new Set(visibleFavoriteSeriesKeys), [visibleFavoriteSeriesKeys]);
   const coverGridColumns = Math.max(3, Math.floor((windowWidth - 36 + 10) / 92));
   const coverTileWidth = (windowWidth - 36 - (coverGridColumns - 1) * 10) / coverGridColumns;
@@ -410,6 +423,12 @@ export default function HomeScreen() {
         if (storedCache) setPublicationCache(JSON.parse(storedCache) as SeriesPublicationCache);
       })
       .catch((cacheError) => console.warn('Failed to load series publication cache', cacheError));
+    AsyncStorage.getItem(SERIES_PUBLICATION_ATTEMPT_STORAGE_KEY)
+      .then((storedAttempts) => {
+        if (storedAttempts) setPublicationAttemptCache(JSON.parse(storedAttempts) as SeriesPublicationAttemptCache);
+      })
+      .catch((cacheError) => console.warn('Failed to load series publication attempt cache', cacheError))
+      .finally(() => setPublicationAttemptsHydrated(true));
   }, []);
 
   useEffect(() => {
@@ -432,6 +451,86 @@ export default function HomeScreen() {
     });
     return merged;
   }, [publicationCache, seriesMetadataCache]);
+  const markPublicationAttempt = useCallback((seriesKey: string) => {
+    const attemptedAt = new Date().toISOString();
+    setPublicationAttemptCache((current) => {
+      const next = { ...current, [seriesKey]: attemptedAt };
+      void AsyncStorage.setItem(SERIES_PUBLICATION_ATTEMPT_STORAGE_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const savePublicationInfo = useCallback((seriesKey: string, publicationInfo: SeriesPublicationInfo) => {
+    setPublicationCache((current) => {
+      const next = { ...current, [seriesKey]: publicationInfo };
+      void AsyncStorage.setItem(SERIES_PUBLICATION_STORAGE_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const runBackgroundPublicationQueue = useCallback(async () => {
+    if (backgroundPublicationRunningRef.current) return;
+    backgroundPublicationRunningRef.current = true;
+
+    try {
+      while (backgroundPublicationQueueRef.current.length > 0) {
+        const next = backgroundPublicationQueueRef.current.shift();
+        if (!next) continue;
+        const seriesKey = normalizeSeriesKey(next.seriesTitle);
+        if (!seriesKey || effectivePublicationCache[seriesKey]?.latestVolume) {
+          if (seriesKey) backgroundPublicationQueuedKeyRef.current.delete(seriesKey);
+          continue;
+        }
+
+        markPublicationAttempt(seriesKey);
+        try {
+          const result = await lookupLatestSeriesPublication(next.seriesTitle);
+          if (result) {
+            savePublicationInfo(seriesKey, {
+              ...result,
+              latestVolume: Math.max(result.latestVolume, next.latestVolume ?? 0),
+            });
+          }
+        } catch (publicationError) {
+          if (__DEV__) {
+            console.warn('Background series publication lookup failed', {
+              seriesTitle: next.seriesTitle,
+              error: publicationError,
+            });
+          }
+        } finally {
+          backgroundPublicationQueuedKeyRef.current.delete(seriesKey);
+        }
+
+        if (backgroundPublicationQueueRef.current.length > 0) {
+          await wait(SERIES_PUBLICATION_BACKGROUND_INTERVAL_MS);
+        }
+      }
+    } finally {
+      backgroundPublicationRunningRef.current = false;
+    }
+  }, [effectivePublicationCache, markPublicationAttempt, savePublicationInfo]);
+
+  useEffect(() => {
+    if (loading || !publicationAttemptsHydrated || seriesGroups.length === 0) return;
+    const nowMs = Date.now();
+    const queuedKeys = backgroundPublicationQueuedKeyRef.current;
+    const nextTargets = seriesGroups.filter((group) => {
+      const seriesKey = normalizeSeriesKey(group.title);
+      if (!seriesKey || queuedKeys.has(seriesKey)) return false;
+      if (effectivePublicationCache[seriesKey]?.latestVolume) return false;
+      const lastAttemptMs = Date.parse(publicationAttemptCache[seriesKey] ?? '');
+      return !Number.isFinite(lastAttemptMs) || nowMs - lastAttemptMs > SERIES_PUBLICATION_BACKGROUND_RETRY_MS;
+    });
+
+    if (nextTargets.length === 0) return;
+    nextTargets.forEach((group) => {
+      const seriesKey = normalizeSeriesKey(group.title);
+      backgroundPublicationQueuedKeyRef.current.add(seriesKey);
+      backgroundPublicationQueueRef.current.push({ latestVolume: group.latestVolume, seriesTitle: group.title });
+    });
+    void runBackgroundPublicationQueue();
+  }, [effectivePublicationCache, loading, publicationAttemptCache, publicationAttemptsHydrated, runBackgroundPublicationQueue, seriesGroups]);
 
   useEffect(() => {
     if (!user) {
@@ -941,7 +1040,7 @@ export default function HomeScreen() {
           ref={seriesListRef}
           style={styles.list}
           data={visibleGroups}
-          extraData={`${listVersion}-${seriesDisplayMode}-${coverTileWidth}-${visibleFavoriteSeriesKeys.join(',')}-${refreshingSeriesTitle}-${showPublishedLatestVolume}-${notificationSeriesKeys.join(',')}-${updatingNotificationSeriesKey}`}
+          extraData={`${listVersion}-${seriesDisplayMode}-${coverTileWidth}-${visibleFavoriteSeriesKeys.join(',')}-${refreshingSeriesTitle}-published-latest-${notificationSeriesKeys.join(',')}-${updatingNotificationSeriesKey}`}
           keyExtractor={(item) => item.id}
           numColumns={seriesDisplayMode === 'cover' ? coverGridColumns : 1}
           columnWrapperStyle={seriesDisplayMode === 'cover' ? styles.coverGridRow : undefined}
@@ -1038,10 +1137,10 @@ export default function HomeScreen() {
                 key={item.id}
                 group={item}
                 missingVolumes={stats?.internalMissingVolumes ?? []}
-                unownedVolumes={showPublishedLatestVolume ? stats?.trailingUnownedVolumes ?? [] : []}
+                unownedVolumes={stats?.trailingUnownedVolumes ?? []}
                 completionRate={stats?.completionRate ?? 100}
                 favorite={favoriteSeriesKeySet.has(cacheKey)}
-                showPublishedLatestVolume={showPublishedLatestVolume}
+                showPublishedLatestVolume={true}
                 publicationInfo={publicationInfo}
                 seriesCoverUrl={seriesMetadataCache[cacheKey]?.coverUrl}
                 publisherOverride={seriesMetadataCache[cacheKey]?.publisher}
@@ -1211,3 +1310,12 @@ const styles = StyleSheet.create({
   },
   disabledButton: { opacity: 0.4 },
 });
+
+
+
+
+
+
+
+
+

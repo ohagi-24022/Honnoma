@@ -30,7 +30,6 @@ type LegacyUserSettings = Partial<UserSettings>;
 
 type DeviceSettings = {
   openExternalPurchaseLinks: boolean;
-  showPublishedLatestVolume: boolean;
   trackPurchasePrices: boolean;
 };
 
@@ -43,7 +42,6 @@ type AppSettingsContextValue = AppSettings & {
   setFavoriteSeries: (seriesTitle: string, favorite: boolean) => void;
   setNewReleaseNotifications: (value: boolean) => void;
   setOpenExternalPurchaseLinks: (value: boolean) => void;
-  setShowPublishedLatestVolume: (value: boolean) => void;
   setTrackPurchasePrices: (value: boolean) => void;
   toggleFavoriteSeries: (seriesTitle: string) => void;
 };
@@ -55,7 +53,6 @@ const defaultUserSettings: UserSettings = {
 
 const defaultDeviceSettings: DeviceSettings = {
   openExternalPurchaseLinks: false,
-  showPublishedLatestVolume: false,
   trackPurchasePrices: false,
 };
 
@@ -275,8 +272,6 @@ export function AppSettingsProvider({ children }: PropsWithChildren) {
       },
       setOpenExternalPurchaseLinks: (openExternalPurchaseLinks: boolean) =>
         setDeviceSettings((current) => ({ ...current, openExternalPurchaseLinks })),
-      setShowPublishedLatestVolume: (showPublishedLatestVolume: boolean) =>
-        setDeviceSettings((current) => ({ ...current, showPublishedLatestVolume })),
       setTrackPurchasePrices: (trackPurchasePrices: boolean) =>
         setDeviceSettings((current) => ({ ...current, trackPurchasePrices })),
       toggleFavoriteSeries: (seriesTitle: string) => {
@@ -324,6 +319,8 @@ export function useAppSettings() {
 
   return context;
 }
+
+
 
 
 
