@@ -49,17 +49,25 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const [initializing, setInitializing] = useState(true);
 
   useEffect(() => {
-    if (!supabase) {
+    const client = supabase;
+    if (!client) {
       setInitializing(false);
       return;
     }
 
-    supabase.auth
-      .getSession()
-      .then(({ data }) => setSession(data.session))
+    client.auth
+      .refreshSession()
+      .then(({ data, error }) => {
+        if (!error && data.session) {
+          setSession(data.session);
+          return;
+        }
+        return client.auth.getSession().then(({ data: storedData }) => setSession(storedData.session));
+      })
+      .catch(() => client.auth.getSession().then(({ data }) => setSession(data.session)))
       .finally(() => setInitializing(false));
 
-    const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    const { data } = client.auth.onAuthStateChange((_event, nextSession) => {
       setSession(nextSession);
     });
 
@@ -118,3 +126,5 @@ export function useAuth() {
 
   return context;
 }
+
+

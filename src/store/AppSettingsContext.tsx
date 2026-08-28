@@ -13,7 +13,7 @@ import {
 import { hasEnabledNewReleasePushToken } from '../lib/newReleaseNotifications';
 import { normalizeSeriesKey } from '../lib/series';
 import { supabase } from '../lib/supabase';
-import { isMissingSupabaseRelationError } from '../lib/supabaseErrors';
+import { isFutureJwtError, isMissingSupabaseRelationError } from '../lib/supabaseErrors';
 import { useAuth } from './AuthContext';
 
 const LEGACY_STORAGE_KEY = 'booknest.app-settings.v1';
@@ -72,6 +72,37 @@ function normalizeFavoriteKeys(values: string[]) {
   return uniqueValues(values.map((value) => normalizeSeriesKey(value)));
 }
 
+async function loadRemoteFavoriteKeys(userId: string) {
+  const client = supabase;
+  if (!client) return [];
+
+  const fetchFavoriteRows = () =>
+    client
+      .from('favorite_series')
+      .select('series_key, series_title')
+      .eq('user_id', userId);
+
+  let { data, error } = await fetchFavoriteRows();
+  if (error && isFutureJwtError(error)) {
+    const { error: refreshError } = await client.auth.refreshSession();
+    if (!refreshError) {
+      ({ data, error } = await fetchFavoriteRows());
+    }
+  }
+
+  if (error) {
+    if (isMissingSupabaseRelationError(error)) return [];
+    console.warn('Failed to load favorite series from Supabase', error);
+    return [];
+  }
+
+  return (data ?? []).flatMap((row) => {
+    const seriesKey = typeof row.series_key === 'string' ? row.series_key : '';
+    const seriesTitle = typeof row.series_title === 'string' ? row.series_title : '';
+    return [seriesKey, seriesTitle].map((value) => normalizeSeriesKey(value));
+  });
+}
+
 const AppSettingsContext = createContext<AppSettingsContextValue | null>(null);
 
 export function AppSettingsProvider({ children }: PropsWithChildren) {
@@ -98,24 +129,7 @@ export function AppSettingsProvider({ children }: PropsWithChildren) {
       AsyncStorage.getItem(GUEST_USER_STORAGE_KEY),
       AsyncStorage.getItem(newReleaseNotificationStorageKey),
       userId ? hasEnabledNewReleasePushToken(userId) : Promise.resolve(false),
-      userId && supabase
-        ? supabase
-            .from('favorite_series')
-            .select('series_key, series_title')
-            .eq('user_id', userId)
-            .then(({ data, error }) => {
-              if (error) {
-                if (isMissingSupabaseRelationError(error)) return [];
-                console.warn('Failed to load favorite series from Supabase', error);
-                return [];
-              }
-              return (data ?? []).flatMap((row) => {
-                const seriesKey = typeof row.series_key === 'string' ? row.series_key : '';
-                const seriesTitle = typeof row.series_title === 'string' ? row.series_title : '';
-                return [seriesKey, seriesTitle].map((value) => normalizeSeriesKey(value));
-              });
-            })
-        : Promise.resolve([]),
+      userId ? loadRemoteFavoriteKeys(userId) : Promise.resolve([]),
     ])
       .then(([storedUserSettings, storedDeviceSettings, legacySettings, guestUserSettings, storedNewReleaseNotification, remoteNewReleaseNotifications, remoteFavoriteKeys]) => {
         if (cancelled) return;
@@ -310,3 +324,6 @@ export function useAppSettings() {
 
   return context;
 }
+
+
+
