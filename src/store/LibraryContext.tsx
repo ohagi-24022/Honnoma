@@ -18,7 +18,7 @@ import {
   normalizeBookInput,
 } from '../lib/duplicate';
 import { normalizeKanaReading } from '../lib/kana';
-import { getKnownIsbnCoverOverride } from '../lib/knownBookOverrides';
+import { getKnownBookCoverOverride } from '../lib/knownBookOverrides';
 import { parseSeriesTitle } from '../lib/series';
 import { formatNetworkAwareError, isNetworkError } from '../lib/errorMessages';
 import { normalizeVolumeKind } from '../lib/volumeKind';
@@ -250,7 +250,7 @@ function fromBookRow(row: BookRow): Book {
     listPrice: row.list_price ?? undefined,
     priceSource: row.price_source ?? undefined,
     priceFetchedAt: row.price_fetched_at ?? undefined,
-    thumbnailUrl: getKnownIsbnCoverOverride(row.isbn) ?? row.thumbnail_url?.replace(/^http:\/\//i, 'https://') ?? undefined,
+    thumbnailUrl: getKnownBookCoverOverride({ isbn: row.isbn, title: row.title }) ?? row.thumbnail_url?.replace(/^http:\/\//i, 'https://') ?? undefined,
     status: row.status,
     createdAt: row.created_at,
   };

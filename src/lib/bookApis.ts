@@ -2,7 +2,7 @@ import { Book, BookInput } from '../types';
 import { normalizeAuthor } from './bookMetadata';
 import { env } from './env';
 import { normalizeKanaReading } from './kana';
-import { getKnownIsbnCoverOverride } from './knownBookOverrides';
+import { getKnownBookCoverOverride, getKnownIsbnCoverOverride } from './knownBookOverrides';
 import { normalizeSeriesKey, parseSeriesTitle } from './series';
 import { normalizeVolumeKind } from './volumeKind';
 import { supabase } from './supabase';
@@ -143,7 +143,8 @@ export type BookVolumeDetails = {
   publisher?: string;
   description?: string;
   thumbnailUrl?: string;
-  source: 'Google Books' | 'OpenBD' | 'Rakuten Books';
+  source: 'Google Books' | 'OpenBD' | 'Rakuten Books' | 'Developer Override';
+  sourceUrl?: string;
   checkedAt: string;
 };
 
@@ -1289,6 +1290,7 @@ function plainTextDescription(value?: string) {
 function mergeVolumeDetails(
   primary: BookVolumeDetails | null,
   fallback: BookVolumeDetails | null,
+  options: { allowFallbackThumbnail?: boolean } = {},
 ) {
   if (!primary) return fallback;
   if (!fallback) return primary;
@@ -1300,8 +1302,25 @@ function mergeVolumeDetails(
     author: primary.author ?? fallback.author,
     publisher: primary.publisher ?? fallback.publisher,
     description: primary.description ?? fallback.description,
-    thumbnailUrl: primary.thumbnailUrl ?? fallback.thumbnailUrl,
+    thumbnailUrl: primary.thumbnailUrl ?? (options.allowFallbackThumbnail ? fallback.thumbnailUrl : undefined),
     source: primary.description ? primary.source : fallback.source,
+    sourceUrl: primary.description ? primary.sourceUrl : fallback.sourceUrl,
+  };
+}
+
+function applyKnownDetailsCover(
+  book: Pick<Book, 'isbn' | 'title'>,
+  details: BookVolumeDetails | null,
+): BookVolumeDetails | null {
+  const knownCover = getKnownBookCoverOverride({ isbn: book.isbn, title: book.title });
+  if (!knownCover) return details;
+  return {
+    ...(details ?? {
+      title: book.title,
+      source: 'OpenBD' as const,
+      checkedAt: new Date().toISOString(),
+    }),
+    thumbnailUrl: knownCover,
   };
 }
 
@@ -1437,41 +1456,43 @@ export async function lookupBookVolumeDetails(
   } catch {
     details = null;
   }
-  if (details?.description && details.publisher) return details;
+  if (details?.description && details.publisher) return applyKnownDetailsCover(book, details);
 
   try {
-    details = mergeVolumeDetails(details, await lookupOpenBdVolumeDetails(book));
+    details = mergeVolumeDetails(details, await lookupOpenBdVolumeDetails(book), { allowFallbackThumbnail: true });
   } catch {
     // Continue to Rakuten when OpenBD has no record or is temporarily unavailable.
   }
-  if (details?.description && details.publisher) return details;
+  if (details?.description && details.publisher) return applyKnownDetailsCover(book, details);
 
   try {
-    details = mergeVolumeDetails(details, await lookupRakutenBookVolumeDetails(book));
+    details = mergeVolumeDetails(details, await lookupRakutenBookVolumeDetails(book), { allowFallbackThumbnail: true });
   } catch {
     // A missing synopsis is a valid result; metadata already found above remains usable.
   }
-  if (details?.description || !book.isbn) return details;
+  if (details?.description || !book.isbn) return applyKnownDetailsCover(book, details);
 
   try {
     details = mergeVolumeDetails(
       details,
       await lookupGoogleBookVolumeDetails({ ...book, isbn: undefined }),
+      { allowFallbackThumbnail: false },
     );
   } catch {
     // Keep the exact ISBN metadata when the final title-based fallback is unavailable.
   }
-  if (details?.description) return details;
+  if (details?.description) return applyKnownDetailsCover(book, details);
 
   try {
     details = mergeVolumeDetails(
       details,
       await lookupRakutenBookVolumeDetails({ ...book, isbn: undefined }),
+      { allowFallbackThumbnail: false },
     );
   } catch {
     // Publisher information can remain unavailable for books absent from every provider.
   }
-  return details;
+  return applyKnownDetailsCover(book, details);
 }
 
 export async function lookupBookByTitle(title: string, fallbackIsbn?: string): Promise<BookInput | null> {
@@ -1832,3 +1853,4 @@ export function buildPurchaseUrl(seriesTitle: string, volumeNumber?: number) {
   const query = [seriesTitle, volumeNumber ? `${volumeNumber}巻` : undefined, '本'].filter(Boolean);
   return `https://books.rakuten.co.jp/search?sitem=${encodeURIComponent(query.join(' '))}`;
 }
+

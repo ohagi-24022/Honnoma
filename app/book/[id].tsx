@@ -13,6 +13,7 @@ import {
 import { BookCover } from '../../src/components/BookCover';
 import { BookVolumeDetails } from '../../src/lib/bookApis';
 import { getBookVolumeDetails } from '../../src/lib/bookDetailsCache';
+import { getKnownBookCoverOverride } from '../../src/lib/knownBookOverrides';
 import { useLibrary } from '../../src/store/LibraryContext';
 import { useAppTheme } from '../../src/store/ThemeContext';
 
@@ -98,15 +99,20 @@ export default function BookDetailsScreen() {
         if (activeBookIdRef.current !== targetBookId) return;
         setDetails(result);
         if (result) {
+          const knownCover = getKnownBookCoverOverride({ isbn: targetBook.isbn, title: targetBook.title });
+          const nextThumbnailUrl = knownCover ?? result.thumbnailUrl;
           const metadataUpdates = {
+            ...(result.source === 'Developer Override' && result.title && result.title !== targetBook.title
+              ? { title: result.title }
+              : {}),
             ...(result.author && result.author !== targetBook.author
               ? { author: result.author }
               : {}),
             ...(result.publisher && result.publisher !== targetBook.publisher
               ? { publisher: result.publisher }
               : {}),
-            ...(result.thumbnailUrl && result.thumbnailUrl !== targetBook.thumbnailUrl
-              ? { thumbnailUrl: result.thumbnailUrl }
+            ...(nextThumbnailUrl && nextThumbnailUrl !== targetBook.thumbnailUrl
+              ? { thumbnailUrl: nextThumbnailUrl }
               : {}),
           };
           if (Object.keys(metadataUpdates).length > 0) {
@@ -149,6 +155,7 @@ export default function BookDetailsScreen() {
     );
   }
 
+  const knownCover = getKnownBookCoverOverride({ isbn: book.isbn, title: book.title });
   const displayTitle = details?.title ?? book.title;
   const displayAuthor = details?.author ?? book.author;
   const seriesPublisher = books.find(
@@ -157,7 +164,7 @@ export default function BookDetailsScreen() {
       candidate.publisher,
   )?.publisher;
   const displayPublisher = details?.publisher ?? book.publisher ?? seriesPublisher;
-  const displayCover = details?.thumbnailUrl ?? book.thumbnailUrl;
+  const displayCover = knownCover ?? details?.thumbnailUrl ?? book.thumbnailUrl;
 
   return (
     <View style={[styles.screen, { backgroundColor: colors.background }]}>
@@ -314,3 +321,4 @@ const styles = StyleSheet.create({
   headerBackText: { fontSize: 15, fontWeight: '700' },
   headerReportButton: { alignItems: 'center', height: 34, justifyContent: 'center', width: 30 },
 });
+

@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { Book } from '../types';
 import { BookVolumeDetails, lookupBookVolumeDetails } from './bookApis';
+import { getBookMetadataOverrideDetails } from './bookMetadataOverrides';
 import { normalizeSeriesKey } from './series';
 import { supabase } from './supabase';
 
@@ -51,6 +52,7 @@ function dbRowToDetails(row: BookMetadataCacheRow): BookVolumeDetails {
     description: row.description ?? undefined,
     thumbnailUrl: row.thumbnail_url ?? undefined,
     source: row.source,
+    sourceUrl: row.source_url ?? undefined,
     checkedAt: row.fetched_at,
   };
 }
@@ -98,7 +100,7 @@ async function readSupabaseCache(book: Book) {
 }
 
 async function writeSupabaseCache(book: Book, details: BookVolumeDetails | null) {
-  if (!supabase || !details?.title) return;
+  if (!supabase || !details?.title || details.source === 'Developer Override') return;
 
   const normalizedIsbn = normalizeIsbn(book.isbn);
   const seriesKey = normalizeSeriesKey(book.seriesTitle);
@@ -119,7 +121,7 @@ async function writeSupabaseCache(book: Book, details: BookVolumeDetails | null)
     description: details.description ?? null,
     thumbnail_url: details.thumbnailUrl ?? null,
     source: details.source,
-    source_url: null,
+    source_url: details.sourceUrl ?? null,
     fetched_at: details.checkedAt,
     expires_at: expiresAt.toISOString(),
     updated_at: now.toISOString(),
@@ -164,6 +166,17 @@ export async function getBookVolumeDetails(
 ) {
   const key = cacheKey(book);
 
+  const overrideDetails = await getBookMetadataOverrideDetails(book);
+  if (overrideDetails) {
+    const entry: CacheEntry = { fetchedAt: Date.now(), details: overrideDetails };
+    try {
+      await AsyncStorage.setItem(key, JSON.stringify(entry));
+    } catch (error) {
+      console.warn('Failed to save book details cache', error);
+    }
+    return overrideDetails;
+  }
+
   if (!options.forceRefresh) {
     try {
       const cached = await AsyncStorage.getItem(key);
@@ -199,3 +212,4 @@ export async function getBookVolumeDetails(
   }
   return details;
 }
+

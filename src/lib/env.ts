@@ -5,6 +5,7 @@ type ExtraConfig = {
   supabaseAnonKey?: string;
   googleBooksApiKey?: string;
   rakutenAppId?: string;
+  metadataOverrideApiUrl?: string;
 };
 
 const extra = (Constants.expoConfig?.extra ?? {}) as ExtraConfig;
@@ -29,6 +30,8 @@ export const env = {
     clean(process.env.EXPO_PUBLIC_GOOGLE_BOOKS_API_KEY) ?? clean(extra.googleBooksApiKey),
   rakutenAppId:
     clean(process.env.EXPO_PUBLIC_RAKUTEN_APP_ID) ?? clean(extra.rakutenAppId),
+  metadataOverrideApiUrl:
+    clean(process.env.EXPO_PUBLIC_METADATA_OVERRIDE_API_URL) ?? clean(extra.metadataOverrideApiUrl),
 };
 
 export const envStatus = {
@@ -36,4 +39,6 @@ export const envStatus = {
   hasSupabaseAnonKey: !!env.supabaseAnonKey,
   hasGoogleBooksApiKey: !!env.googleBooksApiKey,
   hasRakutenAppId: !!env.rakutenAppId,
+  hasMetadataOverrideApiUrl: !!env.metadataOverrideApiUrl,
 };
+
