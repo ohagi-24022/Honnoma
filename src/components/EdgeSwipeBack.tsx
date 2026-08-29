@@ -9,19 +9,24 @@ type EdgeSwipeBackProps = PropsWithChildren<{
   style?: StyleProp<ViewStyle>;
 }>;
 
+type SwipeIntent = 'undecided' | 'horizontal' | 'vertical';
+
 const EDGE_WIDTH = 12;
-const START_DISTANCE = 44;
-const MIN_CLOSE_DISTANCE = 150;
-const CLOSE_DISTANCE = 190;
-const CLOSE_VELOCITY = 1600;
+const START_DISTANCE = 52;
+const CLOSE_DISTANCE = 220;
+const TRACK_HORIZONTAL_RATIO = 4;
+const CLOSE_HORIZONTAL_RATIO = 5;
+const VERTICAL_LOCK_DISTANCE = 10;
 
 export function EdgeSwipeBack({ children, onBack, style }: EdgeSwipeBackProps) {
   const { colors } = useAppTheme();
   const translateX = useRef(new Animated.Value(0)).current;
+  const swipeIntent = useRef<SwipeIntent>('undecided');
   const [leaving, setLeaving] = useState(false);
 
   const resetPosition = useCallback(() => {
     setLeaving(false);
+    swipeIntent.current = 'undecided';
     translateX.stopAnimation();
     translateX.setValue(0);
   }, [translateX]);
@@ -60,33 +65,53 @@ export function EdgeSwipeBack({ children, onBack, style }: EdgeSwipeBackProps) {
       Gesture.Pan()
         .runOnJS(true)
         .hitSlop({ left: 0, width: EDGE_WIDTH })
-        .activeOffsetX(36)
-        .failOffsetY([-6, 6])
+        .activeOffsetX(48)
+        .failOffsetY([-60, 60])
         .onBegin(() => {
+          swipeIntent.current = 'undecided';
           if (!leaving) translateX.stopAnimation();
         })
         .onUpdate((event) => {
           if (leaving) return;
           const horizontalDistance = event.translationX;
           const verticalDistance = Math.abs(event.translationY);
-          if (
-            horizontalDistance <= START_DISTANCE ||
-            horizontalDistance < verticalDistance * 2.4
-          ) {
+
+          if (horizontalDistance <= 0 || swipeIntent.current === 'vertical') {
             translateX.setValue(0);
             return;
           }
+
+          const isClearlyVertical =
+            verticalDistance > VERTICAL_LOCK_DISTANCE &&
+            horizontalDistance < verticalDistance * TRACK_HORIZONTAL_RATIO;
+          if (isClearlyVertical) {
+            swipeIntent.current = 'vertical';
+            translateX.setValue(0);
+            return;
+          }
+
+          if (swipeIntent.current !== 'horizontal') {
+            if (
+              horizontalDistance <= START_DISTANCE ||
+              horizontalDistance < verticalDistance * TRACK_HORIZONTAL_RATIO
+            ) {
+              translateX.setValue(0);
+              return;
+            }
+            swipeIntent.current = 'horizontal';
+          }
+
           translateX.setValue(Math.min(horizontalDistance - START_DISTANCE, Dimensions.get('window').width));
         })
         .onEnd((event) => {
           if (leaving) return;
           const horizontalDistance = event.translationX;
           const verticalDistance = Math.abs(event.translationY);
-          const isHorizontalSwipe = horizontalDistance > verticalDistance * 2.8;
+          const isHorizontalSwipe = horizontalDistance > verticalDistance * CLOSE_HORIZONTAL_RATIO;
           const shouldClose =
+            swipeIntent.current === 'horizontal' &&
             isHorizontalSwipe &&
-            horizontalDistance > MIN_CLOSE_DISTANCE &&
-            (horizontalDistance > CLOSE_DISTANCE || event.velocityX > CLOSE_VELOCITY);
+            horizontalDistance > CLOSE_DISTANCE;
           if (shouldClose) {
             close();
             return;
@@ -94,6 +119,7 @@ export function EdgeSwipeBack({ children, onBack, style }: EdgeSwipeBackProps) {
           cancelSwipe();
         })
         .onFinalize(() => {
+          swipeIntent.current = 'undecided';
           if (leaving) return;
           translateX.stopAnimation((value) => {
             if (value > 0) cancelSwipe();
