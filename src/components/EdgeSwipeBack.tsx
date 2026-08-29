@@ -9,9 +9,11 @@ type EdgeSwipeBackProps = PropsWithChildren<{
   style?: StyleProp<ViewStyle>;
 }>;
 
-const EDGE_WIDTH = 34;
-const CLOSE_DISTANCE = 92;
-const CLOSE_VELOCITY = 760;
+const EDGE_WIDTH = 12;
+const START_DISTANCE = 44;
+const MIN_CLOSE_DISTANCE = 150;
+const CLOSE_DISTANCE = 190;
+const CLOSE_VELOCITY = 1600;
 
 export function EdgeSwipeBack({ children, onBack, style }: EdgeSwipeBackProps) {
   const { colors } = useAppTheme();
@@ -58,22 +60,33 @@ export function EdgeSwipeBack({ children, onBack, style }: EdgeSwipeBackProps) {
       Gesture.Pan()
         .runOnJS(true)
         .hitSlop({ left: 0, width: EDGE_WIDTH })
-        .activeOffsetX(8)
-        .failOffsetY([-18, 18])
+        .activeOffsetX(36)
+        .failOffsetY([-6, 6])
         .onBegin(() => {
           if (!leaving) translateX.stopAnimation();
         })
         .onUpdate((event) => {
           if (leaving) return;
-          if (event.translationX <= 0) {
+          const horizontalDistance = event.translationX;
+          const verticalDistance = Math.abs(event.translationY);
+          if (
+            horizontalDistance <= START_DISTANCE ||
+            horizontalDistance < verticalDistance * 2.4
+          ) {
             translateX.setValue(0);
             return;
           }
-          translateX.setValue(Math.min(event.translationX, Dimensions.get('window').width));
+          translateX.setValue(Math.min(horizontalDistance - START_DISTANCE, Dimensions.get('window').width));
         })
         .onEnd((event) => {
           if (leaving) return;
-          const shouldClose = event.translationX > CLOSE_DISTANCE || event.velocityX > CLOSE_VELOCITY;
+          const horizontalDistance = event.translationX;
+          const verticalDistance = Math.abs(event.translationY);
+          const isHorizontalSwipe = horizontalDistance > verticalDistance * 2.8;
+          const shouldClose =
+            isHorizontalSwipe &&
+            horizontalDistance > MIN_CLOSE_DISTANCE &&
+            (horizontalDistance > CLOSE_DISTANCE || event.velocityX > CLOSE_VELOCITY);
           if (shouldClose) {
             close();
             return;
@@ -136,3 +149,4 @@ const styles = StyleSheet.create({
   },
   content: { flex: 1 },
 });
+
