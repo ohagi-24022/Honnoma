@@ -97,7 +97,16 @@ export default function AccountScreen() {
       (book) => typeof book.purchasePrice === 'number' && Number.isFinite(book.purchasePrice) && book.purchasePrice >= 0,
     );
     const recordedTotal = pricedBooks.reduce((sum, book) => sum + (book.purchasePrice ?? 0), 0);
-    const unrecordedBooks = totalBooks - pricedBooks.length;
+    const unrecordedBookItems = books
+      .filter((book) => !(typeof book.purchasePrice === 'number' && Number.isFinite(book.purchasePrice) && book.purchasePrice >= 0))
+      .sort((left, right) => {
+        const leftSeries = left.seriesTitle || left.title;
+        const rightSeries = right.seriesTitle || right.title;
+        const seriesCompare = leftSeries.localeCompare(rightSeries, 'ja');
+        if (seriesCompare !== 0) return seriesCompare;
+        return (left.volumeNumber ?? Number.MAX_SAFE_INTEGER) - (right.volumeNumber ?? Number.MAX_SAFE_INTEGER);
+      });
+    const unrecordedBooks = unrecordedBookItems.length;
     const estimatedUnrecordedTotal = unrecordedBooks * ESTIMATED_BOOK_PRICE;
     const estimatedTotal = recordedTotal + estimatedUnrecordedTotal;
     const now = new Date();
@@ -121,6 +130,7 @@ export default function AccountScreen() {
       thisMonthBooks,
       totalBooks,
       totalSeries: seriesGroups.length,
+      unrecordedBookItems,
       unrecordedBooks,
     };
   }, [books, seriesGroups]);
@@ -287,6 +297,38 @@ export default function AccountScreen() {
             <Text style={[styles.copy, { color: colors.muted }]}>
               一番多いシリーズ: {expenseSummary.mostCollectedSeries.title} / {expenseSummary.mostCollectedSeries.ownedCount}冊
             </Text>
+          ) : null}
+          {expenseSummary.unrecordedBookItems.length > 0 ? (
+            <View style={styles.unrecordedPanel}>
+              <View style={styles.unrecordedHeader}>
+                <View style={styles.unrecordedHeaderText}>
+                  <Text style={[styles.unrecordedTitle, { color: colors.text }]}>価格未記録の本</Text>
+                  <Text style={[styles.unrecordedCopy, { color: colors.muted }]}>詳細から購入価格を入力できます。</Text>
+                </View>
+                <Text style={[styles.unrecordedCount, { color: colors.muted }]}>{expenseSummary.unrecordedBooks}冊</Text>
+              </View>
+              <View style={styles.unrecordedList}>
+                {expenseSummary.unrecordedBookItems.slice(0, 8).map((book) => (
+                  <Pressable
+                    accessibilityLabel={`${book.title}の詳細を開く`}
+                    key={book.id}
+                    onPress={() => router.push({ pathname: '/book/[id]', params: { id: book.id, editPrice: '1' } })}
+                    style={[styles.unrecordedItem, { backgroundColor: colors.background, borderColor: colors.border }]}
+                  >
+                    <View style={styles.unrecordedItemText}>
+                      <Text numberOfLines={1} style={[styles.unrecordedItemTitle, { color: colors.text }]}>{book.title}</Text>
+                      <Text numberOfLines={1} style={[styles.unrecordedItemMeta, { color: colors.muted }]}>
+                        {book.seriesTitle || 'シリーズ未設定'}{typeof book.volumeNumber === 'number' ? ` / ${book.volumeNumber}巻` : ''}
+                      </Text>
+                    </View>
+                    <Ionicons color={colors.muted} name="chevron-forward" size={17} />
+                  </Pressable>
+                ))}
+              </View>
+              {expenseSummary.unrecordedBookItems.length > 8 ? (
+                <Text style={[styles.unrecordedMore, { color: colors.muted }]}>ほか{expenseSummary.unrecordedBookItems.length - 8}冊</Text>
+              ) : null}
+            </View>
           ) : null}
         </View>
       ) : null}
@@ -466,6 +508,18 @@ const styles = StyleSheet.create({
   },
   expenseAmount: { fontSize: 30, fontWeight: '900', letterSpacing: 0 },
   expenseBreakdown: { fontSize: 12, fontWeight: '700', marginTop: -6 },
+  unrecordedPanel: { gap: 10, marginTop: 4 },
+  unrecordedHeader: { alignItems: 'flex-start', flexDirection: 'row', justifyContent: 'space-between', gap: 12 },
+  unrecordedHeaderText: { flex: 1, minWidth: 0 },
+  unrecordedTitle: { fontSize: 14, fontWeight: '900' },
+  unrecordedCopy: { fontSize: 12, lineHeight: 16, marginTop: 2 },
+  unrecordedCount: { fontSize: 12, fontWeight: '900', marginTop: 2 },
+  unrecordedList: { gap: 8 },
+  unrecordedItem: { alignItems: 'center', borderRadius: 8, borderWidth: 1, flexDirection: 'row', gap: 10, minHeight: 54, paddingHorizontal: 12, paddingVertical: 9 },
+  unrecordedItemText: { flex: 1, minWidth: 0 },
+  unrecordedItemTitle: { fontSize: 13, fontWeight: '900' },
+  unrecordedItemMeta: { fontSize: 11, fontWeight: '700', marginTop: 3 },
+  unrecordedMore: { fontSize: 12, fontWeight: '800', textAlign: 'right' },
   summaryGrid: { flexDirection: 'row', gap: 8 },
   summaryTile: { alignItems: 'center', borderRadius: 8, flex: 1, gap: 3, minHeight: 58, justifyContent: 'center', paddingHorizontal: 4 },
   summaryValue: { fontSize: 16, fontWeight: '900', textAlign: 'center' },
@@ -518,3 +572,4 @@ const styles = StyleSheet.create({
   },
   dangerButtonText: { fontSize: 14, fontWeight: '800' },
 });
+

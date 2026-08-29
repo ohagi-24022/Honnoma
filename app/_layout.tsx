@@ -82,10 +82,12 @@ function RootStack() {
   }, []);
 
   const panelScreenOptions = {
-    animation: 'slide_from_right' as const,
+    animation: 'default' as const,
     contentStyle: { backgroundColor: colors.background },
-    fullScreenGestureEnabled: true,
+    fullScreenGestureEnabled: false,
+    gestureDirection: 'horizontal' as const,
     gestureEnabled: true,
+    presentation: 'card' as const,
     headerShadowVisible: false,
     headerStyle: { backgroundColor: colors.background },
     headerTintColor: colors.text,

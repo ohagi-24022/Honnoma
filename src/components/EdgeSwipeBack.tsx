@@ -12,11 +12,11 @@ type EdgeSwipeBackProps = PropsWithChildren<{
 type SwipeIntent = 'undecided' | 'horizontal' | 'vertical';
 
 const EDGE_WIDTH = 12;
-const START_DISTANCE = 52;
-const CLOSE_DISTANCE = 220;
-const TRACK_HORIZONTAL_RATIO = 4;
-const CLOSE_HORIZONTAL_RATIO = 5;
-const VERTICAL_LOCK_DISTANCE = 10;
+const START_DISTANCE = 72;
+const CLOSE_DISTANCE = 280;
+const TRACK_HORIZONTAL_RATIO = 16;
+const CLOSE_HORIZONTAL_RATIO = 20;
+const MAX_VERTICAL_DRIFT = 5;
 
 export function EdgeSwipeBack({ children, onBack, style }: EdgeSwipeBackProps) {
   const { colors } = useAppTheme();
@@ -65,8 +65,8 @@ export function EdgeSwipeBack({ children, onBack, style }: EdgeSwipeBackProps) {
       Gesture.Pan()
         .runOnJS(true)
         .hitSlop({ left: 0, width: EDGE_WIDTH })
-        .activeOffsetX(48)
-        .failOffsetY([-60, 60])
+        .activeOffsetX(72)
+        .failOffsetY([-8, 8])
         .onBegin(() => {
           swipeIntent.current = 'undecided';
           if (!leaving) translateX.stopAnimation();
@@ -81,10 +81,10 @@ export function EdgeSwipeBack({ children, onBack, style }: EdgeSwipeBackProps) {
             return;
           }
 
-          const isClearlyVertical =
-            verticalDistance > VERTICAL_LOCK_DISTANCE &&
+          const isTooDiagonal =
+            verticalDistance > MAX_VERTICAL_DRIFT ||
             horizontalDistance < verticalDistance * TRACK_HORIZONTAL_RATIO;
-          if (isClearlyVertical) {
+          if (isTooDiagonal) {
             swipeIntent.current = 'vertical';
             translateX.setValue(0);
             return;

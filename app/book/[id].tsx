@@ -3,10 +3,12 @@ import { router, useLocalSearchParams, useNavigation } from 'expo-router';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 
@@ -14,6 +16,7 @@ import { BookCover } from '../../src/components/BookCover';
 import { BookVolumeDetails } from '../../src/lib/bookApis';
 import { getBookVolumeDetails } from '../../src/lib/bookDetailsCache';
 import { getKnownBookCoverOverride } from '../../src/lib/knownBookOverrides';
+import { useAppSettings } from '../../src/store/AppSettingsContext';
 import { useLibrary } from '../../src/store/LibraryContext';
 import { useAppTheme } from '../../src/store/ThemeContext';
 
@@ -23,18 +26,28 @@ const statusLabels = {
   read: '読了',
 } as const;
 
+function formatCurrency(value?: number | null) {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return '未記録';
+  return `¥${Math.round(value).toLocaleString('ja-JP')}`;
+}
+
 export default function BookDetailsScreen() {
-  const params = useLocalSearchParams<{ fromSeries?: string; id: string }>();
+  const params = useLocalSearchParams<{ editPrice?: string; fromSeries?: string; id: string }>();
   const navigation = useNavigation();
   const { books, loading: libraryLoading, updateBook } = useLibrary();
+  const { trackPurchasePrices } = useAppSettings();
   const { colors } = useAppTheme();
   const routeBookId = Array.isArray(params.id) ? params.id[0] : params.id;
   const activeBookIdRef = useRef(routeBookId);
+  const priceEditParamConsumedRef = useRef<string | null>(null);
   const book = books.find((candidate) => candidate.id === routeBookId);
   const [details, setDetails] = useState<BookVolumeDetails | null>(null);
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [editingPrice, setEditingPrice] = useState(false);
+  const [draftPurchasePrice, setDraftPurchasePrice] = useState('');
+  const [savingPrice, setSavingPrice] = useState(false);
 
   const goBack = useCallback(() => {
     const fromSeries = Array.isArray(params.fromSeries) ? params.fromSeries[0] : params.fromSeries;
@@ -85,6 +98,10 @@ export default function BookDetailsScreen() {
     setError(null);
     setLoaded(false);
     setLoading(false);
+    setEditingPrice(false);
+    setDraftPurchasePrice('');
+    setSavingPrice(false);
+    priceEditParamConsumedRef.current = null;
   }, [routeBookId]);
 
   const loadDetails = useCallback(
@@ -114,6 +131,18 @@ export default function BookDetailsScreen() {
             ...(nextThumbnailUrl && nextThumbnailUrl !== targetBook.thumbnailUrl
               ? { thumbnailUrl: nextThumbnailUrl }
               : {}),
+            ...(typeof result.listPrice === 'number' && result.listPrice !== targetBook.listPrice
+              ? { listPrice: result.listPrice }
+              : {}),
+            ...(result.priceSource && result.priceSource !== targetBook.priceSource
+              ? { priceSource: result.priceSource }
+              : {}),
+            ...(result.priceFetchedAt && result.priceFetchedAt !== targetBook.priceFetchedAt
+              ? { priceFetchedAt: result.priceFetchedAt }
+              : {}),
+            ...(trackPurchasePrices && typeof targetBook.purchasePrice !== 'number' && typeof result.listPrice === 'number'
+              ? { purchasePrice: result.listPrice }
+              : {}),
           };
           if (Object.keys(metadataUpdates).length > 0) {
             await updateBook(targetBook.id, metadataUpdates);
@@ -134,12 +163,35 @@ export default function BookDetailsScreen() {
         }
       }
     },
-    [book, loading, routeBookId, updateBook],
+    [book, loading, routeBookId, trackPurchasePrices, updateBook],
   );
 
   useEffect(() => {
     if (book && !loaded) void loadDetails();
   }, [book, loadDetails, loaded, routeBookId]);
+  useEffect(() => {
+    if (!book || !trackPurchasePrices) return;
+    setDraftPurchasePrice(typeof book.purchasePrice === 'number' ? String(book.purchasePrice) : '');
+    if (params.editPrice === '1' && priceEditParamConsumedRef.current !== routeBookId) {
+      priceEditParamConsumedRef.current = routeBookId;
+      setEditingPrice(true);
+    }
+  }, [book, params.editPrice, routeBookId, trackPurchasePrices]);
+
+  const savePurchasePrice = useCallback(async () => {
+    if (!book || savingPrice) return;
+    const normalizedPrice = draftPurchasePrice.replace(/[^0-9]/g, '');
+    const nextPrice = normalizedPrice ? Number.parseInt(normalizedPrice, 10) : null;
+    setSavingPrice(true);
+    try {
+      await updateBook(book.id, { purchasePrice: nextPrice });
+      setEditingPrice(false);
+    } catch (saveError) {
+      Alert.alert('本の間', saveError instanceof Error ? saveError.message : '購入価格の保存に失敗しました。');
+    } finally {
+      setSavingPrice(false);
+    }
+  }, [book, draftPurchasePrice, savingPrice, updateBook]);
 
   if (!book) {
     return (
@@ -165,6 +217,53 @@ export default function BookDetailsScreen() {
   )?.publisher;
   const displayPublisher = details?.publisher ?? book.publisher ?? seriesPublisher;
   const displayCover = knownCover ?? details?.thumbnailUrl ?? book.thumbnailUrl;
+  const shouldPrioritizePriceEditor = trackPurchasePrices && params.editPrice === '1';
+  const priceSection = trackPurchasePrices ? (
+    <View style={[styles.pricePanel, { backgroundColor: colors.elevated, borderColor: colors.border }]}>
+      <View style={styles.priceHeader}>
+        <View style={styles.priceHeaderText}>
+          <Text style={[styles.priceTitle, { color: colors.text }]}>購入価格</Text>
+          <Text style={[styles.priceValue, { color: typeof book.purchasePrice === 'number' ? colors.text : colors.muted }]}>
+            {formatCurrency(book.purchasePrice)}
+          </Text>
+          {typeof book.listPrice === 'number' ? (
+            <Text style={[styles.priceMeta, { color: colors.muted }]}>新品価格: {formatCurrency(book.listPrice)}</Text>
+          ) : null}
+        </View>
+        <Pressable
+          accessibilityLabel="購入価格を編集"
+          disabled={savingPrice}
+          onPress={() => {
+            setDraftPurchasePrice(typeof book.purchasePrice === 'number' ? String(book.purchasePrice) : '');
+            setEditingPrice((current) => !current);
+          }}
+          style={[styles.priceEditButton, { borderColor: colors.border }]}
+        >
+          <Ionicons color={colors.text} name={editingPrice ? 'close' : 'create-outline'} size={18} />
+        </Pressable>
+      </View>
+      {editingPrice ? (
+        <View style={styles.priceEditRow}>
+          <TextInput
+            value={draftPurchasePrice}
+            onChangeText={(value) => setDraftPurchasePrice(value.replace(/[^0-9]/g, ''))}
+            keyboardType="number-pad"
+            placeholder="購入価格"
+            placeholderTextColor={colors.muted}
+            style={[styles.priceInput, { backgroundColor: colors.input, color: colors.text }]}
+          />
+          <Pressable
+            accessibilityLabel="購入価格を保存"
+            disabled={savingPrice}
+            onPress={() => void savePurchasePrice()}
+            style={[styles.priceSaveButton, { backgroundColor: colors.text }, savingPrice && styles.disabled]}
+          >
+            {savingPrice ? <ActivityIndicator color={colors.background} size="small" /> : <Ionicons color={colors.background} name="checkmark" size={20} />}
+          </Pressable>
+        </View>
+      ) : null}
+    </View>
+  ) : null;
 
   return (
     <View style={[styles.screen, { backgroundColor: colors.background }]}>
@@ -194,6 +293,8 @@ export default function BookDetailsScreen() {
       <MetadataRow label="出版社" value={displayPublisher} />
       <MetadataRow label="状態" value={statusLabels[book.status]} />
       <MetadataRow label="ISBN" value={book.isbn} />
+
+      {shouldPrioritizePriceEditor ? priceSection : null}
 
       <View style={styles.descriptionHeading}>
         <Text style={[styles.sectionTitle, { color: colors.text }]}>巻の紹介</Text>
@@ -230,6 +331,8 @@ export default function BookDetailsScreen() {
           情報提供: {details.source}
         </Text>
       )}
+
+      {!shouldPrioritizePriceEditor ? priceSection : null}
       </ScrollView>
     </View>
   );
@@ -266,6 +369,16 @@ const styles = StyleSheet.create({
   subtitle: { fontSize: 14, lineHeight: 20, marginTop: 5, textAlign: 'center' },
   series: { fontSize: 13, marginTop: 8, textAlign: 'center' },
   divider: { height: StyleSheet.hairlineWidth, marginVertical: 22, width: '100%' },
+  pricePanel: { alignSelf: 'stretch', borderRadius: 8, borderWidth: 1, gap: 12, marginTop: 14, padding: 12 },
+  priceHeader: { alignItems: 'center', flexDirection: 'row', gap: 12, justifyContent: 'space-between' },
+  priceHeaderText: { flex: 1, minWidth: 0 },
+  priceTitle: { fontSize: 13, fontWeight: '800' },
+  priceValue: { fontSize: 18, fontWeight: '900', marginTop: 3 },
+  priceMeta: { fontSize: 12, fontWeight: '700', marginTop: 4 },
+  priceEditButton: { alignItems: 'center', borderRadius: 8, borderWidth: 1, height: 36, justifyContent: 'center', width: 38 },
+  priceEditRow: { alignItems: 'center', flexDirection: 'row', gap: 8 },
+  priceInput: { borderRadius: 8, flex: 1, fontSize: 15, fontWeight: '800', height: 42, paddingHorizontal: 12 },
+  priceSaveButton: { alignItems: 'center', borderRadius: 8, height: 42, justifyContent: 'center', width: 46 },
   metadataRow: {
     alignItems: 'flex-start',
     alignSelf: 'stretch',
