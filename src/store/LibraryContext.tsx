@@ -12,6 +12,7 @@ import {
 } from 'react';
 
 import { BookLookupDebugEntry, lookupBookByIsbn, lookupBookByTitle, lookupBookDebugInfo } from '../lib/bookApis';
+import { getBookMetadataOverrideDetails } from '../lib/bookMetadataOverrides';
 import { normalizeAuthor } from '../lib/bookMetadata';
 import {
   findDuplicateBook as findDuplicate,
@@ -202,6 +203,50 @@ function usableReading(value?: string | null) {
   return normalizeKanaReading(value);
 }
 
+function metadataDetailsToBookPatch(metadata: Awaited<ReturnType<typeof getBookMetadataOverrideDetails>>): Partial<BookInput> | null {
+  if (!metadata) return null;
+  const patch: Partial<BookInput> = {};
+  if (metadata.title) patch.title = metadata.title;
+  if (metadata.seriesTitle) patch.seriesTitle = metadata.seriesTitle;
+  if (metadata.author) patch.author = metadata.author;
+  if (metadata.publisher) patch.publisher = metadata.publisher;
+  if (metadata.thumbnailUrl) patch.thumbnailUrl = metadata.thumbnailUrl;
+  if (typeof metadata.listPrice === 'number') patch.listPrice = metadata.listPrice;
+  if (metadata.priceSource) patch.priceSource = metadata.priceSource;
+  if (metadata.priceFetchedAt) patch.priceFetchedAt = metadata.priceFetchedAt;
+  return Object.keys(patch).length > 0 ? patch : null;
+}
+
+function bookToBookInput(book: Book): BookInput {
+  return {
+    isbn: book.isbn,
+    title: book.title,
+    titleReading: book.titleReading,
+    seriesTitle: book.seriesTitle,
+    seriesReading: book.seriesReading,
+    volumeNumber: book.volumeNumber,
+    volumeKind: book.volumeKind,
+    author: book.author,
+    publisher: book.publisher,
+    publishedDate: book.publishedDate,
+    purchasePrice: book.purchasePrice,
+    listPrice: book.listPrice,
+    priceSource: book.priceSource,
+    priceFetchedAt: book.priceFetchedAt,
+    thumbnailUrl: book.thumbnailUrl,
+    status: book.status,
+  };
+}
+
+async function lookupBookMetadataWithOverride(book: Book, context?: { source: string; title?: string; reasons?: string[] }) {
+  const overridePatch = metadataDetailsToBookPatch(await getBookMetadataOverrideDetails(book));
+  const apiInput = book.isbn ? await safeLookupBookByIsbn(book.isbn, context) : null;
+  if (!overridePatch) return apiInput;
+  return {
+    ...(apiInput ?? bookToBookInput(book)),
+    ...overridePatch,
+  };
+}
 async function safeLookupBookByIsbn(isbn: string, context?: { source: string; title?: string; reasons?: string[] }) {
   if (__DEV__) {
     console.info('[metadata] ISBN lookup started', {
@@ -684,7 +729,7 @@ export function LibraryProvider({ children }: PropsWithChildren) {
         try {
           const lookupTitle = buildMetadataLookupTitle(book);
           const metadata =
-            (await safeLookupBookByIsbn(book.isbn, { source: 'library-auto-enrichment', title: book.title, reasons })) ??
+            (await lookupBookMetadataWithOverride(book, { source: 'library-auto-enrichment', title: book.title, reasons })) ??
             (await lookupBookByTitle(lookupTitle, book.isbn)) ??
             (lookupTitle === book.title ? null : await lookupBookByTitle(book.title, book.isbn));
           if (!metadata) {
@@ -991,7 +1036,7 @@ export function LibraryProvider({ children }: PropsWithChildren) {
     const lookupTitle = buildMetadataLookupTitle(book);
     const lookupSource = options.preserveIdentity ? 'home-reading-repair' : 'manual-metadata-repair';
     const metadata =
-      (book.isbn ? await safeLookupBookByIsbn(book.isbn, { source: lookupSource, title: book.title, reasons: describeMetadataNeeds(book) }) : null) ??
+      (await lookupBookMetadataWithOverride(book, { source: lookupSource, title: book.title, reasons: describeMetadataNeeds(book) })) ??
       (await lookupBookByTitle(lookupTitle, book.isbn)) ??
       (lookupTitle === book.title ? null : await lookupBookByTitle(book.title, book.isbn));
     if (!metadata) throw new Error('書籍情報を再取得できませんでした。');
@@ -1132,3 +1177,4 @@ export function useLibrary() {
 
   return context;
 }
+

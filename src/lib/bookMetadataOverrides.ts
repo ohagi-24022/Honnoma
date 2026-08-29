@@ -136,12 +136,13 @@ export async function getBookMetadataOverrideDetails(book: Book): Promise<BookVo
   const sourcePage = await fetchSourcePageDetails(override.sourceUrl);
 
   return {
-    title: override.title ?? book.title,
+    title: override.title,
     subtitle: undefined,
-    author: override.author ?? book.author,
-    publisher: override.publisher ?? book.publisher,
+    seriesTitle: override.seriesTitle,
+    author: override.author,
+    publisher: override.publisher,
     description: override.description ?? sourcePage.description,
-    thumbnailUrl: override.thumbnailUrl ?? sourcePage.thumbnailUrl ?? book.thumbnailUrl,
+    thumbnailUrl: override.thumbnailUrl ?? sourcePage.thumbnailUrl,
     listPrice: override.listPrice,
     priceSource: override.priceSource,
     priceFetchedAt: override.priceFetchedAt,
@@ -150,3 +151,4 @@ export async function getBookMetadataOverrideDetails(book: Book): Promise<BookVo
     checkedAt: new Date().toISOString(),
   };
 }
+

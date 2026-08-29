@@ -139,6 +139,7 @@ export type SeriesPublicationInfo = {
 export type BookVolumeDetails = {
   title?: string;
   subtitle?: string;
+  seriesTitle?: string;
   author?: string;
   publisher?: string;
   description?: string;

@@ -169,29 +169,44 @@ async function writeSupabaseCache(book: Book, details: BookVolumeDetails | null)
   }
 }
 
+function mergeOverrideDetails(
+  book: Book,
+  base: BookVolumeDetails | null,
+  override: BookVolumeDetails | null,
+): BookVolumeDetails | null {
+  if (!override) return base;
+
+  return {
+    title: override.title ?? base?.title ?? book.title,
+    subtitle: override.subtitle ?? base?.subtitle,
+    seriesTitle: override.seriesTitle ?? base?.seriesTitle ?? book.seriesTitle,
+    author: override.author ?? base?.author ?? book.author,
+    publisher: override.publisher ?? base?.publisher ?? book.publisher,
+    description: override.description ?? base?.description,
+    thumbnailUrl: override.thumbnailUrl ?? base?.thumbnailUrl ?? book.thumbnailUrl,
+    listPrice: override.listPrice ?? base?.listPrice ?? book.listPrice ?? undefined,
+    priceSource: override.priceSource ?? base?.priceSource ?? book.priceSource ?? undefined,
+    priceFetchedAt: override.priceFetchedAt ?? base?.priceFetchedAt ?? book.priceFetchedAt ?? undefined,
+    source: override.source,
+    sourceUrl: override.sourceUrl ?? base?.sourceUrl,
+    checkedAt: override.checkedAt,
+  };
+}
 export async function getBookVolumeDetails(
   book: Book,
   options: { forceRefresh?: boolean } = {},
 ) {
   const key = cacheKey(book);
-
   const overrideDetails = await getBookMetadataOverrideDetails(book);
-  if (overrideDetails) {
-    const entry: CacheEntry = { fetchedAt: Date.now(), details: overrideDetails };
-    try {
-      await AsyncStorage.setItem(key, JSON.stringify(entry));
-    } catch (error) {
-      console.warn('Failed to save book details cache', error);
-    }
-    return overrideDetails;
-  }
 
   if (!options.forceRefresh) {
     try {
       const cached = await AsyncStorage.getItem(key);
       if (cached) {
         const entry = JSON.parse(cached) as CacheEntry;
-        if (Date.now() - entry.fetchedAt < CACHE_TTL_MS) return entry.details;
+        if (Date.now() - entry.fetchedAt < CACHE_TTL_MS) {
+          return mergeOverrideDetails(book, entry.details, overrideDetails);
+        }
       }
     } catch (error) {
       console.warn('Failed to read book details cache', error);
@@ -201,24 +216,26 @@ export async function getBookVolumeDetails(
   if (!options.forceRefresh) {
     const dbCached = await readSupabaseCache(book);
     if (dbCached) {
-      const entry: CacheEntry = { fetchedAt: Date.now(), details: dbCached };
+      const mergedDetails = mergeOverrideDetails(book, dbCached, overrideDetails);
+      const entry: CacheEntry = { fetchedAt: Date.now(), details: mergedDetails };
       try {
         await AsyncStorage.setItem(key, JSON.stringify(entry));
       } catch (error) {
         console.warn('Failed to save book details cache', error);
       }
-      return dbCached;
+      return mergedDetails;
     }
   }
 
   const details = await lookupBookVolumeDetails(book);
   await writeSupabaseCache(book, details);
-  const entry: CacheEntry = { fetchedAt: Date.now(), details };
+  const mergedDetails = mergeOverrideDetails(book, details, overrideDetails);
+  const entry: CacheEntry = { fetchedAt: Date.now(), details: mergedDetails };
   try {
     await AsyncStorage.setItem(key, JSON.stringify(entry));
   } catch (error) {
     console.warn('Failed to save book details cache', error);
   }
-  return details;
+  return mergedDetails;
 }
 
