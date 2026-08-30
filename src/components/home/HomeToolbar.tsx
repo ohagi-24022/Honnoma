@@ -136,7 +136,7 @@ export function HomeToolbar({
             filterActive && { backgroundColor: colors.elevated },
           ]}
         >
-          <Ionicons color={filterActive ? colors.primary : colors.text} name={filterActive ? "filter-circle" : "filter"} size={18} />
+          <Ionicons color={filterActive ? colors.primary : colors.text} name="filter" size={18} />
           {filterActive ? <View style={[styles.activeDot, { backgroundColor: colors.primary }]} /> : null}
         </Pressable>
         <Pressable
