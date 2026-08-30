@@ -50,6 +50,7 @@ type HomeFilter =
   | ReadingStatus
   | 'all'
   | 'missing'
+  | 'complete'
   | 'favorite'
   | 'completed'
   | 'ongoing'
@@ -79,6 +80,7 @@ const filterOptions: Array<{ label: string; value: HomeFilter }> = [
   { label: '読書中', value: 'reading' },
   { label: '読了', value: 'read' },
   { label: '巻抜け', value: 'missing' },
+  { label: 'コンプリート', value: 'complete' },
   { label: 'お気に入り', value: 'favorite' },
   { label: '完結済み', value: 'completed' },
   { label: '未完結', value: 'ongoing' },
@@ -235,9 +237,11 @@ function getSelectedMetadataFilters(filters: HomeFilter[]) {
 function toggleFilterValue(filters: HomeFilter[], value: HomeFilter) {
   if (value === 'all') return ['all'] satisfies HomeFilter[];
   const activeFilters = getActiveFilters(filters);
-  const next = activeFilters.includes(value)
-    ? activeFilters.filter((filter) => filter !== value)
-    : [...activeFilters, value];
+  const exclusiveFilters: HomeFilter[] = value === 'missing' ? ['complete'] : value === 'complete' ? ['missing'] : [];
+  const baseFilters = activeFilters.filter((filter) => !exclusiveFilters.includes(filter));
+  const next = baseFilters.includes(value)
+    ? baseFilters.filter((filter) => filter !== value)
+    : [...baseFilters, value];
   return next.length > 0 ? next : (['all'] satisfies HomeFilter[]);
 }
 
@@ -666,6 +670,7 @@ export default function HomeScreen() {
       const matchesFilter =
         matchesStatus &&
         (!activeFilters.includes('missing') || (stats?.missingVolumes.length ?? 0) > 0) &&
+        (!activeFilters.includes('complete') || (stats?.missingVolumes.length ?? 0) === 0) &&
         (!activeFilters.includes('favorite') || favoriteSeriesKeySet.has(seriesKey)) &&
         (!activeFilters.includes('completed') || publicationInfo?.isCompleted === true) &&
         (!activeFilters.includes('ongoing') || publicationInfo?.isCompleted !== true) &&
@@ -725,6 +730,7 @@ export default function HomeScreen() {
       const matchesFilter =
         (statusFilters.length === 0 || statusFilters.includes(book.status)) &&
         (!activeFilters.includes('missing') || (seriesStats.get(seriesKey)?.missingVolumes.length ?? 0) > 0) &&
+        (!activeFilters.includes('complete') || (seriesStats.get(seriesKey)?.missingVolumes.length ?? 0) === 0) &&
         (!activeFilters.includes('favorite') || favoriteSeriesKeySet.has(seriesKey)) &&
         (!activeFilters.includes('completed') || publicationInfo?.isCompleted === true) &&
         (!activeFilters.includes('ongoing') || publicationInfo?.isCompleted !== true) &&
@@ -1018,6 +1024,7 @@ export default function HomeScreen() {
         loading={loading}
         error={error}
         query={query}
+        filterActive={getActiveFilters(filters).length > 0}
         filterLabel={selectedFilterLabel}
         sortLabel={selectedSortLabel}
         onHeightChange={(nextHeight) => {
@@ -1249,6 +1256,7 @@ export default function HomeScreen() {
                 setBookSortDirection(defaultBookSortDirections[nextSort]);
               }
             }
+            closeMenu();
           } else if (openMenu === 'filter' && value === 'select-author') {
             setOpenMenu('author');
           } else if (openMenu === 'filter' && value === 'select-publisher') {

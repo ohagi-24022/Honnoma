@@ -47,14 +47,14 @@ const lightColors: ThemeColors = {
 };
 
 const darkColors: ThemeColors = {
-  background: '#050505',
-  surface: '#111111',
-  elevated: '#1d1d1d',
-  text: '#f5f5f5',
-  muted: '#a3a3a3',
-  border: '#2a2a2a',
-  input: '#171717',
-  primary: '#0a84ff',
+  background: '#0d1117',
+  surface: '#161b22',
+  elevated: '#21262d',
+  text: '#f0f6fc',
+  muted: '#b7c0cc',
+  border: '#30363d',
+  input: '#1f2630',
+  primary: '#58a6ff',
   danger: '#ff453a',
   success: '#31c759',
 };

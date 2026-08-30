@@ -538,7 +538,10 @@ export default function SettingsScreen() {
       </View>
 
       <View style={[styles.section, { borderBottomColor: colors.border }]}>
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>ヘルプ</Text>
+        <View style={styles.sectionTitleRow}>
+          <Ionicons color={colors.primary} name="help-circle-outline" size={20} />
+          <Text style={[styles.sectionTitle, styles.sectionTitleInRow, { color: colors.text }]}>ヘルプ</Text>
+        </View>
         <Link href="/help" asChild>
           <Pressable
             style={[
@@ -546,9 +549,6 @@ export default function SettingsScreen() {
               { backgroundColor: colors.surface, borderColor: colors.border },
             ]}
           >
-            <View style={[styles.accountIcon, { backgroundColor: colors.surface }]}>
-              <Ionicons color={colors.text} name="help-circle-outline" size={21} />
-            </View>
             <View style={styles.rowText}>
               <View style={styles.navigationTitleRow}>
                 <Ionicons color={colors.muted} name="chevron-forward" size={16} />
@@ -563,7 +563,10 @@ export default function SettingsScreen() {
       </View>
 
       <View style={[styles.section, { borderBottomColor: colors.border }]}>
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>データ補正</Text>
+        <View style={styles.sectionTitleRow}>
+          <Text style={[styles.sectionTextIcon, { color: colors.primary }]}>Aa</Text>
+          <Text style={[styles.sectionTitle, styles.sectionTitleInRow, { color: colors.text }]}>データ補正</Text>
+        </View>
         <Link href="/reading-suggestions" asChild>
           <Pressable
             style={[
@@ -571,9 +574,6 @@ export default function SettingsScreen() {
               { backgroundColor: colors.surface, borderColor: colors.border },
             ]}
           >
-            <View style={[styles.accountIcon, { backgroundColor: colors.surface }]}>
-              <Ionicons color={colors.text} name="text-outline" size={21} />
-            </View>
             <View style={styles.rowText}>
               <View style={styles.navigationTitleRow}>
                 <Ionicons color={colors.muted} name="chevron-forward" size={16} />
@@ -743,6 +743,9 @@ const styles = StyleSheet.create({
   content: { gap: 18, padding: 18, paddingBottom: 40 },
   section: { borderBottomWidth: 1, paddingBottom: 18 },
   sectionTitle: { fontSize: 18, fontWeight: '800', marginBottom: 12 },
+  sectionTitleInRow: { marginBottom: 0 },
+  sectionTitleRow: { alignItems: 'center', flexDirection: 'row', gap: 6, marginBottom: 12 },
+  sectionTextIcon: { fontSize: 15, fontWeight: '900', lineHeight: 20 },
   row: { alignItems: 'center', flexDirection: 'row', gap: 12, minHeight: 56 },
   rowText: { flex: 1 },
   rowTitle: { fontSize: 15, fontWeight: '800' },
@@ -856,5 +859,4 @@ const styles = StyleSheet.create({
   segment: { alignItems: 'center', borderRadius: 6, flex: 1, height: 38, justifyContent: 'center' },
   segmentText: { fontSize: 13, fontWeight: '800' },
 });
-
 

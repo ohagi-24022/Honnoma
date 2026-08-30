@@ -15,6 +15,7 @@ type HomeToolbarProps = {
   loading: boolean;
   error: string | null;
   query: string;
+  filterActive: boolean;
   filterLabel: string;
   sortLabel: string;
   onHeightChange: (height: number) => void;
@@ -37,6 +38,7 @@ export function HomeToolbar({
   loading,
   error,
   query,
+  filterActive,
   filterLabel,
   sortLabel,
   onHeightChange,
@@ -128,9 +130,14 @@ export function HomeToolbar({
         <Pressable
           accessibilityLabel={`表示条件を開く。現在: ${filterLabel}`}
           onPress={onOpenFilter}
-          style={[styles.iconButton, { borderColor: colors.border }]}
+          style={[
+            styles.iconButton,
+            { borderColor: filterActive ? colors.primary : colors.border },
+            filterActive && { backgroundColor: colors.elevated },
+          ]}
         >
-          <Ionicons color={colors.text} name="filter" size={18} />
+          <Ionicons color={filterActive ? colors.primary : colors.text} name={filterActive ? "filter-circle" : "filter"} size={18} />
+          {filterActive ? <View style={[styles.activeDot, { backgroundColor: colors.primary }]} /> : null}
         </Pressable>
         <Pressable
           accessibilityLabel={`並び替えを開く。現在: ${sortLabel}`}
@@ -223,6 +230,14 @@ const styles = StyleSheet.create({
     height: 38,
     justifyContent: 'center',
     width: 42,
+  },
+  activeDot: {
+    borderRadius: 4,
+    height: 6,
+    position: 'absolute',
+    right: 8,
+    top: 7,
+    width: 6,
   },
   modeSwitch: {
     borderRadius: 8,
