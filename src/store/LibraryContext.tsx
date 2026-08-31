@@ -11,7 +11,7 @@ import {
   useState,
 } from 'react';
 
-import { BookLookupDebugEntry, lookupBookByIsbn, lookupBookByTitle, lookupBookDebugInfo } from '../lib/bookApis';
+import { lookupBookByIsbn, lookupBookByTitle } from '../lib/bookApis';
 import { getBookMetadataOverrideDetails } from '../lib/bookMetadataOverrides';
 import { normalizeAuthor } from '../lib/bookMetadata';
 import {
@@ -97,7 +97,6 @@ type MetadataRepairResult = {
   afterPurchasePrice?: number | null;
   purchasePriceLookupAttempted?: boolean;
   purchasePriceUpdated?: boolean;
-  debugEntries?: BookLookupDebugEntry[];
 };
 
 type MetadataRepairOptions = {
@@ -248,14 +247,6 @@ async function lookupBookMetadataWithOverride(book: Book, context?: { source: st
   };
 }
 async function safeLookupBookByIsbn(isbn: string, context?: { source: string; title?: string; reasons?: string[] }) {
-  if (__DEV__) {
-    console.info('[metadata] ISBN lookup started', {
-      isbn,
-      source: context?.source ?? 'unknown',
-      title: context?.title,
-      reasons: context?.reasons,
-    });
-  }
 
   try {
     return await lookupBookByIsbn(isbn);
@@ -692,17 +683,6 @@ export function LibraryProvider({ children }: PropsWithChildren) {
 
     if (metadataTargets.length === 0) return;
 
-    if (__DEV__) {
-      console.info(
-        '[metadata] auto enrichment targets',
-        metadataTargets.map(({ book, reasons }) => ({
-          isbn: book.isbn,
-          title: book.title,
-          seriesTitle: book.seriesTitle,
-          reasons,
-        })),
-      );
-    }
 
     metadataTargets.forEach(({ book }) => {
       if (book.isbn) enrichedIsbnsRef.current.add(book.isbn);
@@ -1066,9 +1046,6 @@ export function LibraryProvider({ children }: PropsWithChildren) {
       ...(shouldFillPurchasePrice ? { purchasePrice: nextListPrice } : {}),
     };
     const afterPurchasePrice = updates.purchasePrice ?? beforePurchasePrice;
-    const debugEntries = metadata.thumbnailUrl
-      ? []
-      : await lookupBookDebugInfo({ isbn: book.isbn, title: lookupTitle });
 
     await updateBook(book.id, updates);
 
@@ -1088,7 +1065,6 @@ export function LibraryProvider({ children }: PropsWithChildren) {
       afterPurchasePrice,
       purchasePriceLookupAttempted: !!options.updatePurchasePrice,
       purchasePriceUpdated: beforePurchasePrice !== afterPurchasePrice,
-      debugEntries,
     };
   }, [books, updateBook]);
 

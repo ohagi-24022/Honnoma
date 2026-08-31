@@ -1,4 +1,5 @@
 import { WishlistItem } from '../store/WishlistContext';
+import { normalizeSeriesKey } from './series';
 
 export type GlobalRankingRow = {
   average_score: number | string | null;
@@ -25,6 +26,7 @@ export type RankingDisplayRow = {
   preferIsbnCover?: boolean;
   score?: number;
   title: string;
+  topScore?: number;
   wantCount?: number;
 };
 
@@ -73,8 +75,58 @@ function toDisplayRow(row: GlobalRankingRow): RankingDisplayRow {
     ownerCount: Number(row.owner_count ?? 0),
     popularityScore: toOptionalNumber(row.popularity_score),
     title: row.title,
+    topScore: toOptionalNumber(row.top_score),
     wantCount: Number(row.want_count ?? 0),
   };
+}
+
+function normalizeRankingSeriesKey(title: string) {
+  return normalizeSeriesKey(title).replace(/[!！?？。．.・･]/g, '');
+}
+
+function preferDisplayTitle(current: RankingDisplayRow, next: RankingDisplayRow) {
+  const currentScore =
+    Number(current.favoriteCount ?? 0) +
+    Number(current.ownerCount ?? 0) +
+    Number(current.wantCount ?? 0) +
+    (current.coverUrl ? 1 : 0);
+  const nextScore =
+    Number(next.favoriteCount ?? 0) +
+    Number(next.ownerCount ?? 0) +
+    Number(next.wantCount ?? 0) +
+    (next.coverUrl ? 1 : 0);
+
+  if (nextScore !== currentScore) return nextScore > currentScore ? next.title : current.title;
+  return next.title.length < current.title.length ? next.title : current.title;
+}
+
+function mergeDuplicateSeriesRows(rows: RankingDisplayRow[]) {
+  const merged = new Map<string, RankingDisplayRow>();
+
+  for (const row of rows) {
+    const key = normalizeRankingSeriesKey(row.title);
+    if (!key) continue;
+    const current = merged.get(key);
+    if (!current) {
+      merged.set(key, row);
+      continue;
+    }
+
+    merged.set(key, {
+      ...current,
+      averageScore: Math.max(Number(current.averageScore ?? 0), Number(row.averageScore ?? 0)) || undefined,
+      coverUrl: current.coverUrl ?? row.coverUrl,
+      favoriteCount: Number(current.favoriteCount ?? 0) + Number(row.favoriteCount ?? 0),
+      ownedVolumeCount: Math.max(Number(current.ownedVolumeCount ?? 0), Number(row.ownedVolumeCount ?? 0)),
+      ownerCount: Number(current.ownerCount ?? 0) + Number(row.ownerCount ?? 0),
+      popularityScore: Number(current.popularityScore ?? 0) + Number(row.popularityScore ?? 0),
+      title: preferDisplayTitle(current, row),
+      topScore: Math.max(Number(current.topScore ?? 0), Number(row.topScore ?? 0)) || undefined,
+      wantCount: Number(current.wantCount ?? 0) + Number(row.wantCount ?? 0),
+    });
+  }
+
+  return [...merged.values()];
 }
 
 export function buildRankingRows(
@@ -83,8 +135,7 @@ export function buildRankingRows(
   wishlistItems: WishlistItem[],
 ) {
   if (category === 'favorite') {
-    return globalRows
-      .map(toDisplayRow)
+    return mergeDuplicateSeriesRows(globalRows.map(toDisplayRow))
       .sort(
         (left, right) =>
           Number(right.favoriteCount ?? 0) - Number(left.favoriteCount ?? 0) ||
@@ -105,7 +156,7 @@ export function buildRankingRows(
       .sort((left, right) => Number(right.score ?? 0) - Number(left.score ?? 0) || left.title.localeCompare(right.title));
   }
 
-  const rows = globalRows.map(toDisplayRow);
+  const rows = mergeDuplicateSeriesRows(globalRows.map(toDisplayRow));
 
   if (category === 'wanted') {
     return rows
@@ -139,3 +190,4 @@ export function buildRankingRows(
       left.title.localeCompare(right.title),
   );
 }
+

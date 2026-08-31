@@ -517,12 +517,6 @@ export default function HomeScreen() {
             });
           }
         } catch (publicationError) {
-          if (__DEV__) {
-            console.warn('Background series publication lookup failed', {
-              seriesTitle: next.seriesTitle,
-              error: publicationError,
-            });
-          }
         } finally {
           backgroundPublicationQueuedKeyRef.current.delete(seriesKey);
         }
@@ -881,18 +875,6 @@ export default function HomeScreen() {
       )
       .slice(0, 2);
 
-    if (__DEV__ && targets.length > 0) {
-      console.info(
-        '[metadata] home reading repair targets',
-        targets.map((book) => ({
-          id: book.id,
-          isbn: book.isbn,
-          title: book.title,
-          seriesTitle: book.seriesTitle,
-          reason: 'missing-reading',
-        })),
-      );
-    }
 
     targets.forEach((book) => {
       if (metadataRepairingRef.current.has(book.id)) return;
@@ -906,15 +888,6 @@ export default function HomeScreen() {
           }
         })
         .catch((metadataError) => {
-          if (__DEV__) {
-            console.warn('[metadata] home reading repair failed', {
-              id: book.id,
-              isbn: book.isbn,
-              title: book.title,
-              seriesTitle: book.seriesTitle,
-              error: metadataError,
-            });
-          }
           metadataRepairFailedRef.current.add(book.id);
         })
         .finally(() => metadataRepairingRef.current.delete(book.id));
@@ -1340,12 +1313,4 @@ const styles = StyleSheet.create({
   },
   disabledButton: { opacity: 0.4 },
 });
-
-
-
-
-
-
-
-
 

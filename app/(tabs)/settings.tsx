@@ -15,13 +15,9 @@ import {
   View,
 } from 'react-native';
 
-import { envStatus } from '../../src/lib/env';
 import {
   disableNewReleaseNotifications,
   enableNewReleaseNotifications,
-  getNewReleaseDiagnostics,
-  getServerOperationDiagnostics,
-  sendNewReleaseDebugNotification,
   syncNewReleaseSubscriptions,
 } from '../../src/lib/newReleaseNotifications';
 import { useAppSettings } from '../../src/store/AppSettingsContext';
@@ -58,10 +54,8 @@ export default function SettingsScreen() {
   const [passwordVisible, setPasswordVisible] = useState(false);
   const [authSubmitting, setAuthSubmitting] = useState(false);
   const [migrationSubmitting, setMigrationSubmitting] = useState(false);
-  const [notificationDebugSubmitting, setNotificationDebugSubmitting] = useState(false);
   const [notificationSubmitting, setNotificationSubmitting] = useState(false);
   const [pendingNewReleaseSwitchValue, setPendingNewReleaseSwitchValue] = useState<boolean | null>(null);
-  const [operationDiagnosticsSubmitting, setOperationDiagnosticsSubmitting] = useState(false);
   const displayedNewReleaseNotifications = pendingNewReleaseSwitchValue ?? newReleaseNotifications;
 
   useEffect(() => {
@@ -222,94 +216,6 @@ export default function SettingsScreen() {
     }
   };
 
-  const runNotificationDebug = async () => {
-    setNotificationDebugSubmitting(true);
-    try {
-      await sendNewReleaseDebugNotification();
-      Alert.alert(
-        '通知テストを送信しました',
-        '端末に「本の間 通知テスト」が表示されれば、端末側の通知表示は動作しています。',
-      );
-    } catch (error) {
-      Alert.alert(
-        '通知テストに失敗しました',
-        error instanceof Error ? error.message : '端末の通知設定を確認して、もう一度お試しください。',
-      );
-    } finally {
-      setNotificationDebugSubmitting(false);
-    }
-  };
-
-  const showNewReleaseDebugGuide = async () => {
-    if (!user) {
-      Alert.alert('ログインが必要です', '新刊チェックの確認はログイン後に利用できます。');
-      return;
-    }
-
-    try {
-      await syncNewReleaseSubscriptions(user.id, seriesGroups);
-      const diagnostics = await getNewReleaseDiagnostics(user.id);
-      const recentLogs =
-        diagnostics.recentLogs.length > 0
-          ? diagnostics.recentLogs
-              .map(
-                (log) =>
-                  `${log.seriesTitle}${log.volumeNumber ? ` ${log.volumeNumber}巻` : ''}: ${log.status}`,
-              )
-              .join('\n')
-          : '通知ログはまだありません。';
-
-      Alert.alert(
-        '新刊チェックの状態',
-        [
-          `通知ONシリーズ: ${diagnostics.enabledSeriesCount} / ${diagnostics.subscriptionCount}`,
-          `有効な通知トークン: ${diagnostics.activePushTokenCount}`,
-          '',
-          `直近ログ:\n${recentLogs}`,
-          diagnostics.enabledSeriesCount === 0
-            ? '\n本棚のシリーズカードでベルをONにすると、チェック対象になります。'
-            : '',
-          '\n全体チェックはservice roleまたは専用secretを持つ定期実行だけが実行できます。',
-        ]
-          .filter(Boolean)
-          .join('\n'),
-      );
-    } catch (error) {
-      Alert.alert(
-        '新刊チェックに失敗しました',
-        error instanceof Error ? error.message : 'Supabase Functions の状態を確認してください。',
-      );
-    }
-  };
-
-  const showOperationDiagnostics = async () => {
-    Alert.alert(
-      '運用ログ',
-      '運用ログは公開後のサーバー管理用に制限しました。新刊通知の詳細は「新刊通知を確認する」から確認できます。',
-    );
-    return;
-    setOperationDiagnosticsSubmitting(true);
-    try {
-      const summaries = await getServerOperationDiagnostics(24);
-      const message =
-        summaries.length > 0
-          ? summaries
-              .map(
-                (summary) =>
-                  `${summary.operation}${summary.provider ? ` / ${summary.provider}` : ''}: ${summary.requestCount}件 / エラー${summary.errorCount}件`,
-              )
-              .join('\n')
-          : '直近24時間の運用ログはありません。';
-      Alert.alert('運用ログ', message);
-    } catch (error: any) {
-      Alert.alert(
-        '運用ログを取得できませんでした',
-        error instanceof Error ? error.message : 'SQLマイグレーションの反映状態を確認してください。',
-      );
-    } finally {
-      setOperationDiagnosticsSubmitting(false);
-    }
-  };
 
   return (
     <ScrollView
@@ -447,44 +353,6 @@ export default function SettingsScreen() {
               </Link>
             </View>
           </View>
-        )}
-      </View>
-
-      <View style={[styles.section, { borderBottomColor: colors.border }]}>
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>連携設定</Text>
-        {__DEV__ ? (
-          <View style={[styles.pendingBox, { backgroundColor: colors.elevated }]}>
-            <Text style={[styles.rowTitle, { color: colors.text }]}>デバッグ情報</Text>
-            <Text style={[styles.rowCopy, { color: colors.muted }]}>
-              Supabase URL: {envStatus.hasSupabaseUrl ? '設定済み' : '未設定'}
-            </Text>
-            <Text style={[styles.rowCopy, { color: colors.muted }]}>
-              Supabase Anon Key: {envStatus.hasSupabaseAnonKey ? '設定済み' : '未設定'}
-            </Text>
-            <Text style={[styles.rowCopy, { color: colors.muted }]}>
-              Google Books API Key: {envStatus.hasGoogleBooksApiKey ? '設定済み' : '未設定'}
-            </Text>
-            <Text style={[styles.rowCopy, { color: colors.muted }]}>
-              Rakuten App ID: {envStatus.hasRakutenAppId ? '設定済み' : '未設定'}
-            </Text>
-            <Pressable
-              disabled={operationDiagnosticsSubmitting}
-              onPress={() => void showOperationDiagnostics()}
-              style={[
-                styles.neutralButton,
-                { borderColor: colors.border },
-                operationDiagnosticsSubmitting && styles.disabledButton,
-              ]}
-            >
-              <Text style={[styles.neutralButtonText, { color: colors.text }]}>
-                {operationDiagnosticsSubmitting ? '運用ログ確認中' : '運用ログを見る'}
-              </Text>
-            </Pressable>
-          </View>
-        ) : (
-          <Text style={[styles.rowCopy, { color: colors.muted }]}>
-            外部サービス連携はアプリ内部で管理されています。
-          </Text>
         )}
       </View>
 
@@ -643,42 +511,6 @@ export default function SettingsScreen() {
             </View>
           </Pressable>
         </Link>
-        <Pressable
-          disabled={notificationDebugSubmitting}
-          onPress={() => void runNotificationDebug()}
-          style={[
-            styles.neutralButton,
-            { borderColor: colors.border },
-            notificationDebugSubmitting && styles.disabledButton,
-          ]}
-        >
-          <Text style={[styles.neutralButtonText, { color: colors.text }]}>
-            {notificationDebugSubmitting ? '通知テスト中' : '通知テストを送る'}
-          </Text>
-        </Pressable>
-        <Text style={[styles.rowCopy, { color: colors.muted }]}>
-          新刊を待たずに、端末で通知が表示されるか確認できます。
-        </Text>
-        {__DEV__ && (
-          <>
-            <Pressable
-              disabled={!configured}
-              onPress={() => void showNewReleaseDebugGuide()}
-              style={[
-                styles.neutralButton,
-                { borderColor: colors.border },
-                !configured && styles.disabledButton,
-              ]}
-            >
-              <Text style={[styles.neutralButtonText, { color: colors.text }]}>
-                新刊チェック状態を見る
-              </Text>
-            </Pressable>
-            <Text style={[styles.rowCopy, { color: colors.muted }]}>
-              全体チェックの実行は、定期実行用のsecretまたはservice roleを持つサーバー側だけに制限しています。
-            </Text>
-          </>
-        )}
       </View>
 
       <View style={[styles.section, { borderBottomColor: colors.border }]}>

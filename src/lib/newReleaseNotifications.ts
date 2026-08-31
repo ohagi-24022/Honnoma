@@ -174,36 +174,6 @@ export async function registerForNewReleasePushToken() {
   return token.data;
 }
 
-export async function sendNewReleaseDebugNotification() {
-  const Notifications = await getNotifications(false);
-
-  if (Platform.OS === 'android') {
-    await Notifications.setNotificationChannelAsync('new-releases', {
-      name: '新刊通知',
-      importance: Notifications.AndroidImportance.DEFAULT,
-    });
-  }
-
-  const { status: existingStatus } = await Notifications.getPermissionsAsync();
-  let finalStatus = existingStatus;
-  if (existingStatus !== 'granted') {
-    const { status } = await Notifications.requestPermissionsAsync();
-    finalStatus = status;
-  }
-
-  if (finalStatus !== 'granted') {
-    throw new Error('通知が許可されていません。端末の設定で通知を許可してください。');
-  }
-
-  await Notifications.scheduleNotificationAsync({
-    content: {
-      body: 'この通知が表示されれば、端末側の通知表示は動作しています。',
-      data: { url: '/(tabs)' },
-      title: '本の間 通知テスト',
-    },
-    trigger: null,
-  });
-}
 export function buildSeriesSubscriptions(seriesGroups: SeriesGroup[]): NewReleaseSubscriptionInput[] {
   return seriesGroups.map((group) => ({
     latestVolume: group.latestVolume,

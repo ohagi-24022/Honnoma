@@ -127,7 +127,7 @@ Deno.serve(async (request: Request) => {
     try {
       body = JSON.parse(text);
     } catch {
-      // Keep non-JSON error bodies visible to the app debug modal.
+      // Preserve non-JSON error bodies for troubleshooting failed proxy calls.
     }
 
     return jsonResponse({
@@ -376,3 +376,4 @@ function jsonResponse(body: unknown, status = 200) {
     },
   });
 }
+

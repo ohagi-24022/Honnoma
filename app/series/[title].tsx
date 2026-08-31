@@ -543,46 +543,11 @@ export default function SeriesScreen() {
             ? `購入価格: ${formatPrice(result.afterPurchasePrice)}（維持）`
             : '購入価格: 未取得'
         : null;
-      if (!__DEV__) {
-        Alert.alert(
-          '書籍情報を更新しました',
-          [`表紙: ${beforeCover} → ${afterCover}`, `出版社: ${result.publisher ?? '未取得'}`, purchasePriceSummary]
-            .filter(Boolean)
-            .join('\n'),
-        );
-        return;
-      }
       Alert.alert(
-        '再取得デバッグ',
-        [
-          `対象: ${book.title}`,
-          `検索語: ${result.lookupTitle}`,
-          `取得タイトル: ${result.title}`,
-          `シリーズ: ${result.seriesTitle ?? 'なし'}`,
-          `巻数: ${result.volumeNumber ?? 'なし'}`,
-          `出版社: ${result.publisher ?? 'なし'}`,
-          purchasePriceSummary,
-          `表紙: ${beforeCover} → ${afterCover}`,
-          result.afterThumbnailUrl ? `表紙URL: ${result.afterThumbnailUrl}` : '表紙URL: なし',
-          ...(result.debugEntries?.length
-            ? [
-                '',
-                'API候補:',
-                ...result.debugEntries.map((entry, index) =>
-                  [
-                    `${index + 1}. ${entry.provider} / ${entry.status}`,
-                    `検索: ${entry.query}`,
-                    entry.title ? `題名: ${entry.title}` : undefined,
-                    entry.volumeNumber ? `巻数: ${entry.volumeNumber}` : undefined,
-                    entry.coverUrl ? '表紙URL: あり' : '表紙URL: なし',
-                    entry.reason ? `理由: ${entry.reason}` : undefined,
-                  ]
-                    .filter(Boolean)
-                    .join(' / '),
-                ),
-              ]
-            : []),
-        ].join('\n'),
+        '書籍情報を更新しました',
+        [`表紙: ${beforeCover} → ${afterCover}`, `出版社: ${result.publisher ?? '未取得'}`, purchasePriceSummary]
+          .filter(Boolean)
+          .join('\n'),
       );
     } catch (error) {
       Alert.alert('本の間', error instanceof Error ? error.message : '再取得に失敗しました。');
