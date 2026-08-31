@@ -19,6 +19,7 @@ import { HeaderBackButton } from '../src/components/HeaderBackButton';
 import { deleteCurrentAccount } from '../src/lib/account';
 import {
   getNewReleaseNotificationLogs,
+  markNewReleaseNotificationsSeen,
   NewReleaseNotificationLog,
 } from '../src/lib/newReleaseNotifications';
 import { useAppSettings } from '../src/store/AppSettingsContext';
@@ -140,7 +141,9 @@ export default function AccountScreen() {
     setLoading(true);
     setError(null);
     try {
-      setLogs(await getNewReleaseNotificationLogs(user.id, 50));
+      const nextLogs = await getNewReleaseNotificationLogs(user.id, 50);
+      setLogs(nextLogs);
+      await markNewReleaseNotificationsSeen(user.id);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : '通知履歴を取得できませんでした。');
     } finally {

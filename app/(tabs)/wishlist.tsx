@@ -57,6 +57,7 @@ export default function WishlistScreen() {
   const [selectedCandidate, setSelectedCandidate] = useState<SeriesSearchCandidate | null>(null);
   const [selectedPriority, setSelectedPriority] = useState(priorityOptions[1]);
   const [memoOpen, setMemoOpen] = useState(false);
+  const [quickAddOpen, setQuickAddOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
   const [editingNote, setEditingNote] = useState('');
@@ -250,6 +251,7 @@ export default function WishlistScreen() {
     setSelectedCandidate(null);
     setMemoOpen(false);
     setSelectedPriority(priorityOptions[1]);
+    setQuickAddOpen(false);
   };
 
   const startEditing = (item: WishlistItem) => {
@@ -364,6 +366,26 @@ export default function WishlistScreen() {
         scrollEventThrottle={16}
       >
 
+      {!editMode ? (
+        <Pressable
+          accessibilityLabel={quickAddOpen ? '欲しい漫画の追加パネルを閉じる' : '欲しい漫画の追加パネルを開く'}
+          onPress={() => setQuickAddOpen((current) => !current)}
+          style={[styles.quickAddToggle, { backgroundColor: colors.surface, borderColor: quickAddOpen ? colors.text : colors.border }]}
+        >
+          <View style={styles.quickAddToggleMain}>
+            <View style={[styles.quickAddToggleIcon, { backgroundColor: colors.elevated }]}>
+              <Ionicons color={colors.text} name="add" size={20} />
+            </View>
+            <View style={styles.quickAddToggleText}>
+              <Text style={[styles.quickAddToggleTitle, { color: colors.text }]}>欲しい漫画を追加</Text>
+              <Text style={[styles.copy, { color: colors.muted }]} numberOfLines={1}>作品名から候補を探してリストに入れます</Text>
+            </View>
+          </View>
+          <Ionicons color={colors.muted} name={quickAddOpen ? 'chevron-up' : 'chevron-down'} size={20} />
+        </Pressable>
+      ) : null}
+
+      {!editMode && quickAddOpen ? (
       <View style={[styles.quickAdd, { backgroundColor: colors.elevated }]}>
         <View style={styles.inputRow}>
           <TextInput
@@ -501,6 +523,7 @@ export default function WishlistScreen() {
           </Text>
         </Pressable>
       </View>
+      ) : null}
 
       {!editMode ? (
         <View
@@ -576,6 +599,14 @@ export default function WishlistScreen() {
           <Text style={[styles.copy, { color: colors.muted }]}>
             気になった作品をここに置いておくと、あとで優先順位と購入先をすぐ確認できます。
           </Text>
+          <Pressable
+            accessibilityLabel="欲しい漫画の追加パネルを開く"
+            onPress={() => setQuickAddOpen(true)}
+            style={[styles.emptyAddButton, { backgroundColor: colors.text }]}
+          >
+            <Ionicons color={colors.background} name="add-circle-outline" size={18} />
+            <Text style={[styles.primaryAddText, { color: colors.background }]}>欲しい漫画を追加</Text>
+          </Pressable>
           <View style={styles.emptyHints}>
             <View style={[styles.emptyHint, { backgroundColor: colors.elevated }]}>
               <Ionicons color={colors.text} name="add-circle-outline" size={16} />
@@ -752,6 +783,21 @@ const styles = StyleSheet.create({
   statBox: { alignItems: 'center', borderRadius: 8, flex: 1, gap: 2, minHeight: 56, justifyContent: 'center' },
   statValue: { fontSize: 17, fontWeight: '900' },
   statLabel: { fontSize: 11, fontWeight: '800' },
+  quickAddToggle: {
+    alignItems: 'center',
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 10,
+    justifyContent: 'space-between',
+    minHeight: 58,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  quickAddToggleMain: { alignItems: 'center', flex: 1, flexDirection: 'row', gap: 10 },
+  quickAddToggleIcon: { alignItems: 'center', borderRadius: 8, height: 36, justifyContent: 'center', width: 36 },
+  quickAddToggleText: { flex: 1, gap: 2 },
+  quickAddToggleTitle: { fontSize: 15, fontWeight: '900' },
   quickAdd: { borderRadius: 8, gap: 12, padding: 12 },
   inputRow: { alignItems: 'center', flexDirection: 'row', gap: 8 },
   titleInput: { borderRadius: 8, flex: 1, fontSize: 16, height: 46, paddingHorizontal: 12 },
@@ -830,6 +876,16 @@ const styles = StyleSheet.create({
   topCandidateTitle: { fontSize: 13, fontWeight: '900', lineHeight: 18, minHeight: 36 },
   emptyBox: { alignItems: 'center', borderRadius: 8, borderWidth: 1, gap: 6, padding: 18 },
   emptyTitle: { fontSize: 16, fontWeight: '800' },
+  emptyAddButton: {
+    alignItems: 'center',
+    alignSelf: 'stretch',
+    borderRadius: 8,
+    flexDirection: 'row',
+    gap: 6,
+    height: 42,
+    justifyContent: 'center',
+    marginTop: 8,
+  },
   emptyHints: { alignSelf: 'stretch', gap: 8, marginTop: 8 },
   emptyHint: {
     alignItems: 'center',
@@ -904,3 +960,4 @@ const styles = StyleSheet.create({
     width: 36,
   },
 });
+

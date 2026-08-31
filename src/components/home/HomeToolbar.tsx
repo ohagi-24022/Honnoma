@@ -16,6 +16,7 @@ type HomeToolbarProps = {
   error: string | null;
   query: string;
   filterActive: boolean;
+  myPageHasNotification: boolean;
   filterLabel: string;
   sortLabel: string;
   onHeightChange: (height: number) => void;
@@ -39,6 +40,7 @@ export function HomeToolbar({
   error,
   query,
   filterActive,
+  myPageHasNotification,
   filterLabel,
   sortLabel,
   onHeightChange,
@@ -81,11 +83,12 @@ export function HomeToolbar({
           <Text numberOfLines={1} style={[styles.subtitle, { color: colors.muted }]}>{countLabel}</Text>
         </View>
         <Pressable
-          accessibilityLabel="マイページを開く"
+          accessibilityLabel={myPageHasNotification ? "マイページを開く。未確認の新刊通知があります" : "マイページを開く"}
           onPress={onOpenMyPage}
           style={[styles.accountButton, { borderColor: colors.border }]}
         >
           <Ionicons color={colors.text} name="person-circle-outline" size={24} />
+          {myPageHasNotification ? <View style={[styles.activeDot, { backgroundColor: colors.primary }]} /> : null}
         </Pressable>
       </View>
 

@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useScrollToTop } from '@react-navigation/native';
+import { useFocusEffect, useScrollToTop } from '@react-navigation/native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -27,6 +27,7 @@ import { SeriesCard } from '../../src/components/home/SeriesCard';
 import { lookupLatestSeriesPublication, SeriesPublicationInfo } from '../../src/lib/bookApis';
 import {
   getNewReleaseSubscriptions,
+  hasUnseenNewReleaseNotifications,
   setNewReleaseSeriesSubscription,
   syncNewReleaseSubscriptions,
 } from '../../src/lib/newReleaseNotifications';
@@ -344,6 +345,7 @@ export default function HomeScreen() {
   const [visibleFavoriteSeriesKeys, setVisibleFavoriteSeriesKeys] = useState<string[]>(favoriteSeriesKeys);
   const [refreshingSeriesTitle, setRefreshingSeriesTitle] = useState<string | null>(null);
   const [notificationSeriesKeys, setNotificationSeriesKeys] = useState<string[]>([]);
+  const [hasUnseenNewReleaseNotificationsState, setHasUnseenNewReleaseNotificationsState] = useState(false);
   const [updatingNotificationSeriesKey, setUpdatingNotificationSeriesKey] = useState<string | null>(null);
   const toolbarTranslateY = useRef(new Animated.Value(0)).current;
   const seriesListRef = useRef<FlatList<SeriesGroup>>(null);
@@ -360,6 +362,25 @@ export default function HomeScreen() {
   const backgroundPublicationQueuedKeyRef = useRef(new Set<string>());
   const backgroundPublicationRunningRef = useRef(false);
   const favoriteSeriesKeySet = useMemo(() => new Set(visibleFavoriteSeriesKeys), [visibleFavoriteSeriesKeys]);
+  const refreshUnseenNewReleaseNotifications = useCallback(async () => {
+    if (!user) {
+      setHasUnseenNewReleaseNotificationsState(false);
+      return;
+    }
+
+    const hasUnseen = await hasUnseenNewReleaseNotifications(user.id);
+    setHasUnseenNewReleaseNotificationsState(hasUnseen);
+  }, [user]);
+
+  useEffect(() => {
+    void refreshUnseenNewReleaseNotifications();
+  }, [refreshUnseenNewReleaseNotifications]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void refreshUnseenNewReleaseNotifications();
+    }, [refreshUnseenNewReleaseNotifications]),
+  );
   const coverGridColumns = Math.max(3, Math.floor((windowWidth - 36 + 10) / 92));
   const coverTileWidth = (windowWidth - 36 - (coverGridColumns - 1) * 10) / coverGridColumns;
   activeViewModeRef.current = viewMode;
@@ -1025,6 +1046,7 @@ export default function HomeScreen() {
         error={error}
         query={query}
         filterActive={getActiveFilters(filters).length > 0}
+        myPageHasNotification={hasUnseenNewReleaseNotificationsState}
         filterLabel={selectedFilterLabel}
         sortLabel={selectedSortLabel}
         onHeightChange={(nextHeight) => {

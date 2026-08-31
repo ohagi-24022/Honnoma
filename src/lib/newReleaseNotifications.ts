@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';import { Platform } from 'react-native';
 
 import { SeriesGroup } from './seriesSelectors';
@@ -5,6 +6,39 @@ import { normalizeSeriesKey } from './series';
 import { supabase } from './supabase';
 
 
+const NEW_RELEASE_NOTIFICATION_LAST_SEEN_STORAGE_PREFIX = 'booknest.new-release-notifications.last-seen.v1';
+
+function getNotificationLastSeenStorageKey(userId: string) {
+  return `${NEW_RELEASE_NOTIFICATION_LAST_SEEN_STORAGE_PREFIX}:${userId}`;
+}
+
+export async function getNewReleaseNotificationsLastSeenAt(userId: string) {
+  return AsyncStorage.getItem(getNotificationLastSeenStorageKey(userId));
+}
+
+export async function markNewReleaseNotificationsSeen(userId: string, seenAt = new Date().toISOString()) {
+  await AsyncStorage.setItem(getNotificationLastSeenStorageKey(userId), seenAt);
+}
+
+export async function hasUnseenNewReleaseNotifications(userId: string) {
+  if (!supabase) return false;
+
+  const lastSeenAt = await getNewReleaseNotificationsLastSeenAt(userId);
+  let query = supabase
+    .from('notification_logs')
+    .select('id,created_at')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(1);
+
+  if (lastSeenAt) {
+    query = query.gt('created_at', lastSeenAt);
+  }
+
+  const { data, error } = await query;
+  if (error) return false;
+  return (data?.length ?? 0) > 0;
+}
 export type NewReleaseSubscriptionInput = {
   latestVolume?: number;
   seriesKey: string;

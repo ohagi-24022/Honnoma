@@ -14,6 +14,7 @@ import {
 import { HeaderBackButton } from '../src/components/HeaderBackButton';
 import {
   getNewReleaseNotificationLogs,
+  markNewReleaseNotificationsSeen,
   NewReleaseNotificationLog,
 } from '../src/lib/newReleaseNotifications';
 import { useAuth } from '../src/store/AuthContext';
@@ -41,7 +42,9 @@ export default function NotificationsScreen() {
     setLoading(true);
     setError(null);
     try {
-      setLogs(await getNewReleaseNotificationLogs(user.id, 80));
+      const nextLogs = await getNewReleaseNotificationLogs(user.id, 80);
+      setLogs(nextLogs);
+      await markNewReleaseNotificationsSeen(user.id);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : '通知履歴を取得できませんでした。');
     } finally {
