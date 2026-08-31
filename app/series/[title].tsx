@@ -133,7 +133,12 @@ export default function SeriesScreen() {
   const readCount = ownedItems.filter((item) => item.status === 'read').length;
   const readingCount = ownedItems.filter((item) => item.status === 'reading').length;
   const unreadCount = ownedItems.filter((item) => item.status === 'unread').length;
-  const readPercent = ownedItems.length > 0 ? Math.round((readCount / ownedItems.length) * 100) : 0;
+  const ownershipItems = items.filter((item) => item.isMissing || (isOwnedBook(item) && item.volumeKind !== 'extra'));
+  const ownedMainCount = ownershipItems.filter(isOwnedBook).length;
+  const ownershipPercent = ownershipItems.length > 0 ? Math.round((ownedMainCount / ownershipItems.length) * 100) : 0;
+  const nextReadingVolume = ownedItems
+    .filter((item) => item.volumeKind !== 'extra' && item.status !== 'read' && typeof item.volumeNumber === 'number')
+    .sort((left, right) => (left.volumeNumber ?? 0) - (right.volumeNumber ?? 0))[0]?.volumeNumber;
   const pageVolumes = pageItems
     .map((item) => item.volumeNumber)
     .filter((volume): volume is number => typeof volume === 'number');
@@ -786,9 +791,10 @@ export default function SeriesScreen() {
               missingCount={missingItems.length}
               ownedCount={ownedItems.length}
               pageRangeLabel={pageRangeLabel}
+              nextReadingVolume={nextReadingVolume}
+              ownershipPercent={ownershipPercent}
               readCount={readCount}
               readingCount={readingCount}
-              readPercent={readPercent}
               unreadCount={unreadCount}
             />
             <Pagination page={page} pageCount={pageCount} onChange={setPage} />
@@ -1030,18 +1036,20 @@ export default function SeriesScreen() {
 function SeriesOverview({
   missingCount,
   ownedCount,
+  nextReadingVolume,
+  ownershipPercent,
   pageRangeLabel,
   readCount,
   readingCount,
-  readPercent,
   unreadCount,
 }: {
   missingCount: number;
   ownedCount: number;
+  nextReadingVolume?: number;
+  ownershipPercent: number;
   pageRangeLabel: string;
   readCount: number;
   readingCount: number;
-  readPercent: number;
   unreadCount: number;
 }) {
   const { colors } = useAppTheme();
@@ -1055,12 +1063,12 @@ function SeriesOverview({
           <Text style={[styles.overviewTitle, { color: colors.text }]}>{pageRangeLabel}</Text>
         </View>
         <View style={[styles.readProgressBadge, { backgroundColor: colors.elevated }]}>
-          <Text style={[styles.readProgressText, { color: colors.text }]}>読了 {readPercent}%</Text>
+          <Text style={[styles.readProgressText, { color: colors.text }]}>所持 {ownershipPercent}%</Text>
         </View>
       </View>
 
       <View style={[styles.progressTrack, { backgroundColor: colors.elevated }]}>
-        <View style={[styles.progressFill, { backgroundColor: colors.success, width: `${readPercent}%` }]} />
+        <View style={[styles.progressFill, { backgroundColor: colors.primary, width: `${ownershipPercent}%` }]} />
       </View>
 
       <View style={styles.overviewStats}>
@@ -1070,7 +1078,7 @@ function SeriesOverview({
       </View>
 
       <Text style={[styles.statusSummaryText, { color: colors.muted }]}>
-        未読 {unreadCount} / 読書中 {readingCount} / 読了 {readCount}
+        {nextReadingVolume ? `続き: ${nextReadingVolume}巻から / ` : ''}未読 {unreadCount} / 読書中 {readingCount} / 読了 {readCount}
       </Text>
     </View>
   );
@@ -1357,5 +1365,4 @@ const styles = StyleSheet.create({
     width: 40,
   },
 });
-
 

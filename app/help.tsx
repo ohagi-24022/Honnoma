@@ -24,6 +24,28 @@ const t = {
 
 const helpCategories: HelpCategory[] = [
   {
+    icon: 'sparkles-outline',
+    title: 'はじめて',
+    sections: [
+      {
+        title: 'まずは1冊登録する',
+        body: '本棚が空のときは、登録タブからISBNバーコードを読み取って最初の1冊を追加します。バーコードがない本は、手動登録をONにして入力できます。',
+      },
+      {
+        title: 'ログインすると同期できます',
+        body: 'アカウントを作成してログインすると、本棚、欲しいリスト、通知設定をクラウドに保存できます。未ログインで登録した本は、ログイン後にローカル蔵書の移行から反映できます。',
+      },
+      {
+        title: 'クラウド保存を確認する',
+        body: 'ログイン後は本棚、欲しいリスト、通知設定がクラウド保存の対象になります。マイページや設定から同期状態を確認できます。'
+      },
+      {
+        title: '欲しい本をあとで見返す',
+        body: '気になったシリーズは欲しいタブに追加できます。ランキングや本棚からも追加できるので、次に買いたい本を整理しやすくなります。',
+      },
+    ],
+  },
+  {
     icon: 'barcode-outline',
     title: '\u767b\u9332',
     sections: [
@@ -263,3 +285,4 @@ const styles = StyleSheet.create({
   cardTitle: { fontSize: 16, fontWeight: '800' },
   cardCopy: { fontSize: 13, lineHeight: 20, marginTop: 8 },
 });
+

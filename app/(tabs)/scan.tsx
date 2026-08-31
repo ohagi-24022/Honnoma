@@ -766,6 +766,7 @@ export default function ScanScreen() {
                 onPress={() => {
                   setPendingQueueTarget(null);
                   setShowQueueReview(false);
+                  setScanMode('continuous');
                   setIsScanning(true);
                 }}
                 style={[styles.secondaryButton, { borderColor: colors.border }]}
@@ -1106,7 +1107,7 @@ const styles = StyleSheet.create({
   queueProgressTrack: { borderRadius: 999, height: 8, overflow: 'hidden' },
   queueProgressFill: { borderRadius: 999, height: '100%' },
   queueProgressText: { fontSize: 12, fontWeight: '800', lineHeight: 16, textAlign: 'right' },
-  queueList: { maxHeight: 430 },
+  queueList: { maxHeight: 470 },
   queueListContent: { gap: 10, paddingRight: 2 },
   queueItem: {
     alignItems: 'flex-start',
@@ -1210,6 +1211,7 @@ const styles = StyleSheet.create({
   },
   submitButtonText: { fontSize: 15, fontWeight: '800' },
 });
+
 
 
 

@@ -54,6 +54,12 @@ export function EmptyLibraryState({
           <Text style={[styles.actionText, { color: colors.background }]}>本を登録する</Text>
         </Pressable>
       </Link>
+      <Text style={[styles.accountCopy, { color: colors.muted }]}>アカウントを作ると、本棚をクラウドに保存できます。</Text>
+      <Link href="/signup" asChild>
+        <Pressable style={[styles.secondaryAction, { borderColor: colors.border }]}>
+          <Text style={[styles.secondaryActionText, { color: colors.text }]}>{'>'} 新規登録へ進む</Text>
+        </Pressable>
+      </Link>
     </View>
   );
 }
@@ -74,4 +80,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
   },
   actionText: { fontSize: 14, fontWeight: '800' },
+  accountCopy: { fontSize: 12, lineHeight: 18, marginTop: 18, textAlign: 'center' },
+  secondaryAction: {
+    alignItems: 'center',
+    borderRadius: 8,
+    borderWidth: 1,
+    height: 38,
+    justifyContent: 'center',
+    marginTop: 8,
+    minWidth: 156,
+    paddingHorizontal: 16,
+  },
+  secondaryActionText: { fontSize: 13, fontWeight: '800' },
 });
+

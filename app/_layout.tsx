@@ -7,6 +7,8 @@ import 'react-native-gesture-handler';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { OnboardingGate } from '../src/components/OnboardingGate';
+
 import { AppSettingsProvider } from '../src/store/AppSettingsContext';
 import { AuthProvider } from '../src/store/AuthContext';
 import { LibraryProvider } from '../src/store/LibraryContext';
@@ -40,6 +42,7 @@ export default function RootLayout() {
             <WishlistProvider>
               <LibraryProvider>
                 <RootStack />
+                <OnboardingGate />
               </LibraryProvider>
             </WishlistProvider>
           </AppSettingsProvider>
