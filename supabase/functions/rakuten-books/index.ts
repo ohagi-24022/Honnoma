@@ -2,7 +2,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
 const RAKUTEN_API_BASE_URL = 'https://openapi.rakuten.co.jp/services/api';
-const DEFAULT_REFERER = 'https://github.com/ohagi-24022/BookNest';
+const DEFAULT_REFERER = 'https://github.com/ohagi-24022/Honnoma';
 const PROXY_VERSION = '2026-07-29-envelope-status';
 const RAW_TLS_TIMEOUT_MS = 10_000;
 

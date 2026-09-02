@@ -4,10 +4,12 @@ import { router } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { getStorageItemWithLegacy } from '../lib/asyncStorageCompat';
 import { useAuth } from '../store/AuthContext';
 import { useAppTheme } from '../store/ThemeContext';
 
-const ONBOARDING_STORAGE_PREFIX = 'booknest.onboarding.login.v1';
+const LEGACY_ONBOARDING_STORAGE_PREFIX = 'booknest.onboarding.login.v1';
+const ONBOARDING_STORAGE_PREFIX = 'honnoma.onboarding.login.v1';
 
 const slides = [
   {
@@ -29,6 +31,10 @@ const slides = [
 
 function storageKey(userId: string) {
   return `${ONBOARDING_STORAGE_PREFIX}:${userId}`;
+}
+
+function legacyStorageKey(userId: string) {
+  return `${LEGACY_ONBOARDING_STORAGE_PREFIX}:${userId}`;
 }
 
 export function OnboardingGate() {
@@ -54,7 +60,7 @@ export function OnboardingGate() {
     }
 
     setChecking(true);
-    AsyncStorage.getItem(storageKey(user.id))
+    getStorageItemWithLegacy(storageKey(user.id), legacyStorageKey(user.id))
       .then((value) => {
         if (!active) return;
         setVisible(value !== 'seen');

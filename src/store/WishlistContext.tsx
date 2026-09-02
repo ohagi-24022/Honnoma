@@ -11,11 +11,15 @@ import {
   useState,
 } from 'react';
 
+import { getStorageItemWithLegacy } from '../lib/asyncStorageCompat';
 import { parseSeriesTitle } from '../lib/series';
 import { supabase } from '../lib/supabase';
 import { useAuth } from './AuthContext';
 
-const GUEST_STORAGE_KEY = 'booknest.wishlist.v1.guest';
+const LEGACY_GUEST_STORAGE_KEY = 'booknest.wishlist.v1.guest';
+const GUEST_STORAGE_KEY = 'honnoma.wishlist.v1.guest';
+const LEGACY_STORAGE_KEY_PREFIX = 'booknest.wishlist.v1';
+const STORAGE_KEY_PREFIX = 'honnoma.wishlist.v1';
 
 export type WishlistItem = {
   id: string;
@@ -77,7 +81,11 @@ function normalizeWantedTitle(title: string) {
 }
 
 function getStorageKey(userId?: string) {
-  return userId ? `booknest.wishlist.v1.${userId}` : GUEST_STORAGE_KEY;
+  return userId ? `${STORAGE_KEY_PREFIX}.${userId}` : GUEST_STORAGE_KEY;
+}
+
+function getLegacyStorageKey(userId?: string) {
+  return userId ? `${LEGACY_STORAGE_KEY_PREFIX}.${userId}` : LEGACY_GUEST_STORAGE_KEY;
 }
 
 function toWishlistItem(row: WantedMangaRow): WishlistItem {
@@ -183,7 +191,7 @@ export function WishlistProvider({ children }: PropsWithChildren) {
       hydratedStorageKeyRef.current = null;
       setHydrated(false);
       if (previousStorageKey !== storageKey) setItems([]);
-      const storedItems = await AsyncStorage.getItem(storageKey);
+      const storedItems = await getStorageItemWithLegacy(storageKey, getLegacyStorageKey(user?.id));
       let nextItems = parseStoredItems(storedItems);
 
       if (supabase && user) {

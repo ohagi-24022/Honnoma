@@ -39,8 +39,8 @@ uses app version auto-incrementing through EAS.
 Current identifiers are placeholders:
 
 ```txt
-iOS: com.booknest.app
-Android: com.booknest.app
+iOS: com.honnoma.app
+Android: com.honnoma.app
 ```
 
 Change them before store submission if you want an account-specific namespace.

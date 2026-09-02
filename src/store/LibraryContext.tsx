@@ -11,6 +11,7 @@ import {
   useState,
 } from 'react';
 
+import { getStorageItemWithLegacy, removeStorageItemWithLegacy } from '../lib/asyncStorageCompat';
 import { lookupBookByIsbn, lookupBookByTitle } from '../lib/bookApis';
 import { getBookMetadataOverrideDetails } from '../lib/bookMetadataOverrides';
 import { normalizeAuthor } from '../lib/bookMetadata';
@@ -34,8 +35,10 @@ import { useAuth } from './AuthContext';
 
 type SupabaseClient = NonNullable<typeof supabase>;
 
-const STORAGE_KEY = 'booknest.library.v1';
-const METADATA_ENRICHMENT_CACHE_KEY = 'booknest.metadata-enrichment.v1';
+const LEGACY_STORAGE_KEY = 'booknest.library.v1';
+const LEGACY_METADATA_ENRICHMENT_CACHE_KEY = 'booknest.metadata-enrichment.v1';
+const STORAGE_KEY = 'honnoma.library.v1';
+const METADATA_ENRICHMENT_CACHE_KEY = 'honnoma.metadata-enrichment.v1';
 const DEMO_USER_ID = 'local-user';
 const BOOKS_FETCH_PAGE_SIZE = 1000;
 const METADATA_ENRICHMENT_ERROR_RETRY_MS = 24 * 60 * 60 * 1000;
@@ -517,14 +520,14 @@ export function LibraryProvider({ children }: PropsWithChildren) {
     return () => subscription.remove();
   }, [configured, refreshLibrary, user]);
   useEffect(() => {
-    AsyncStorage.getItem(METADATA_ENRICHMENT_CACHE_KEY)
+    getStorageItemWithLegacy(METADATA_ENRICHMENT_CACHE_KEY, LEGACY_METADATA_ENRICHMENT_CACHE_KEY)
       .then((storedCache) => {
         metadataEnrichmentCacheRef.current = parseMetadataEnrichmentCache(storedCache);
       })
       .finally(() => setMetadataEnrichmentCacheLoaded(true));
   }, []);
   useEffect(() => {
-    AsyncStorage.getItem(STORAGE_KEY)
+    getStorageItemWithLegacy(STORAGE_KEY, LEGACY_STORAGE_KEY)
       .then((storedBooks) => {
         if (!storedBooks) return;
         const parsedBooks = (JSON.parse(storedBooks) as Book[]).map(normalizeBookReadings);
@@ -644,7 +647,7 @@ export function LibraryProvider({ children }: PropsWithChildren) {
 
         }
         if (pendingLocalBooks.length > 0) {
-          await AsyncStorage.removeItem(STORAGE_KEY);
+          await removeStorageItemWithLegacy(STORAGE_KEY, LEGACY_STORAGE_KEY);
           setPendingLocalBooks([]);
         }
         setBooks([...booksToImport, ...cloudBooks]);
@@ -892,7 +895,7 @@ export function LibraryProvider({ children }: PropsWithChildren) {
       setBooks((currentBooks) => [...booksToImport, ...currentBooks]);
     }
 
-    await AsyncStorage.removeItem(STORAGE_KEY);
+    await removeStorageItemWithLegacy(STORAGE_KEY, LEGACY_STORAGE_KEY);
     setPendingLocalBooks([]);
     return booksToImport.length;
   }, [books, pendingLocalBooks, user]);

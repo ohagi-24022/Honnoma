@@ -19,7 +19,7 @@ const APPLY_READING_CORRECTIONS_SECRET =
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
 const corsHeaders = {
-  'Access-Control-Allow-Headers': 'authorization, x-booknest-cron-secret, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-honnoma-cron-secret, x-booknest-cron-secret, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Access-Control-Allow-Origin': '*',
 };
@@ -138,7 +138,8 @@ function hasKanji(value: string) {
 
 function isAuthorizedSchedulerRequest(request: Request) {
   if (!APPLY_READING_CORRECTIONS_SECRET) return false;
-  return request.headers.get('x-booknest-cron-secret') === APPLY_READING_CORRECTIONS_SECRET;
+  const cronSecret = request.headers.get('x-honnoma-cron-secret') ?? request.headers.get('x-booknest-cron-secret');
+  return cronSecret === APPLY_READING_CORRECTIONS_SECRET;
 }
 
 async function safeJson(request: Request) {

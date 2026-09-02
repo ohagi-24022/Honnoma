@@ -1,11 +1,13 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import { getStorageItemWithLegacy } from './asyncStorageCompat';
 import { SeriesPublicationInfo } from './bookApis';
 import { normalizeSeriesKey } from './series';
 import { supabase } from './supabase';
 import { isMissingSupabaseRelationError } from './supabaseErrors';
 
-export const SERIES_METADATA_STORAGE_KEY = 'booknest.series-metadata.v1';
+const LEGACY_SERIES_METADATA_STORAGE_KEY = 'booknest.series-metadata.v1';
+export const SERIES_METADATA_STORAGE_KEY = 'honnoma.series-metadata.v1';
 
 export type SeriesMetadataOverride = {
   seriesKey: string;
@@ -73,7 +75,7 @@ function rowToOverride(row: SeriesMetadataRow): SeriesMetadataOverride {
 }
 
 export async function loadLocalSeriesMetadata() {
-  const stored = await AsyncStorage.getItem(SERIES_METADATA_STORAGE_KEY);
+  const stored = await getStorageItemWithLegacy(SERIES_METADATA_STORAGE_KEY, LEGACY_SERIES_METADATA_STORAGE_KEY);
   if (!stored) return {} as Record<string, SeriesMetadataOverride>;
   const parsed = JSON.parse(stored) as Record<string, SeriesMetadataOverride>;
   return Object.fromEntries(Object.values(parsed).map((value) => {

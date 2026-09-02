@@ -10,6 +10,7 @@ import {
   useState,
 } from 'react';
 
+import { getStorageItemWithLegacy } from '../lib/asyncStorageCompat';
 import { hasEnabledNewReleasePushToken } from '../lib/newReleaseNotifications';
 import { normalizeSeriesKey } from '../lib/series';
 import { supabase } from '../lib/supabase';
@@ -17,9 +18,14 @@ import { isFutureJwtError, isMissingSupabaseRelationError } from '../lib/supabas
 import { useAuth } from './AuthContext';
 
 const LEGACY_STORAGE_KEY = 'booknest.app-settings.v1';
-const DEVICE_STORAGE_KEY = 'booknest.device-settings.v1';
-const GUEST_USER_STORAGE_KEY = 'booknest.user-settings.guest.v1';
-const NEW_RELEASE_NOTIFICATION_STORAGE_KEY_PREFIX = 'booknest.new-release-notifications';
+const LEGACY_DEVICE_STORAGE_KEY = 'booknest.device-settings.v1';
+const LEGACY_GUEST_USER_STORAGE_KEY = 'booknest.user-settings.guest.v1';
+const LEGACY_USER_STORAGE_KEY_PREFIX = 'booknest.user-settings';
+const LEGACY_NEW_RELEASE_NOTIFICATION_STORAGE_KEY_PREFIX = 'booknest.new-release-notifications';
+const DEVICE_STORAGE_KEY = 'honnoma.device-settings.v1';
+const GUEST_USER_STORAGE_KEY = 'honnoma.user-settings.guest.v1';
+const USER_STORAGE_KEY_PREFIX = 'honnoma.user-settings';
+const NEW_RELEASE_NOTIFICATION_STORAGE_KEY_PREFIX = 'honnoma.new-release-notifications';
 
 type UserSettings = {
   favoriteSeriesKeys: string[];
@@ -105,8 +111,10 @@ const AppSettingsContext = createContext<AppSettingsContextValue | null>(null);
 export function AppSettingsProvider({ children }: PropsWithChildren) {
   const { user } = useAuth();
   const userId = user?.id ?? null;
-  const userStorageKey = userId ? `booknest.user-settings.${userId}.v1` : GUEST_USER_STORAGE_KEY;
+  const userStorageKey = userId ? `${USER_STORAGE_KEY_PREFIX}.${userId}.v1` : GUEST_USER_STORAGE_KEY;
+  const legacyUserStorageKey = userId ? `${LEGACY_USER_STORAGE_KEY_PREFIX}.${userId}.v1` : LEGACY_GUEST_USER_STORAGE_KEY;
   const newReleaseNotificationStorageKey = `${NEW_RELEASE_NOTIFICATION_STORAGE_KEY_PREFIX}.${userId ?? 'guest'}.v1`;
+  const legacyNewReleaseNotificationStorageKey = `${LEGACY_NEW_RELEASE_NOTIFICATION_STORAGE_KEY_PREFIX}.${userId ?? 'guest'}.v1`;
   const [userSettings, setUserSettings] = useState<UserSettings>(defaultUserSettings);
   const [deviceSettings, setDeviceSettings] = useState<DeviceSettings>(defaultDeviceSettings);
   const [hydrated, setHydrated] = useState(false);
@@ -120,11 +128,11 @@ export function AppSettingsProvider({ children }: PropsWithChildren) {
     setHydrated(false);
 
     Promise.all([
-      AsyncStorage.getItem(userStorageKey),
-      AsyncStorage.getItem(DEVICE_STORAGE_KEY),
+      getStorageItemWithLegacy(userStorageKey, legacyUserStorageKey),
+      getStorageItemWithLegacy(DEVICE_STORAGE_KEY, LEGACY_DEVICE_STORAGE_KEY),
       AsyncStorage.getItem(LEGACY_STORAGE_KEY),
-      AsyncStorage.getItem(GUEST_USER_STORAGE_KEY),
-      AsyncStorage.getItem(newReleaseNotificationStorageKey),
+      getStorageItemWithLegacy(GUEST_USER_STORAGE_KEY, LEGACY_GUEST_USER_STORAGE_KEY),
+      getStorageItemWithLegacy(newReleaseNotificationStorageKey, legacyNewReleaseNotificationStorageKey),
       userId ? hasEnabledNewReleasePushToken(userId) : Promise.resolve(false),
       userId ? loadRemoteFavoriteKeys(userId) : Promise.resolve([]),
     ])
@@ -190,7 +198,7 @@ export function AppSettingsProvider({ children }: PropsWithChildren) {
     return () => {
       cancelled = true;
     };
-  }, [newReleaseNotificationStorageKey, refreshNonce, userId, userStorageKey]);
+  }, [legacyNewReleaseNotificationStorageKey, legacyUserStorageKey, newReleaseNotificationStorageKey, refreshNonce, userId, userStorageKey]);
 
   useEffect(() => {
     if (!hydrated || hydratedStorageKeyRef.current !== userStorageKey) return;

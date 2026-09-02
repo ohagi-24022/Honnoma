@@ -5,7 +5,7 @@
 --
 -- `function_key` must be the service role key. The Edge Function rejects normal
 -- authenticated user requests. If you configure CHECK_NEW_RELEASES_SECRET in
--- Supabase secrets, you can also send it as `x-booknest-cron-secret` from a
+-- Supabase secrets, you can also send it as `x-honnoma-cron-secret` from a
 -- trusted scheduler instead of using this SQL cron example.
 --
 -- Supabase scheduled functions use pg_cron + pg_net to call Edge Functions.
@@ -18,7 +18,7 @@ create extension if not exists supabase_vault with schema vault;
 -- 11:30 JST = 02:30 UTC, 12:00 JST = 03:00 UTC.
 
 select cron.schedule(
-  'booknest-check-new-releases-at-1130-jst',
+  'honnoma-check-new-releases-at-1130-jst',
   '30 2 * * *',
   $$
   select net.http_post(
@@ -33,7 +33,7 @@ select cron.schedule(
 );
 
 select cron.schedule(
-  'booknest-deliver-new-release-notifications-at-1200-jst',
+  'honnoma-deliver-new-release-notifications-at-1200-jst',
   '0 3 * * *',
   $$
   select net.http_post(

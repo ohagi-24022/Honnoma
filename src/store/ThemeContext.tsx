@@ -1,4 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+
+import { getStorageItemWithLegacy } from '../lib/asyncStorageCompat';
 import {
   createContext,
   PropsWithChildren,
@@ -11,7 +13,8 @@ import { useColorScheme } from 'react-native';
 
 export type ThemeMode = 'system' | 'light' | 'dark';
 
-const STORAGE_KEY = 'booknest.theme.v1';
+const LEGACY_STORAGE_KEY = 'booknest.theme.v1';
+const STORAGE_KEY = 'honnoma.theme.v1';
 
 type ThemeColors = {
   background: string;
@@ -66,7 +69,7 @@ export function ThemeProvider({ children }: PropsWithChildren) {
   const [mode, setModeState] = useState<ThemeMode>('system');
 
   useEffect(() => {
-    AsyncStorage.getItem(STORAGE_KEY).then((storedMode) => {
+    getStorageItemWithLegacy(STORAGE_KEY, LEGACY_STORAGE_KEY).then((storedMode) => {
       if (storedMode === 'system' || storedMode === 'light' || storedMode === 'dark') {
         setModeState(storedMode);
       }

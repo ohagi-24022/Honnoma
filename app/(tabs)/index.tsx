@@ -19,6 +19,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useRouter } from 'expo-router';
 
 import { BookCover } from '../../src/components/BookCover';
+import { getStorageItemWithLegacy } from '../../src/lib/asyncStorageCompat';
 import { BookRow } from '../../src/components/home/BookRow';
 import { EmptyLibraryState } from '../../src/components/home/EmptyLibraryState';
 import { HomeToolbar } from '../../src/components/home/HomeToolbar';
@@ -71,8 +72,10 @@ type SeriesStats = {
   trailingUnownedVolumes: number[];
 };
 
-export const SERIES_PUBLICATION_STORAGE_KEY = 'booknest.series-publication.v1';
-const SERIES_PUBLICATION_ATTEMPT_STORAGE_KEY = 'booknest.series-publication-attempts.v1';
+const LEGACY_SERIES_PUBLICATION_STORAGE_KEY = 'booknest.series-publication.v1';
+const LEGACY_SERIES_PUBLICATION_ATTEMPT_STORAGE_KEY = 'booknest.series-publication-attempts.v1';
+export const SERIES_PUBLICATION_STORAGE_KEY = 'honnoma.series-publication.v1';
+const SERIES_PUBLICATION_ATTEMPT_STORAGE_KEY = 'honnoma.series-publication-attempts.v1';
 const SERIES_PUBLICATION_BACKGROUND_INTERVAL_MS = 6500;
 const SERIES_PUBLICATION_BACKGROUND_RETRY_MS = 12 * 60 * 60 * 1000;
 const filterOptions: Array<{ label: string; value: HomeFilter }> = [
@@ -443,12 +446,12 @@ export default function HomeScreen() {
   }, [appSettingsHydrated, seriesGroups, user]);
 
   useEffect(() => {
-    AsyncStorage.getItem(SERIES_PUBLICATION_STORAGE_KEY)
+    getStorageItemWithLegacy(SERIES_PUBLICATION_STORAGE_KEY, LEGACY_SERIES_PUBLICATION_STORAGE_KEY)
       .then((storedCache) => {
         if (storedCache) setPublicationCache(JSON.parse(storedCache) as SeriesPublicationCache);
       })
       .catch((cacheError) => console.warn('Failed to load series publication cache', cacheError));
-    AsyncStorage.getItem(SERIES_PUBLICATION_ATTEMPT_STORAGE_KEY)
+    getStorageItemWithLegacy(SERIES_PUBLICATION_ATTEMPT_STORAGE_KEY, LEGACY_SERIES_PUBLICATION_ATTEMPT_STORAGE_KEY)
       .then((storedAttempts) => {
         if (storedAttempts) setPublicationAttemptCache(JSON.parse(storedAttempts) as SeriesPublicationAttemptCache);
       })

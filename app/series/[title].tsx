@@ -16,6 +16,7 @@ import {
 } from 'react-native';
 
 import { BookCover } from '../../src/components/BookCover';
+import { getStorageItemWithLegacy } from '../../src/lib/asyncStorageCompat';
 import { buildPurchaseUrl, lookupBookByTitle, SeriesPublicationInfo } from '../../src/lib/bookApis';
 import { migrateNewReleaseSeriesSubscription } from '../../src/lib/newReleaseNotifications';
 import { normalizeSeriesKey } from '../../src/lib/series';
@@ -32,7 +33,8 @@ import { useWishlist } from '../../src/store/WishlistContext';
 import { Book, BookInput, MissingBook, ReadingStatus, ShelfItem } from '../../src/types';
 
 const PAGE_SIZE = 10;
-const SERIES_PUBLICATION_STORAGE_KEY = 'booknest.series-publication.v1';
+const LEGACY_SERIES_PUBLICATION_STORAGE_KEY = 'booknest.series-publication.v1';
+const SERIES_PUBLICATION_STORAGE_KEY = 'honnoma.series-publication.v1';
 const MISSING_VOLUME_QUEUE_INTERVAL_MS = 6500;
 
 const statusLabels: Record<ReadingStatus, string> = {
@@ -223,7 +225,7 @@ export default function SeriesScreen() {
 
   useEffect(() => {
     let cancelled = false;
-    AsyncStorage.getItem(SERIES_PUBLICATION_STORAGE_KEY)
+    getStorageItemWithLegacy(SERIES_PUBLICATION_STORAGE_KEY, LEGACY_SERIES_PUBLICATION_STORAGE_KEY)
       .then((storedCache) => {
         if (cancelled || !storedCache) {
           if (!cancelled) setPublicationInfo(null);

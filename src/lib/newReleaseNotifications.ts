@@ -1,19 +1,25 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import Constants from 'expo-constants';import { Platform } from 'react-native';
+import Constants from 'expo-constants';
+import { Platform } from 'react-native';
 
+import { getStorageItemWithLegacy } from './asyncStorageCompat';
 import { SeriesGroup } from './seriesSelectors';
 import { normalizeSeriesKey } from './series';
 import { supabase } from './supabase';
 
-
-const NEW_RELEASE_NOTIFICATION_LAST_SEEN_STORAGE_PREFIX = 'booknest.new-release-notifications.last-seen.v1';
+const LEGACY_NEW_RELEASE_NOTIFICATION_LAST_SEEN_STORAGE_PREFIX = 'booknest.new-release-notifications.last-seen.v1';
+const NEW_RELEASE_NOTIFICATION_LAST_SEEN_STORAGE_PREFIX = 'honnoma.new-release-notifications.last-seen.v1';
 
 function getNotificationLastSeenStorageKey(userId: string) {
   return `${NEW_RELEASE_NOTIFICATION_LAST_SEEN_STORAGE_PREFIX}:${userId}`;
 }
 
+function getLegacyNotificationLastSeenStorageKey(userId: string) {
+  return `${LEGACY_NEW_RELEASE_NOTIFICATION_LAST_SEEN_STORAGE_PREFIX}:${userId}`;
+}
+
 export async function getNewReleaseNotificationsLastSeenAt(userId: string) {
-  return AsyncStorage.getItem(getNotificationLastSeenStorageKey(userId));
+  return getStorageItemWithLegacy(getNotificationLastSeenStorageKey(userId), getLegacyNotificationLastSeenStorageKey(userId));
 }
 
 export async function markNewReleaseNotificationsSeen(userId: string, seenAt = new Date().toISOString()) {

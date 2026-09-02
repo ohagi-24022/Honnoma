@@ -1,12 +1,14 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { Book } from '../types';
+import { getStorageItemWithLegacy } from './asyncStorageCompat';
 import { BookVolumeDetails, lookupBookVolumeDetails } from './bookApis';
 import { getBookMetadataOverrideDetails } from './bookMetadataOverrides';
 import { normalizeSeriesKey } from './series';
 import { supabase } from './supabase';
 
-const CACHE_PREFIX = 'booknest.book-details.v3';
+const LEGACY_CACHE_PREFIX = 'booknest.book-details.v3';
+const CACHE_PREFIX = 'honnoma.book-details.v3';
 const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const DB_CACHE_TTL_DAYS = 30;
 
@@ -44,6 +46,11 @@ function normalizeIsbn(value?: string) {
 function cacheKey(book: Pick<Book, 'id' | 'isbn'>) {
   const identity = normalizeIsbn(book.isbn) || book.id;
   return `${CACHE_PREFIX}:${identity}`;
+}
+
+function legacyCacheKey(book: Pick<Book, 'id' | 'isbn'>) {
+  const identity = normalizeIsbn(book.isbn) || book.id;
+  return `${LEGACY_CACHE_PREFIX}:${identity}`;
 }
 
 function dbRowToDetails(row: BookMetadataCacheRow): BookVolumeDetails {
@@ -197,11 +204,12 @@ export async function getBookVolumeDetails(
   options: { forceRefresh?: boolean } = {},
 ) {
   const key = cacheKey(book);
+  const legacyKey = legacyCacheKey(book);
   const overrideDetails = await getBookMetadataOverrideDetails(book);
 
   if (!options.forceRefresh) {
     try {
-      const cached = await AsyncStorage.getItem(key);
+      const cached = await getStorageItemWithLegacy(key, legacyKey);
       if (cached) {
         const entry = JSON.parse(cached) as CacheEntry;
         if (Date.now() - entry.fetchedAt < CACHE_TTL_MS) {

@@ -60,7 +60,7 @@ const LOG_RETENTION_DAYS = 90;
 const OPERATION_LOG_RETENTION_DAYS = 30;
 
 const corsHeaders = {
-  'Access-Control-Allow-Headers': 'authorization, x-booknest-cron-secret, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-honnoma-cron-secret, x-booknest-cron-secret, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Access-Control-Allow-Origin': '*',
 };
@@ -406,7 +406,7 @@ function normalizeMode(value: unknown): FunctionMode {
 }
 
 function isAuthorizedSchedulerRequest(request: Request) {
-  const cronSecret = request.headers.get('x-booknest-cron-secret') ?? '';
+  const cronSecret = request.headers.get('x-honnoma-cron-secret') ?? request.headers.get('x-booknest-cron-secret') ?? '';
   if (CHECK_NEW_RELEASES_SECRET && cronSecret === CHECK_NEW_RELEASES_SECRET) return true;
 
   const token = (request.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, '');

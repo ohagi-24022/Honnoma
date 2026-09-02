@@ -83,7 +83,7 @@ For production-like Rakuten API access, deploy the Supabase Edge Function and st
 ```bash
 npx supabase secrets set RAKUTEN_APP_ID=your-rakuten-application-id
 npx supabase secrets set RAKUTEN_ACCESS_KEY=your-rakuten-access-key
-npx supabase secrets set RAKUTEN_REFERER=https://github.com/ohagi-24022/BookNest
+npx supabase secrets set RAKUTEN_REFERER=https://github.com/ohagi-24022/Honnoma
 npm run supabase:deploy:rakuten
 ```
 
@@ -104,7 +104,7 @@ To run the checker on a schedule, store `project_url` and `function_key` in Supa
 -- see supabase/schedules/check-new-releases.sql
 ```
 
-`function_key` must be the Supabase service role key. The `check-new-releases` Edge Function rejects normal authenticated-user requests. If you use another trusted scheduler, you can also set `CHECK_NEW_RELEASES_SECRET` as a Supabase secret and send it in the `x-booknest-cron-secret` header.
+`function_key` must be the Supabase service role key. The `check-new-releases` Edge Function rejects normal authenticated-user requests. If you use another trusted scheduler, you can also set `CHECK_NEW_RELEASES_SECRET` as a Supabase secret and send it in the `x-honnoma-cron-secret` header.
 
 The checker reads enabled `series_subscriptions`, looks up the latest volume, sends Expo push notifications, and records results in `notification_logs`.
 

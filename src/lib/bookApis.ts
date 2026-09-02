@@ -97,7 +97,7 @@ type ExpectedBook = Partial<Pick<BookInput, 'seriesTitle' | 'volumeNumber'>> & {
   isbn?: string;
 };
 
-const RAKUTEN_APP_REFERER = 'https://github.com/ohagi-24022/BookNest';
+const RAKUTEN_APP_REFERER = 'https://github.com/ohagi-24022/Honnoma';
 
 type RakutenProxyRequest = {
   path: string;

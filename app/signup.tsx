@@ -17,6 +17,9 @@ import {
 import { useAuth } from '../src/store/AuthContext';
 import { useAppTheme } from '../src/store/ThemeContext';
 
+const MIN_PASSWORD_LENGTH = 6;
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 export default function SignUpScreen() {
   const { configured, signUp } = useAuth();
   const { colors } = useAppTheme();
@@ -31,8 +34,17 @@ export default function SignUpScreen() {
       Alert.alert('本の間', 'クラウド同期の設定が完了していないため、新規登録を利用できません。');
       return;
     }
-    if (!email.trim() || !password) {
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail || !password) {
       Alert.alert('本の間', 'メールアドレスとパスワードを入力してください。');
+      return;
+    }
+    if (!EMAIL_PATTERN.test(trimmedEmail)) {
+      Alert.alert('本の間', 'メールアドレスの形式を確認してください。');
+      return;
+    }
+    if (password.length < MIN_PASSWORD_LENGTH) {
+      Alert.alert('本の間', `パスワードは${MIN_PASSWORD_LENGTH}文字以上で入力してください。`);
       return;
     }
     if (!acceptedPrivacy) {
@@ -42,7 +54,7 @@ export default function SignUpScreen() {
 
     setSubmitting(true);
     try {
-      await signUp(email.trim(), password);
+      await signUp(trimmedEmail, password);
       setPassword('');
       Alert.alert(
         '確認メールを送信しました',
