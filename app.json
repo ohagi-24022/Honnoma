@@ -4,7 +4,7 @@
     "slug": "honnoma",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/app-icons/blue.png",
     "userInterfaceStyle": "automatic",
     "scheme": "honnoma",
     "ios": {
