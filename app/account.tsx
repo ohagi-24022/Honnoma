@@ -5,7 +5,6 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'reac
 import {
   ActivityIndicator,
   Alert,
-  Image,
   Platform,
   Pressable,
   RefreshControl,
@@ -29,38 +28,6 @@ import { useAppTheme } from '../src/store/ThemeContext';
 
 const ESTIMATED_BOOK_PRICE = 600;
 
-type AppIconOption = {
-  label: string;
-  name: string | null;
-  image: number;
-  tone: string;
-};
-
-const APP_ICON_OPTIONS: AppIconOption[] = [
-  { label: '\u9752', name: null, image: require('../assets/app-icons/blue.png'), tone: '\u6a19\u6e96' },
-  { label: '\u7dd1', name: 'Green', image: require('../assets/app-icons/green.png'), tone: '\u68ee' },
-  { label: '\u91d1', name: 'Gold', image: require('../assets/app-icons/gold.png'), tone: '\u91d1' },
-  { label: '\u30ed\u30fc\u30ba', name: 'Rose', image: require('../assets/app-icons/rose.png'), tone: '\u6de1\u6843' },
-  { label: '\u30d6\u30e9\u30a6\u30f3', name: 'Brown', image: require('../assets/app-icons/brown.png'), tone: '\u7d19' },
-  { label: '\u30c6\u30a3\u30fc\u30eb', name: 'Teal', image: require('../assets/app-icons/teal.png'), tone: '\u9752\u7dd1' },
-  { label: '\u7d2b', name: 'Purple', image: require('../assets/app-icons/purple.png'), tone: '\u7d2b' },
-  { label: '\u30b0\u30ec\u30fc', name: 'Gray', image: require('../assets/app-icons/gray.png'), tone: '\u7070' },
-  { label: '\u9ec4', name: 'Yellow', image: require('../assets/app-icons/yellow.png'), tone: '\u9ec4' },
-];
-
-type AlternateAppIconsModule = {
-  getAppIconName: () => string | null;
-  setAlternateAppIcon: (name: string | null) => Promise<string | null>;
-  supportsAlternateIcons: boolean;
-};
-
-async function loadAlternateAppIcons(): Promise<AlternateAppIconsModule | null> {
-  try {
-    return await import('expo-alternate-app-icons');
-  } catch {
-    return null;
-  }
-}
 
 export default function AccountScreen() {
   const params = useLocalSearchParams<{ from?: string }>();
@@ -73,10 +40,6 @@ export default function AccountScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [accountDeleting, setAccountDeleting] = useState(false);
-  const [activeIconName, setActiveIconName] = useState<string | null>(null);
-  const [alternateIconModule, setAlternateIconModule] = useState<AlternateAppIconsModule | null>(null);
-  const [alternateIconsChecked, setAlternateIconsChecked] = useState(false);
-  const [iconChanging, setIconChanging] = useState<string | null>(null);
   const goBack = useCallback(() => {
     router.replace(params.from === 'home' ? '/(tabs)' : '/(tabs)/settings');
   }, [params.from]);
@@ -154,48 +117,6 @@ export default function AccountScreen() {
   useEffect(() => {
     void loadLogs();
   }, [loadLogs]);
-
-  useEffect(() => {
-    if (Platform.OS !== 'ios' || Constants.appOwnership === 'expo') {
-      setAlternateIconsChecked(true);
-      return;
-    }
-
-    let mounted = true;
-    void loadAlternateAppIcons().then((module) => {
-      if (!mounted) return;
-      setAlternateIconModule(module);
-      if (module?.supportsAlternateIcons) {
-        setActiveIconName(module.getAppIconName());
-      }
-      setAlternateIconsChecked(true);
-    });
-
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  const changeAppIcon = useCallback(async (iconName: string | null) => {
-    if (Platform.OS !== 'ios') return;
-    if (!alternateIconModule?.supportsAlternateIcons) {
-      Alert.alert('アイコンを変更できません', 'iOSの開発ビルドまたは配布版で確認できます。');
-      return;
-    }
-    if (activeIconName === iconName) return;
-    setIconChanging(iconName ?? 'default');
-    try {
-      const nextIconName = await alternateIconModule.setAlternateAppIcon(iconName);
-      setActiveIconName(nextIconName);
-    } catch (changeError) {
-      Alert.alert(
-        'アイコン変更に失敗しました',
-        changeError instanceof Error ? changeError.message : 'しばらくしてからもう一度お試しください。',
-      );
-    } finally {
-      setIconChanging(null);
-    }
-  }, [activeIconName, alternateIconModule]);
 
 
   const submitAccountDeletion = () => {
@@ -381,46 +302,6 @@ export default function AccountScreen() {
         )}
       </View>
 
-      {Platform.OS === 'ios' && Constants.appOwnership !== 'expo' ? (
-        <View style={[styles.panel, { backgroundColor: colors.elevated }]}>
-          <View style={styles.headerRow}>
-            <View>
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>アプリアイコン</Text>
-              <Text style={[styles.copy, { color: colors.muted }]}>ホーム画面のアイコンを変更できます。</Text>
-            </View>
-            <Ionicons color={colors.muted} name="phone-portrait-outline" size={22} />
-          </View>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.iconOptionList}>
-            {APP_ICON_OPTIONS.map((option) => {
-              const selected = activeIconName === option.name;
-              const changing = iconChanging === (option.name ?? 'default');
-              return (
-                <Pressable
-                  accessibilityLabel={`${option.label}のアイコンに変更`}
-                  disabled={changing || !alternateIconModule?.supportsAlternateIcons}
-                  key={option.name ?? 'default'}
-                  onPress={() => void changeAppIcon(option.name)}
-                  style={[
-                    styles.iconOption,
-                    { borderColor: selected ? colors.primary : colors.border, backgroundColor: colors.background },
-                  ]}
-                >
-                  <Image source={option.image} style={styles.iconPreview} />
-                  <View style={styles.iconOptionLabelRow}>
-                    <Text style={[styles.iconOptionTitle, { color: colors.text }]}>{option.label}</Text>
-                    {selected ? <Ionicons color={colors.primary} name="checkmark-circle" size={16} /> : null}
-                  </View>
-                  <Text style={[styles.iconOptionTone, { color: colors.muted }]}>{option.tone}</Text>
-                  {changing ? <ActivityIndicator color={colors.primary} size="small" style={styles.iconChanging} /> : null}
-                </Pressable>
-              );
-            })}
-          </ScrollView>
-          {alternateIconsChecked && !alternateIconModule?.supportsAlternateIcons ? (
-            <Text style={[styles.copy, { color: colors.muted }]}>この環境ではアイコン変更を利用できません。iOSの開発ビルドまたは配布版で確認できます。</Text>
-          ) : null}
-        </View>
-      ) : null}
 
       <View style={[styles.dangerSection, { borderTopColor: colors.border }]}>
         <Text style={[styles.sectionTitle, { color: colors.text }]}>アカウント管理</Text>
