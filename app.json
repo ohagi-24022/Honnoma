@@ -14,7 +14,8 @@
       "infoPlist": {
         "NSCameraUsageDescription": "ISBNバーコードを読み取り、本を登録するためにカメラを使用します。",
         "ITSAppUsesNonExemptEncryption": false
-      }
+      },
+      "buildNumber": "2"
     },
     "android": {
       "package": "com.ohagiworks.honnoma",
@@ -28,7 +29,8 @@
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.POST_NOTIFICATIONS"
-      ]
+      ],
+      "versionCode": 2
     },
     "web": {
       "favicon": "./assets/favicon.png"
