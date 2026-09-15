@@ -9,14 +9,14 @@
     "scheme": "honnoma",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.honnoma.app",
+      "bundleIdentifier": "com.ohagiworks.honnoma",
       "infoPlist": {
         "NSCameraUsageDescription": "ISBNバーコードを読み取り、本を登録するためにカメラを使用します。",
         "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
-      "package": "com.honnoma.app",
+      "package": "com.ohagiworks.honnoma",
       "adaptiveIcon": {
         "backgroundColor": "#ffffff",
         "foregroundImage": "./assets/android-icon-foreground.png",
