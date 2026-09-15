@@ -45,3 +45,11 @@ supabase/.temp/
 # generated native folders
 /ios
 /android
+
+# EAS/icon inspection artifacts
+eas-inspect/
+latest-ios-build.ipa
+latest-ios-build-unpacked/
+icon-debug-sheet.png
+icon-ipa-compare.png
+
