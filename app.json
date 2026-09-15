@@ -9,6 +9,7 @@
     "scheme": "honnoma",
     "ios": {
       "supportsTablet": true,
+      "icon": "./assets/app-icons/blue.png",
       "bundleIdentifier": "com.ohagiworks.honnoma",
       "infoPlist": {
         "NSCameraUsageDescription": "ISBNバーコードを読み取り、本を登録するためにカメラを使用します。",
