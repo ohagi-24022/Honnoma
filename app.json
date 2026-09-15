@@ -120,10 +120,11 @@
       ]
     ],
     "extra": {
+      "router": {},
       "eas": {
-        "projectId": "f9d01088-83a6-467c-b384-76e03bc3bc6d"
-      },
-      "router": {}
-    }
+        "projectId": "e08f7f6e-f5be-45c1-a74e-9cbd6306e5e9"
+      }
+    },
+    "owner": "ohagi_mikan"
   }
 }
