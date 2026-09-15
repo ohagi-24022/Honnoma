@@ -4,12 +4,12 @@
     "slug": "honnoma",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/app-icons/blue.png",
+    "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "scheme": "honnoma",
     "ios": {
       "supportsTablet": true,
-      "icon": "./assets/app-icons/blue.png",
+      "icon": "./assets/icon.png",
       "bundleIdentifier": "com.ohagiworks.honnoma",
       "infoPlist": {
         "NSCameraUsageDescription": "ISBNバーコードを読み取り、本を登録するためにカメラを使用します。",
@@ -49,75 +49,6 @@
         {
           "defaultChannel": "new-releases"
         }
-      ],
-      [
-        "expo-alternate-app-icons",
-        [
-          {
-            "name": "Green",
-            "ios": "./assets/ios-alternate-icons/green.png",
-            "android": {
-              "foregroundImage": "./assets/ios-alternate-icons/green.png",
-              "backgroundColor": "#e8f2e8"
-            }
-          },
-          {
-            "name": "Gold",
-            "ios": "./assets/ios-alternate-icons/gold.png",
-            "android": {
-              "foregroundImage": "./assets/ios-alternate-icons/gold.png",
-              "backgroundColor": "#fff6df"
-            }
-          },
-          {
-            "name": "Rose",
-            "ios": "./assets/ios-alternate-icons/rose.png",
-            "android": {
-              "foregroundImage": "./assets/ios-alternate-icons/rose.png",
-              "backgroundColor": "#fde9ec"
-            }
-          },
-          {
-            "name": "Brown",
-            "ios": "./assets/ios-alternate-icons/brown.png",
-            "android": {
-              "foregroundImage": "./assets/ios-alternate-icons/brown.png",
-              "backgroundColor": "#f5eadc"
-            }
-          },
-          {
-            "name": "Teal",
-            "ios": "./assets/ios-alternate-icons/teal.png",
-            "android": {
-              "foregroundImage": "./assets/ios-alternate-icons/teal.png",
-              "backgroundColor": "#e8f7f8"
-            }
-          },
-          {
-            "name": "Purple",
-            "ios": "./assets/ios-alternate-icons/purple.png",
-            "android": {
-              "foregroundImage": "./assets/ios-alternate-icons/purple.png",
-              "backgroundColor": "#efe2ff"
-            }
-          },
-          {
-            "name": "Gray",
-            "ios": "./assets/ios-alternate-icons/gray.png",
-            "android": {
-              "foregroundImage": "./assets/ios-alternate-icons/gray.png",
-              "backgroundColor": "#f1f3f6"
-            }
-          },
-          {
-            "name": "Yellow",
-            "ios": "./assets/ios-alternate-icons/yellow.png",
-            "android": {
-              "foregroundImage": "./assets/ios-alternate-icons/yellow.png",
-              "backgroundColor": "#fff3a4"
-            }
-          }
-        ]
       ]
     ],
     "extra": {
