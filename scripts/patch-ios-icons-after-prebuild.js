@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const plist = require('@expo/plist');
+const plist = require('@expo/plist').default;
 
 const projectRoot = process.cwd();
 
