@@ -12,6 +12,14 @@ function cleanSupabaseUrl(value) {
 module.exports = ({ config }) => ({
   ...config,
   ...appJson.expo,
+  name: process.env.APP_ENV === 'preview' ? `${appJson.expo.name} Preview` : appJson.expo.name,
+  ios: {
+    ...appJson.expo.ios,
+    bundleIdentifier:
+      process.env.APP_ENV === 'preview'
+        ? `${appJson.expo.ios.bundleIdentifier}.preview`
+        : appJson.expo.ios.bundleIdentifier,
+  },
   extra: {
     ...appJson.expo.extra,
     supabaseUrl: cleanSupabaseUrl(process.env.EXPO_PUBLIC_SUPABASE_URL),
