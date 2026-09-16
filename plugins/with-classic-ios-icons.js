@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { IOSConfig, withDangerousMod, withXcodeProject } = require('@expo/config-plugins');
+const { IOSConfig, withDangerousMod, withInfoPlist, withXcodeProject } = require('@expo/config-plugins');
 const { generateImageAsync } = require('@expo/image-utils');
 
 const ICONSET_PATH = path.join('Images.xcassets', 'AppIcon.appiconset');
@@ -27,6 +27,20 @@ const IOS_ICON_SLOTS = [
   { idiom: 'ios-marketing', size: '1024x1024', scale: '1x', pixels: 1024 },
 ];
 
+const LOOSE_ICON_SLOTS = [
+  { baseName: 'HonnomaIcon20', pixels: 40, scale: '2x' },
+  { baseName: 'HonnomaIcon20', pixels: 60, scale: '3x' },
+  { baseName: 'HonnomaIcon29', pixels: 58, scale: '2x' },
+  { baseName: 'HonnomaIcon29', pixels: 87, scale: '3x' },
+  { baseName: 'HonnomaIcon40', pixels: 80, scale: '2x' },
+  { baseName: 'HonnomaIcon40', pixels: 120, scale: '3x' },
+  { baseName: 'HonnomaIcon60', pixels: 120, scale: '2x' },
+  { baseName: 'HonnomaIcon60', pixels: 180, scale: '3x' },
+  { baseName: 'HonnomaIcon76', pixels: 76, scale: '1x' },
+  { baseName: 'HonnomaIcon76', pixels: 152, scale: '2x' },
+  { baseName: 'HonnomaIcon83-5', pixels: 167, scale: '2x' },
+];
+
 function resolveIconPath(config) {
   const iosIcon = config.ios && config.ios.icon;
   if (typeof iosIcon === 'string') return iosIcon;
@@ -43,6 +57,10 @@ function getIosNamedProjectPath(projectRoot) {
 
 function iconFileName(slot) {
   return `AppIcon-${slot.idiom}-${slot.size.replace('.', '-')}-${slot.scale}.png`;
+}
+
+function looseIconFileName(slot) {
+  return slot.scale === '1x' ? `${slot.baseName}.png` : `${slot.baseName}@${slot.scale}.png`;
 }
 
 async function writeClassicIconsAsync(config, projectRoot) {
@@ -81,6 +99,25 @@ async function writeClassicIconsAsync(config, projectRoot) {
     path.join(iconsetDir, 'Contents.json'),
     JSON.stringify({ images, info: { author: 'xcode', version: 1 } }, null, 2),
   );
+
+  for (const slot of LOOSE_ICON_SLOTS) {
+    const filename = looseIconFileName(slot);
+    const { source } = await generateImageAsync(
+      { projectRoot, cacheType: `${CACHE_TYPE}-loose` },
+      {
+        src: icon,
+        name: filename,
+        width: slot.pixels,
+        height: slot.pixels,
+        resizeMode: 'cover',
+        removeTransparency: true,
+        backgroundColor: '#ffffff',
+      },
+    );
+    await fs.promises.writeFile(path.join(getIosNamedProjectPath(projectRoot), filename), source);
+  }
+
+  console.log(`[with-classic-ios-icons] wrote ${images.length} asset catalog icons and ${LOOSE_ICON_SLOTS.length} loose icons from ${icon}`);
 }
 
 module.exports = function withClassicIosIcons(config) {
@@ -92,11 +129,38 @@ module.exports = function withClassicIosIcons(config) {
     },
   ]);
 
+  config = withInfoPlist(config, (nextConfig) => {
+    const primaryIcon = {
+      CFBundleIconFiles: ['HonnomaIcon20', 'HonnomaIcon29', 'HonnomaIcon40', 'HonnomaIcon60'],
+      UIPrerenderedIcon: true,
+    };
+    const ipadPrimaryIcon = {
+      CFBundleIconFiles: ['HonnomaIcon20', 'HonnomaIcon29', 'HonnomaIcon40', 'HonnomaIcon76', 'HonnomaIcon83-5'],
+      UIPrerenderedIcon: true,
+    };
+
+    nextConfig.modResults.CFBundleIcons = { CFBundlePrimaryIcon: primaryIcon };
+    nextConfig.modResults['CFBundleIcons~ipad'] = { CFBundlePrimaryIcon: ipadPrimaryIcon };
+    return nextConfig;
+  });
+
   config = withXcodeProject(config, (nextConfig) => {
+    const projectName = nextConfig.modRequest.projectName;
+    for (const slot of LOOSE_ICON_SLOTS) {
+      IOSConfig.XcodeUtils.addResourceFileToGroup({
+        filepath: `${projectName}/${looseIconFileName(slot)}`,
+        groupName: projectName,
+        project: nextConfig.modResults,
+        isBuildFile: true,
+        verbose: true,
+      });
+    }
+
     const configurations = nextConfig.modResults.pbxXCBuildConfigurationSection();
     for (const buildConfig of Object.values(configurations)) {
       if (buildConfig && buildConfig.buildSettings) {
         buildConfig.buildSettings.ASSETCATALOG_COMPILER_APPICON_NAME = 'AppIcon';
+        buildConfig.buildSettings.INFOPLIST_ENABLE_CFBUNDLEICONS_MERGE = 'NO';
       }
     }
     return nextConfig;
