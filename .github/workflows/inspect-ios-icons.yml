@@ -1,0 +1,68 @@
+name: Inspect iOS Icons
+
+on:
+  workflow_dispatch:
+
+jobs:
+  inspect-ios-icons:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate iOS native project
+        run: APP_ENV=preview npx expo prebuild --platform ios --clean --no-install
+
+      - name: Run icon patch hook
+        run: EAS_BUILD_PLATFORM=ios npm run eas-build-post-install
+
+      - name: Inspect generated icon settings
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP_DIR=$(find ios -maxdepth 2 -name Info.plist -print | head -n 1 | xargs dirname)
+          XCODEPROJ=$(find ios -maxdepth 2 -name project.pbxproj -print | head -n 1)
+          ICONSET=$(find ios -path '*AppIcon.appiconset' -type d | head -n 1)
+
+          echo "APP_DIR=$APP_DIR" | tee icon-inspection.txt
+          echo "XCODEPROJ=$XCODEPROJ" | tee -a icon-inspection.txt
+          echo "ICONSET=$ICONSET" | tee -a icon-inspection.txt
+          echo "" | tee -a icon-inspection.txt
+
+          echo "## Info.plist CFBundleIcons" | tee -a icon-inspection.txt
+          plutil -p "$APP_DIR/Info.plist" | grep -A 20 -E 'CFBundleIcons|CFBundleIcons~ipad' | tee -a icon-inspection.txt || true
+          echo "" | tee -a icon-inspection.txt
+
+          echo "## Xcode build settings" | tee -a icon-inspection.txt
+          grep -nE 'ASSETCATALOG_COMPILER_APPICON_NAME|INFOPLIST_ENABLE_CFBUNDLEICONS_MERGE' "$XCODEPROJ" | tee -a icon-inspection.txt || true
+          echo "" | tee -a icon-inspection.txt
+
+          echo "## Loose icons" | tee -a icon-inspection.txt
+          find "$APP_DIR" -maxdepth 1 -name 'HonnomaIcon*.png' -print | sort | tee -a icon-inspection.txt
+          echo "" | tee -a icon-inspection.txt
+
+          echo "## AppIcon.appiconset" | tee -a icon-inspection.txt
+          find "$ICONSET" -maxdepth 1 -type f -print | sort | tee -a icon-inspection.txt
+          echo "" | tee -a icon-inspection.txt
+
+          cp "$APP_DIR/Info.plist" Info.plist
+          cp "$XCODEPROJ" project.pbxproj
+
+      - name: Upload inspection artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-icon-inspection
+          path: |
+            icon-inspection.txt
+            Info.plist
+            project.pbxproj
+            ios/*/Images.xcassets/AppIcon.appiconset
