@@ -22,9 +22,6 @@ jobs:
       - name: Generate iOS native project
         run: APP_ENV=preview npx expo prebuild --platform ios --clean --no-install
 
-      - name: Run icon patch hook
-        run: EAS_BUILD_PLATFORM=ios npm run eas-build-post-install
-
       - name: Inspect generated icon settings
         shell: bash
         run: |

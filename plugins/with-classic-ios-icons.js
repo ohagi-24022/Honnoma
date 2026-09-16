@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { IOSConfig, withDangerousMod, withInfoPlist, withXcodeProject } = require('@expo/config-plugins');
+const { IOSConfig, withDangerousMod, withXcodeProject } = require('@expo/config-plugins');
 const { generateImageAsync } = require('@expo/image-utils');
 
 const ICONSET_PATH = path.join('Images.xcassets', 'AppIcon.appiconset');
@@ -129,21 +129,6 @@ module.exports = function withClassicIosIcons(config) {
     },
   ]);
 
-  config = withInfoPlist(config, (nextConfig) => {
-    const primaryIcon = {
-      CFBundleIconFiles: ['HonnomaIcon20', 'HonnomaIcon29', 'HonnomaIcon40', 'HonnomaIcon60'],
-      UIPrerenderedIcon: true,
-    };
-    const ipadPrimaryIcon = {
-      CFBundleIconFiles: ['HonnomaIcon20', 'HonnomaIcon29', 'HonnomaIcon40', 'HonnomaIcon76', 'HonnomaIcon83-5'],
-      UIPrerenderedIcon: true,
-    };
-
-    nextConfig.modResults.CFBundleIcons = { CFBundlePrimaryIcon: primaryIcon };
-    nextConfig.modResults['CFBundleIcons~ipad'] = { CFBundlePrimaryIcon: ipadPrimaryIcon };
-    return nextConfig;
-  });
-
   config = withXcodeProject(config, (nextConfig) => {
     const projectName = nextConfig.modRequest.projectName;
     for (const slot of LOOSE_ICON_SLOTS) {
@@ -160,7 +145,7 @@ module.exports = function withClassicIosIcons(config) {
     for (const buildConfig of Object.values(configurations)) {
       if (buildConfig && buildConfig.buildSettings) {
         buildConfig.buildSettings.ASSETCATALOG_COMPILER_APPICON_NAME = 'AppIcon';
-        buildConfig.buildSettings.INFOPLIST_ENABLE_CFBUNDLEICONS_MERGE = 'NO';
+        buildConfig.buildSettings.INFOPLIST_ENABLE_CFBUNDLEICONS_MERGE = 'YES';
       }
     }
     return nextConfig;
