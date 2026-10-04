@@ -49,14 +49,14 @@ export function EmptyLibraryState({
         バーコードがない本は手動登録もできます。
       </Text>
       <Link href="/(tabs)/scan" asChild>
-        <Pressable style={[styles.action, { backgroundColor: colors.text }]}>
+        <Pressable style={StyleSheet.flatten([styles.action, { backgroundColor: colors.text }])}>
           <Ionicons color={colors.background} name="barcode-outline" size={19} />
           <Text style={[styles.actionText, { color: colors.background }]}>本を登録する</Text>
         </Pressable>
       </Link>
       <Text style={[styles.accountCopy, { color: colors.muted }]}>アカウントを作ると、本棚をクラウドに保存できます。</Text>
       <Link href="/signup" asChild>
-        <Pressable style={[styles.secondaryAction, { borderColor: colors.border }]}>
+        <Pressable style={StyleSheet.flatten([styles.secondaryAction, { borderColor: colors.border }])}>
           <Text style={[styles.secondaryActionText, { color: colors.text }]}>{'>'} 新規登録へ進む</Text>
         </Pressable>
       </Link>

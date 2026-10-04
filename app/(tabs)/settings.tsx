@@ -239,10 +239,10 @@ export default function SettingsScreen() {
             </View>
             <Link href={{ pathname: '/account', params: { from: 'settings' } }} asChild>
               <Pressable
-                style={[
+                style={StyleSheet.flatten([
                   styles.accountLink,
                   { backgroundColor: colors.surface, borderColor: colors.border },
-                ]}
+                ])}
               >
                 <View style={[styles.accountIcon, { backgroundColor: colors.surface }]}>
                   <Ionicons color={colors.text} name="person-circle-outline" size={22} />
@@ -341,12 +341,12 @@ export default function SettingsScreen() {
               <Link href="/signup" asChild>
                 <Pressable
                   disabled={!configured || authSubmitting}
-                  style={[
+                  style={StyleSheet.flatten([
                     styles.neutralButton,
                     styles.signupButton,
                     { borderColor: colors.border },
                     (!configured || authSubmitting) && styles.disabledButton,
-                  ]}
+                  ])}
                 >
                   <Text numberOfLines={1} style={[styles.neutralButtonText, styles.signupButtonText, { color: colors.text }]}>{'> 新規登録へ進む'}</Text>
                 </Pressable>
@@ -412,10 +412,10 @@ export default function SettingsScreen() {
         </View>
         <Link href="/help" asChild>
           <Pressable
-            style={[
+            style={StyleSheet.flatten([
               styles.helpLink,
               { backgroundColor: colors.surface, borderColor: colors.border },
-            ]}
+            ])}
           >
             <View style={styles.rowText}>
               <View style={styles.navigationTitleRow}>
@@ -437,10 +437,10 @@ export default function SettingsScreen() {
         </View>
         <Link href="/reading-suggestions" asChild>
           <Pressable
-            style={[
+            style={StyleSheet.flatten([
               styles.helpLink,
               { backgroundColor: colors.surface, borderColor: colors.border },
-            ]}
+            ])}
           >
             <View style={styles.rowText}>
               <View style={styles.navigationTitleRow}>
@@ -496,7 +496,7 @@ export default function SettingsScreen() {
             : 'ログイン後にONにすると、端末とシリーズ情報を通知用に登録します。'}
         </Text>
         <Link href="/notifications" asChild>
-          <Pressable style={[styles.largeNavigationButton, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <Pressable style={StyleSheet.flatten([styles.largeNavigationButton, { backgroundColor: colors.surface, borderColor: colors.border }])}>
             <View style={[styles.largeNavigationIcon, { backgroundColor: colors.elevated }]}>
               <Ionicons color="#ffcc00" name="notifications" size={22} />
             </View>
@@ -546,10 +546,10 @@ export default function SettingsScreen() {
         <Text style={[styles.sectionTitle, { color: colors.text }]}>アプリ情報</Text>
         <Link href="/privacy" asChild>
           <Pressable
-            style={[
+            style={StyleSheet.flatten([
               styles.accountLink,
               { backgroundColor: colors.surface, borderColor: colors.border },
-            ]}
+            ])}
           >
             <View style={[styles.accountIcon, { backgroundColor: colors.surface }]}>
               <Ionicons color={colors.text} name="document-text-outline" size={21} />

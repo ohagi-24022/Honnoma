@@ -158,7 +158,7 @@ export default function AccountScreen() {
             新刊通知の詳細は、ログイン後に確認できます。
           </Text>
           <Link href="/(tabs)/settings" asChild>
-            <Pressable style={[styles.button, { borderColor: colors.border }]}>
+            <Pressable style={StyleSheet.flatten([styles.button, { borderColor: colors.border }])}>
               <Text style={[styles.buttonText, { color: colors.text }]}>設定へ移動</Text>
             </Pressable>
           </Link>
