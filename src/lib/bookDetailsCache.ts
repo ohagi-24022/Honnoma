@@ -5,6 +5,7 @@ import { getStorageItemWithLegacy } from './asyncStorageCompat';
 import { BookVolumeDetails, lookupBookVolumeDetails } from './bookApis';
 import { getBookMetadataOverrideDetails } from './bookMetadataOverrides';
 import { normalizeSeriesKey } from './series';
+import { getDemoBookDetails } from './demoLibrary';
 import { supabase } from './supabase';
 
 const LEGACY_CACHE_PREFIX = 'booknest.book-details.v3';
@@ -203,6 +204,9 @@ export async function getBookVolumeDetails(
   book: Book,
   options: { forceRefresh?: boolean } = {},
 ) {
+  const demoDetails = getDemoBookDetails(book);
+  if (demoDetails) return demoDetails;
+
   const key = cacheKey(book);
   const legacyKey = legacyCacheKey(book);
   const overrideDetails = await getBookMetadataOverrideDetails(book);

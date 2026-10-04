@@ -15,6 +15,7 @@ import { getStorageItemWithLegacy, removeStorageItemWithLegacy } from '../lib/as
 import { lookupBookByIsbn, lookupBookByTitle } from '../lib/bookApis';
 import { getBookMetadataOverrideDetails } from '../lib/bookMetadataOverrides';
 import { normalizeAuthor } from '../lib/bookMetadata';
+import { createDemoBooks, repairDemoBook } from '../lib/demoLibrary';
 import {
   findDuplicateBook as findDuplicate,
   normalizeBookInput,
@@ -440,60 +441,9 @@ function buildMetadataLookupTitle(book: Pick<Book, 'title' | 'seriesTitle' | 'vo
   return book.volumeNumber ? `${book.seriesTitle} ${book.volumeNumber}巻` : book.title;
 }
 
-const initialBooks: Book[] = [
-  {
-    id: 'demo-1',
-    userId: DEMO_USER_ID,
-    isbn: '9784088820118',
-    title: 'SPY x FAMILY 1',
-    seriesTitle: 'SPY x FAMILY',
-    volumeNumber: 1,
-    author: 'Tatsuya Endo',
-    thumbnailUrl: 'https://books.google.com/books/content?id=KqTNDwAAQBAJ&printsec=frontcover&img=1&zoom=1',
-    status: 'read',
-    createdAt: now(),
-  },
-  {
-    id: 'demo-2',
-    userId: DEMO_USER_ID,
-    isbn: '9784088821207',
-    title: 'SPY x FAMILY 2',
-    seriesTitle: 'SPY x FAMILY',
-    volumeNumber: 2,
-    author: 'Tatsuya Endo',
-    thumbnailUrl: 'https://books.google.com/books/content?id=0rLNDwAAQBAJ&printsec=frontcover&img=1&zoom=1',
-    status: 'read',
-    createdAt: now(),
-  },
-  {
-    id: 'demo-3',
-    userId: DEMO_USER_ID,
-    isbn: '9784088825458',
-    title: 'SPY x FAMILY 4',
-    seriesTitle: 'SPY x FAMILY',
-    volumeNumber: 4,
-    author: 'Tatsuya Endo',
-    thumbnailUrl: 'https://books.google.com/books/content?id=q5QLEAAAQBAJ&printsec=frontcover&img=1&zoom=1',
-    status: 'unread',
-    createdAt: now(),
-  },
-  {
-    id: 'demo-4',
-    userId: DEMO_USER_ID,
-    isbn: '9784065214827',
-    title: 'Blue Period 8',
-    seriesTitle: 'Blue Period',
-    volumeNumber: 8,
-    author: 'Tsubasa Yamaguchi',
-    thumbnailUrl: 'https://books.google.com/books/content?id=zMYPEAAAQBAJ&printsec=frontcover&img=1&zoom=1',
-    status: 'reading',
-    createdAt: now(),
-  },
-];
-
 export function LibraryProvider({ children }: PropsWithChildren) {
   const { configured, initializing, user } = useAuth();
-  const [books, setBooks] = useState<Book[]>(configured ? [] : initialBooks);
+  const [books, setBooks] = useState<Book[]>(() => configured ? [] : createDemoBooks());
   const [hydrated, setHydrated] = useState(false);
   const [pendingLocalBooks, setPendingLocalBooks] = useState<Book[]>([]);
   const [loading, setLoading] = useState(configured);
@@ -530,7 +480,7 @@ export function LibraryProvider({ children }: PropsWithChildren) {
     getStorageItemWithLegacy(STORAGE_KEY, LEGACY_STORAGE_KEY)
       .then((storedBooks) => {
         if (!storedBooks) return;
-        const parsedBooks = (JSON.parse(storedBooks) as Book[]).map(normalizeBookReadings);
+        const parsedBooks = (JSON.parse(storedBooks) as Book[]).map((book) => normalizeBookReadings(repairDemoBook(book)));
         if (configured) {
           const localBooks = parsedBooks.filter((book) => !book.id.startsWith('demo-'));
           setPendingLocalBooks(localBooks);
