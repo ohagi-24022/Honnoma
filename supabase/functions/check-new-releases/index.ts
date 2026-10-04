@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
-type FunctionMode = 'all' | 'check' | 'deliver';
+type FunctionMode = 'all' | 'check' | 'deliver' | 'retry' | 'receipts' | 'health';
 
 type SubscriptionRow = {
   id: string;
@@ -93,7 +93,7 @@ Deno.serve(async (request) => {
       );
     }
 
-    if (!isAuthorizedSchedulerRequest(request)) {
+    if (!(await isAuthorizedSchedulerRequest(request))) {
       await writeOperationLog({
         durationMs: Date.now() - startedAt,
         metadata: { mode, reason: 'unauthorized' },
@@ -113,16 +113,30 @@ Deno.serve(async (request) => {
       );
     }
 
+    if (mode === 'health') {
+      const { count, error } = await supabase.from('series_subscriptions')
+        .select('id', { count: 'exact', head: true }).eq('enabled', true);
+      if (error) throw error;
+      await writeOperationLog({ operation: 'check-new-releases', status: 'ok', metadata: { mode } });
+      return jsonResponse({ ok: true, mode, enabledSubscriptions: count });
+    }
+
     await pruneOldNotificationLogs();
     await pruneOldOperationLogs();
 
-    const checked = mode === 'deliver' ? [] : await checkSeries(limit);
-    const delivered = mode === 'check' ? [] : await deliverDailyNotifications(userLimit);
+    const checked = mode === 'all' || mode === 'check' ? await checkSeries(limit) : [];
+    const delivered = mode === 'all' || mode === 'deliver' || mode === 'retry'
+      ? await deliverDailyNotifications(userLimit, mode === 'retry') : [];
+    const receipts = mode === 'receipts' ? await checkPushReceipts(userLimit) : [];
+    const hasErrors = checked.some(row => row.error) || delivered.some(row => row.sent === 0)
+      || receipts.some(row => row.error);
+
 
     await writeOperationLog({
       durationMs: Date.now() - startedAt,
       metadata: {
         checkedCount: checked.length,
+        receiptCount: receipts.length,
         deliveredUserCount: delivered.length,
         limit,
         mode,
@@ -131,10 +145,10 @@ Deno.serve(async (request) => {
       operation: 'check-new-releases',
       provider: 'supabase-edge-function',
       requestCount: 1,
-      status: 'ok',
+      status: hasErrors ? 'error' : 'ok',
     });
 
-    return jsonResponse({ checked, delivered, mode, ok: true });
+    return jsonResponse({ checked, delivered, receipts, mode, ok: !hasErrors }, hasErrors ? 502 : 200);
   } catch (error) {
     await writeOperationLog({
       metadata: { error: describeError(error) },
@@ -145,7 +159,7 @@ Deno.serve(async (request) => {
     });
     return jsonResponse(
       { checked: [], delivered: [], error: describeError(error), ok: false },
-      200,
+      500,
     );
   }
 });
@@ -199,6 +213,12 @@ async function checkSeries(limit: number) {
           if (updateError) throw updateError;
         }
       }
+
+      // Rotate checked series even when there is no new volume.
+      const { error: rotationError } = await supabase.from('series_subscriptions')
+        .update({ updated_at: new Date().toISOString() })
+        .in('id', subscriptionsForSeries.map(row => row.id));
+      if (rotationError) throw rotationError;
 
       checked.push({
         cached: publication.cached,
@@ -265,14 +285,16 @@ async function getRecentPublicationCheck(seriesKey: string): Promise<Publication
   return (data ?? null) as PublicationCheckRow | null;
 }
 
-async function deliverDailyNotifications(userLimit: number) {
-  const { data: logs, error } = await supabase
+async function deliverDailyNotifications(userLimit: number, retryOnly = false) {
+  let query = supabase
     .from('notification_logs')
     .select('id,user_id,attempt_count')
     .eq('status', 'pending')
     .lte('next_retry_at', new Date().toISOString())
     .order('created_at', { ascending: true })
     .limit(userLimit * 20);
+  if (retryOnly) query = query.gt('attempt_count', 0);
+  const { data: logs, error } = await query;
   if (error) throw error;
 
   const logsByUser = new Map<string, NotificationLogRow[]>();
@@ -300,10 +322,12 @@ async function deliverDailyNotifications(userLimit: number) {
 
       let sent = 0;
       let lastResponse: unknown = null;
+      const tickets: Array<{ id: string; token: string }> = [];
       let lastError: string | null = null;
       for (const token of (tokens ?? []) as PushTokenRow[]) {
         const response = await sendExpoPush({
           body: '蒐集架で新刊情報を確認できます。',
+          channelId: 'new-releases',
           data: {
             url: '/(tabs)/notifications',
           },
@@ -315,6 +339,7 @@ async function deliverDailyNotifications(userLimit: number) {
         const pushResult = parseExpoPushResult(response);
         if (pushResult.accepted) {
           sent += 1;
+          tickets.push({ id: pushResult.ticketId!, token: token.expo_push_token });
         } else {
           lastError = pushResult.error;
           if (pushResult.deviceNotRegistered) {
@@ -334,12 +359,12 @@ async function deliverDailyNotifications(userLimit: number) {
         .from('notification_logs')
         .update({
           attempt_count: sent > 0 ? 0 : attemptCount,
-          delivered_at: sent > 0 ? new Date().toISOString() : null,
+          delivered_at: null,
           failed_at: status === 'failed' ? new Date().toISOString() : null,
           last_error: sent > 0 ? null : lastError ?? 'No enabled push token was available.',
           next_retry_at: sent > 0 ? new Date().toISOString() : nextRetryAt(attemptCount),
           notification_title: '蒐集架 新刊情報',
-          response: lastResponse,
+          response: { lastResponse, tickets },
           status,
         })
         .in('id', targetLogIds);
@@ -372,6 +397,57 @@ async function deliverDailyNotifications(userLimit: number) {
   return delivered;
 }
 
+async function checkPushReceipts(limit: number) {
+  const now = Date.now();
+  const { data: logs, error } = await supabase.from('notification_logs')
+    .select('id,user_id,response')
+    .eq('status', 'sent').is('delivered_at', null)
+    .gte('next_retry_at', new Date(now - 24 * 60 * 60 * 1000).toISOString())
+    .lte('next_retry_at', new Date(now - 15 * 60 * 1000).toISOString())
+    .order('created_at', { ascending: true }).limit(limit);
+  if (error) throw error;
+  const results: Array<{ status: string; error?: string }> = [];
+  for (const log of logs ?? []) {
+    const tickets = log.response?.tickets;
+    if (!Array.isArray(tickets) || tickets.length === 0) continue;
+    const ids = tickets.filter(ticket => !ticket.receipt).map(ticket => ticket.id);
+    if (ids.length === 0) continue;
+    const response = await fetch('https://exp.host/--/api/v2/push/getReceipts', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids }),
+    });
+    const payload = await response.json();
+    if (!response.ok || !payload.data || typeof payload.data !== 'object' || payload.errors?.length) {
+      throw new Error(`Expo receipts HTTP ${response.status}`);
+    }
+    for (const ticket of tickets) {
+      const receipt = payload.data[ticket.id];
+      if (!receipt || !['ok', 'error'].includes(receipt.status)) continue;
+      ticket.receipt = receipt;
+      if (receipt.details?.error === 'DeviceNotRegistered') {
+        const { error: tokenError } = await supabase.from('push_tokens')
+          .update({ enabled: false }).eq('user_id', log.user_id).eq('expo_push_token', ticket.token);
+        if (tokenError) throw tokenError;
+      }
+    }
+    const accepted = tickets.some(ticket => ticket.receipt?.status === 'ok');
+    const complete = tickets.every(ticket => ticket.receipt);
+    const receiptError = tickets.find(ticket => ticket.receipt?.status === 'error')?.receipt;
+    const failed = complete && !accepted;
+    const { error: updateError } = await supabase.from('notification_logs').update({
+      response: { ...log.response, tickets },
+      status: failed ? 'failed' : 'sent',
+      delivered_at: accepted && complete ? new Date().toISOString() : null,
+      failed_at: failed ? new Date().toISOString() : null,
+      last_error: receiptError ? receiptError.details?.error ?? receiptError.message ?? 'Expo receipt error' : null,
+    }).eq('id', log.id);
+    if (updateError) throw updateError;
+    results.push({ status: accepted ? 'confirmed' : failed ? 'failed' : 'waiting',
+      ...(receiptError ? { error: receiptError.details?.error ?? 'Expo receipt error' } : {}) });
+  }
+  return results;
+}
+
 function nextAttemptCount(logs: NotificationLogRow[]) {
   return Math.max(0, ...logs.map((log) => log.attempt_count ?? 0)) + 1;
 }
@@ -401,29 +477,20 @@ async function safeJson(request: Request) {
 }
 
 function normalizeMode(value: unknown): FunctionMode {
-  if (value === 'check' || value === 'deliver' || value === 'all') return value;
+  if (['check', 'deliver', 'all', 'retry', 'receipts', 'health'].includes(String(value))) return value as FunctionMode;
   return 'all';
 }
 
-function isAuthorizedSchedulerRequest(request: Request) {
+async function isAuthorizedSchedulerRequest(request: Request) {
   const cronSecret = request.headers.get('x-honnoma-cron-secret') ?? request.headers.get('x-booknest-cron-secret') ?? '';
   if (CHECK_NEW_RELEASES_SECRET && cronSecret === CHECK_NEW_RELEASES_SECRET) return true;
-
   const token = (request.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, '');
-  return getJwtRole(token) === 'service_role';
-}
-
-function getJwtRole(token: string) {
-  try {
-    const payload = token.split('.')[1];
-    if (!payload) return undefined;
-    const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
-    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
-    const decoded = JSON.parse(atob(padded)) as { role?: string };
-    return decoded.role;
-  } catch {
-    return undefined;
-  }
+  if (SUPABASE_SERVICE_ROLE_KEY && token === SUPABASE_SERVICE_ROLE_KEY) return true;
+  if (!cronSecret) return false;
+  // Only the server's service role can call this Vault comparison; no secret is returned.
+  const { data, error } = await supabase.rpc('is_notification_scheduler_authorized', { provided_token: cronSecret });
+  if (error) throw error;
+  return data === true;
 }
 
 function jsonResponse(body: unknown, status = 200) {
@@ -462,7 +529,7 @@ async function lookupLatestSeriesVolume(seriesTitle: string) {
       requestCount: 1,
       status: 'error',
     });
-    return null;
+    throw new Error(`Rakuten proxy HTTP ${response.status}`);
   }
 
   const payload = (await response.json()) as RakutenProxyResponse;
@@ -480,7 +547,8 @@ async function lookupLatestSeriesVolume(seriesTitle: string) {
     status: payload.ok ? 'ok' : 'error',
   });
 
-  if (!payload.ok || !isRakutenBooksResponse(payload.body)) return null;
+  if (!payload.ok) throw new Error(`Rakuten Books HTTP ${payload.status}`);
+  if (!isRakutenBooksResponse(payload.body)) throw new Error('Invalid Rakuten Books response');
 
   const volumes = payload.body.Items
     ?.map((entry) => entry.Item?.title)
@@ -558,13 +626,15 @@ function parseExpoPushResult(response: { body: unknown; ok: boolean; status: num
   const detailError = typeof details?.error === 'string' ? details.error : undefined;
   const message = typeof dataRecord?.message === 'string' ? dataRecord.message : undefined;
 
-  if (response.ok && ticketStatus !== 'error') {
-    return { accepted: true, deviceNotRegistered: false, error: null as string | null };
+  const ticketId = typeof dataRecord?.id === 'string' ? dataRecord.id : null;
+  if (response.ok && ticketStatus === 'ok' && ticketId) {
+    return { accepted: true, deviceNotRegistered: false, ticketId, error: null as string | null };
   }
 
   const error = detailError || message || `Expo Push HTTP ${response.status}`;
   return {
     accepted: false,
+    ticketId: null,
     deviceNotRegistered: detailError === 'DeviceNotRegistered',
     error,
   };

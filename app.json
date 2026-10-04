@@ -25,7 +25,7 @@
       "package": "com.ohagiworks.honnoma",
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon.png",
-        "backgroundColor": "#e6f4fd"
+        "backgroundColor": "#e3f4e8"
       },
       "predictiveBackGestureEnabled": false,
       "permissions": [
@@ -35,7 +35,7 @@
       "versionCode": 9
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/icon.png"
     },
     "plugins": [
       "expo-router",
