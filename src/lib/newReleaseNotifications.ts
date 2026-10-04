@@ -34,6 +34,7 @@ export async function hasUnseenNewReleaseNotifications(userId: string) {
     .from('notification_logs')
     .select('id,created_at')
     .eq('user_id', userId)
+    .is('archived_at', null)
     .order('created_at', { ascending: false })
     .limit(1);
 
@@ -358,15 +359,17 @@ export async function runNewReleaseCheck(limit = 10) {
   return data ?? { checked: [] };
 }
 
-export async function getNewReleaseNotificationLogs(userId: string, limit = 50) {
+export async function getNewReleaseNotificationLogs(userId: string, limit = 50, view: 'new' | 'history' = 'new') {
   if (!supabase) throw new Error('Supabaseが設定されていません。');
 
-  const { data, error } = await supabase
+  let query = supabase
     .from('notification_logs')
     .select('id,series_title,volume_number,status,notification_title,created_at')
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
     .limit(limit);
+  query = view === 'history' ? query.not('archived_at', 'is', null) : query.is('archived_at', null);
+  const { data, error } = await query;
 
   if (error) throw new Error('通知履歴を取得できませんでした。');
 
@@ -379,6 +382,15 @@ export async function getNewReleaseNotificationLogs(userId: string, limit = 50) 
     volumeNumber:
       typeof row.volume_number === 'number' ? row.volume_number : undefined,
   })) satisfies NewReleaseNotificationLog[];
+}
+
+export async function archiveNewReleaseNotifications(userId: string, notificationIds: string[]) {
+  if (!supabase) throw new Error('Supabaseが設定されていません。');
+  if (notificationIds.length === 0) return;
+  const { error } = await supabase.from('notification_logs')
+    .update({ archived_at: new Date().toISOString() })
+    .eq('user_id', userId).in('id', notificationIds).is('archived_at', null);
+  if (error) throw new Error('通知の確認状態を保存できませんでした。もう一度更新してください。');
 }
 
 export async function getServerOperationDiagnostics(hours = 24) {
