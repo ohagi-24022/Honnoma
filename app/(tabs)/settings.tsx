@@ -7,7 +7,6 @@ import {
   Alert,
   Pressable,
   ScrollView,
-  Share,
   StyleSheet,
   Switch,
   Text,
@@ -38,7 +37,7 @@ export default function SettingsScreen() {
   });
   useScrollToTop(tabScrollToTopRef);
   const { configured, initializing, user, signIn, signOut } = useAuth();
-  const { books, localImportCount, migrateLocalBooks, seriesGroups } = useLibrary();
+  const { localImportCount, migrateLocalBooks, seriesGroups } = useLibrary();
   const {
     hydrated: appSettingsHydrated,
     newReleaseNotifications,
@@ -103,58 +102,6 @@ export default function SettingsScreen() {
     } finally {
       setMigrationSubmitting(false);
     }
-  };
-
-  const escapeCsvValue = (value?: string | number | null) => {
-    const text = value === undefined || value === null ? '' : String(value);
-    return `"${text.replace(/"/g, '""')}"`;
-  };
-
-  const exportCsv = async () => {
-    const header = [
-      'title',
-      'seriesTitle',
-      'volumeNumber',
-      'isbn',
-      'author',
-      'publisher',
-      'purchasePrice',
-      'listPrice',
-      'priceSource',
-      'priceFetchedAt',
-      'status',
-      'createdAt',
-    ];
-    const rows = books.map((book) =>
-      [
-        book.title,
-        book.seriesTitle,
-        book.volumeNumber,
-        book.isbn,
-        book.author,
-        book.publisher,
-        book.purchasePrice,
-        book.listPrice,
-        book.priceSource,
-        book.priceFetchedAt,
-        book.status,
-        book.createdAt,
-      ]
-        .map(escapeCsvValue)
-        .join(','),
-    );
-
-    await Share.share({
-      title: '本の間 CSV Export',
-      message: [header.join(','), ...rows].join('\n'),
-    });
-  };
-
-  const exportJson = async () => {
-    await Share.share({
-      title: '本の間 JSON Backup',
-      message: JSON.stringify({ exportedAt: new Date().toISOString(), books }, null, 2),
-    });
   };
 
   const toggleNewReleaseNotifications = async (enabled: boolean) => {
@@ -373,36 +320,7 @@ export default function SettingsScreen() {
             </Text>
           </View>
         </View>
-        <View style={[styles.exportBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <Text style={[styles.rowTitle, { color: colors.text }]}>詳細データを書き出す</Text>
-          <Text style={[styles.rowCopy, { color: colors.muted }]}>CSV/JSONは確認用や開発時の控えとして使えます。</Text>
-          <View style={styles.authButtons}>
-            <Pressable
-              disabled={books.length === 0}
-              onPress={() => void exportCsv()}
-              style={[
-                styles.neutralButton,
-                styles.authButton,
-                { borderColor: colors.border },
-                books.length === 0 && styles.disabledButton,
-              ]}
-            >
-              <Text style={[styles.neutralButtonText, { color: colors.text }]}>CSV出力</Text>
-            </Pressable>
-            <Pressable
-              disabled={books.length === 0}
-              onPress={() => void exportJson()}
-              style={[
-                styles.neutralButton,
-                styles.authButton,
-                { borderColor: colors.border },
-                books.length === 0 && styles.disabledButton,
-              ]}
-            >
-              <Text style={[styles.neutralButtonText, { color: colors.text }]}>JSON出力</Text>
-            </Pressable>
-          </View>
-        </View>
+
       </View>
 
       <View style={[styles.section, { borderBottomColor: colors.border }]}>
@@ -663,12 +581,6 @@ const styles = StyleSheet.create({
   pendingBox: {
     borderRadius: 8,
     marginTop: 10,
-    padding: 12,
-  },
-  exportBox: {
-    borderRadius: 8,
-    borderWidth: 1,
-    marginTop: 14,
     padding: 12,
   },
   helpLink: {
