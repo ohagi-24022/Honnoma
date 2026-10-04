@@ -24,7 +24,7 @@ It is designed for readers who buy manga, light novels, and other multi-volume s
 ## Tech Stack
 
 - React Native
-- Expo SDK 54
+- Expo SDK 57
 - expo-router
 - Supabase
 - EAS Build
@@ -32,6 +32,8 @@ It is designed for readers who buy manga, light novels, and other multi-volume s
 - Google Books API
 - Rakuten Books API, optional
 
+
+SDK 57 requires Node.js 22.13 or later and iOS 16.4 or later. Local iOS native builds require Xcode 26.4 or later. After upgrading, rebuild any development or production native app; existing SDK 54 builds cannot load SDK 57 code. Use an SDK 57-compatible Expo Go for quick testing.
 ## Getting Started
 
 Install dependencies:

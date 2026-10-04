@@ -162,7 +162,7 @@ export function EdgeSwipeBack({ children, onBack, style }: EdgeSwipeBackProps) {
 const styles = StyleSheet.create({
   root: { flex: 1, overflow: 'hidden' },
   backdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   backdropPanel: {
     borderRightWidth: StyleSheet.hairlineWidth,
