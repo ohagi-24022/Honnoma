@@ -1,3 +1,4 @@
+import * as Linking from 'expo-linking';
 import { Session, User } from '@supabase/supabase-js';
 import {
   createContext,
@@ -10,6 +11,7 @@ import {
 } from 'react';
 
 import { supabase } from '../lib/supabase';
+import { AUTH_REDIRECT_URL, parseAuthCallback } from '../lib/authRecovery';
 import { disableNewReleaseNotifications } from '../lib/newReleaseNotifications';
 
 type AuthContextValue = {
@@ -20,6 +22,12 @@ type AuthContextValue = {
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
+  recoveryReady: boolean;
+  authLinkUrl: string | null;
+  requestPasswordReset: (email: string) => Promise<void>;
+  resendConfirmation: (email: string) => Promise<void>;
+  completeAuthLink: (url: string) => Promise<'recovery' | 'signup'>;
+  updatePassword: (password: string) => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -35,6 +43,12 @@ function toAuthMessage(error: { message?: string }) {
   if (/user already registered/i.test(message)) {
     return 'このメールアドレスはすでに登録されています。';
   }
+  if (/rate limit|too many|security purposes/i.test(message)) {
+    return '送信回数の上限に達しました。少し時間をおいてからお試しください。';
+  }
+  if (/same_password|different from the old/i.test(message)) {
+    return '現在とは異なるパスワードを入力してください。';
+  }
   if (/password/i.test(message)) {
     return 'パスワードの条件を満たしていません。6文字以上で入力してください。';
   }
@@ -45,8 +59,10 @@ function toAuthMessage(error: { message?: string }) {
 }
 
 export function AuthProvider({ children }: PropsWithChildren) {
+  const authLinkUrl = Linking.useURL();
   const [session, setSession] = useState<Session | null>(null);
   const [initializing, setInitializing] = useState(true);
+  const [recoveryReady, setRecoveryReady] = useState(false);
 
   useEffect(() => {
     const client = supabase;
@@ -69,6 +85,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
     const { data } = client.auth.onAuthStateChange((_event, nextSession) => {
       setSession(nextSession);
+      if (!nextSession) setRecoveryReady(false);
     });
 
     return () => {
@@ -84,9 +101,38 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
   const signUp = useCallback(async (email: string, password: string) => {
     if (!supabase) throw new Error('Supabase is not configured.');
-    const { error } = await supabase.auth.signUp({ email, password });
+    const { error } = await supabase.auth.signUp({ email, password, options: { emailRedirectTo: AUTH_REDIRECT_URL } });
     if (error) throw new Error(toAuthMessage(error));
   }, []);
+
+  const requestPasswordReset = useCallback(async (email: string) => {
+    if (!supabase) throw new Error('認証の設定が完了していません。');
+    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: AUTH_REDIRECT_URL });
+    if (error) throw new Error(toAuthMessage(error));
+  }, []);
+
+  const resendConfirmation = useCallback(async (email: string) => {
+    if (!supabase) throw new Error('認証の設定が完了していません。');
+    const { error } = await supabase.auth.resend({ type: 'signup', email, options: { emailRedirectTo: AUTH_REDIRECT_URL } });
+    if (error) throw new Error(toAuthMessage(error));
+  }, []);
+
+  const completeAuthLink = useCallback(async (url: string) => {
+    if (!supabase) throw new Error('認証の設定が完了していません。');
+    const callback = parseAuthCallback(url);
+    setRecoveryReady(false);
+    const { data, error } = await supabase.auth.setSession(callback.tokens);
+    if (error || !data.session) throw new Error('リンクの有効期限が切れているか、使用済みです。メールをもう一度送信してください。');
+    setRecoveryReady(callback.type === 'recovery');
+    return callback.type;
+  }, []);
+
+  const updatePassword = useCallback(async (password: string) => {
+    if (!supabase || !recoveryReady) throw new Error('再設定メールのリンクを開いてからお試しください。');
+    const { error } = await supabase.auth.updateUser({ password });
+    if (error) throw new Error(toAuthMessage(error));
+    setRecoveryReady(false);
+  }, [recoveryReady]);
 
   const signOut = useCallback(async () => {
     if (!supabase) return;
@@ -111,8 +157,9 @@ export function AuthProvider({ children }: PropsWithChildren) {
       signIn,
       signUp,
       signOut,
+      authLinkUrl, recoveryReady, requestPasswordReset, resendConfirmation, completeAuthLink, updatePassword,
     }),
-    [initializing, session, signIn, signOut, signUp],
+    [authLinkUrl, initializing, session, signIn, signOut, signUp, recoveryReady, requestPasswordReset, resendConfirmation, completeAuthLink, updatePassword],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -58,8 +58,8 @@ export default function SignUpScreen() {
       setPassword('');
       Alert.alert(
         '確認メールを送信しました',
-        'Supabaseから届く認証メールを開いたあと、ログイン画面でもう一度メールアドレスとパスワードを入力してください。',
-        [{ text: 'ログイン画面へ', onPress: () => router.replace('/(tabs)/settings') }],
+        '届いた確認メールのリンクを開くと登録が完了します。届かない場合は、迷惑メールフォルダを確認するか、確認メールを再送してください。',
+        [{ text: '閉じる' }, { text: 'ログイン画面へ', onPress: () => router.replace('/(tabs)/settings') }],
       );
     } catch (error) {
       Alert.alert('登録できませんでした', error instanceof Error ? error.message : 'しばらくしてからもう一度お試しください。');
@@ -89,9 +89,9 @@ export default function SignUpScreen() {
         <View style={[styles.panel, { backgroundColor: colors.elevated }]}>
           <Text style={[styles.sectionTitle, { color: colors.text }]}>登録前に確認すること</Text>
           <View style={styles.noticeList}>
-            <NoticeItem text="登録後、Supabaseから認証メールが届きます。" />
+            <NoticeItem text="登録後、確認メールが届きます。" />
             <NoticeItem text="メール内のリンクを開くと登録が完了します。" />
-            <NoticeItem text="認証後は、ログイン画面でもう一度メールアドレスとパスワードを入力してください。" />
+            <NoticeItem text="リンクは本の間をインストールした端末で開いてください。" />
           </View>
         </View>
 
@@ -172,6 +172,11 @@ export default function SignUpScreen() {
             <Text style={[styles.primaryButtonText, { color: colors.background }]}>登録する</Text>
           )}
         </Pressable>
+        <Link href={{ pathname: '/account-help', params: { mode: 'confirmation', email: email.trim() } }} asChild>
+          <Pressable style={{ paddingVertical: 12 }} accessibilityRole="link">
+            <Text style={{ color: colors.primary, textAlign: 'center' }}>確認メールが届かない・再送する</Text>
+          </Pressable>
+        </Link>
       </ScrollView>
     </KeyboardAvoidingView>
   );

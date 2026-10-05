@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { router } from 'expo-router';
+import { router, usePathname } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 
@@ -38,7 +38,8 @@ function legacyStorageKey(userId: string) {
 }
 
 export function OnboardingGate() {
-  const { user } = useAuth();
+  const { user, recoveryReady } = useAuth();
+  const pathname = usePathname();
   const { colors } = useAppTheme();
   const [visible, setVisible] = useState(false);
   const [checking, setChecking] = useState(true);
@@ -85,7 +86,7 @@ export function OnboardingGate() {
 
   const primaryLabel = useMemo(() => (isLast ? '使いはじめる' : '次へ'), [isLast]);
 
-  if (checking || !user?.id) return null;
+  if (checking || !user?.id || recoveryReady || pathname === '/auth-callback' || pathname === '/reset-password') return null;
 
   return (
     <Modal animationType="fade" transparent visible={visible} onRequestClose={() => void markSeen()}>

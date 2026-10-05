@@ -299,6 +299,12 @@ export default function SettingsScreen() {
                 </Pressable>
               </Link>
             </View>
+            <Link href={{ pathname: '/account-help', params: { mode: 'reset', email: email.trim() } }} asChild>
+              <Pressable accessibilityRole="link" style={{ paddingVertical: 10 }}><Text style={{ color: colors.primary }}>パスワードを忘れた方</Text></Pressable>
+            </Link>
+            <Link href={{ pathname: '/account-help', params: { mode: 'confirmation', email: email.trim() } }} asChild>
+              <Pressable accessibilityRole="link" style={{ paddingVertical: 10 }}><Text style={{ color: colors.primary }}>確認メールが届かない・再送する</Text></Pressable>
+            </Link>
           </View>
         )}
       </View>

@@ -1,5 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import * as WebBrowser from 'expo-web-browser';
 
 import { useAppTheme } from '../src/store/ThemeContext';
 
@@ -39,6 +40,15 @@ const sections = [
 export default function PrivacyScreen() {
   const { colors } = useAppTheme();
 
+  async function openContact(kind: 'form' | 'email') {
+    try {
+      if (kind === 'form') await WebBrowser.openBrowserAsync('https://docs.google.com/forms/d/e/1FAIpQLSdKp8lpTAanF885CYChSQUafiQhV-YWXgQmeVTUxFu1612s3Q/viewform');
+      else await Linking.openURL('mailto:ohagiworks.contact@gmail.com?subject=' + encodeURIComponent('本の間についてのお問い合わせ'));
+    } catch {
+      Alert.alert('開けませんでした', kind === 'email' ? 'メールアプリの設定を確認してください。下のメールアドレスをコピーして問い合わせることもできます。' : '通信環境を確認してください。下のURLをコピーしてブラウザで開くこともできます。');
+    }
+  }
+
   return (
     <ScrollView
       style={[styles.screen, { backgroundColor: colors.background }]}
@@ -66,6 +76,12 @@ export default function PrivacyScreen() {
 
       <View style={[styles.card, { borderColor: colors.border }]}>
         <Text style={[styles.sectionTitle, { color: colors.text }]}>問い合わせ先</Text>
+        <Pressable accessibilityRole="link" onPress={() => void openContact('form')} style={[styles.contactButton, { backgroundColor: colors.elevated }]}>
+          <Ionicons name="open-outline" color={colors.primary} size={19} /><Text style={{ color: colors.primary, fontWeight: '800' }}>問い合わせフォームを開く</Text>
+        </Pressable>
+        <Pressable accessibilityRole="link" onPress={() => void openContact('email')} style={[styles.contactButton, { backgroundColor: colors.elevated }]}>
+          <Ionicons name="mail-outline" color={colors.primary} size={19} /><Text style={{ color: colors.primary, fontWeight: '800' }}>メールで問い合わせる</Text>
+        </Pressable>
         <View style={styles.contactRows}>
           <View style={styles.contactRow}>
             <Text style={[styles.contactLabel, { color: colors.text }]}>運営者</Text>
@@ -103,6 +119,7 @@ const styles = StyleSheet.create({
   card: { borderRadius: 8, borderWidth: 1, gap: 7, padding: 14 },
   sectionTitle: { fontSize: 16, fontWeight: '900' },
   body: { fontSize: 14, lineHeight: 21 },
+  contactButton: { minHeight: 48, borderRadius: 8, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 8 },
   contactRows: { gap: 10 },
   contactRow: { gap: 4 },
   contactLabel: { fontSize: 13, fontWeight: '900' },

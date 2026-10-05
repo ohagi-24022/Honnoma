@@ -20,6 +20,9 @@ type NotificationLogRow = {
   attempt_count: number | null;
   id: string;
   user_id: string;
+  series_key: string;
+  series_title: string;
+  volume_number: number | null;
 };
 
 type PublicationCheckRow = {
@@ -288,7 +291,7 @@ async function getRecentPublicationCheck(seriesKey: string): Promise<Publication
 async function deliverDailyNotifications(userLimit: number, retryOnly = false) {
   let query = supabase
     .from('notification_logs')
-    .select('id,user_id,attempt_count')
+    .select('id,user_id,attempt_count,series_key,series_title,volume_number')
     .eq('status', 'pending')
     .lte('next_retry_at', new Date().toISOString())
     .order('created_at', { ascending: true })
@@ -320,19 +323,20 @@ async function deliverDailyNotifications(userLimit: number, retryOnly = false) {
         .eq('enabled', true);
       if (tokenError) throw tokenError;
 
+      const notification = buildNewReleaseMessage(targetLogs);
       let sent = 0;
       let lastResponse: unknown = null;
       const tickets: Array<{ id: string; token: string }> = [];
       let lastError: string | null = null;
       for (const token of (tokens ?? []) as PushTokenRow[]) {
         const response = await sendExpoPush({
-          body: '蒐集架で新刊情報を確認できます。',
+          body: notification.body,
           channelId: 'new-releases',
           data: {
-            url: '/(tabs)/notifications',
+            url: '/notifications',
           },
           sound: 'default',
-          title: '蒐集架 新刊情報',
+          title: notification.title,
           to: token.expo_push_token,
         });
         lastResponse = response;
@@ -363,7 +367,7 @@ async function deliverDailyNotifications(userLimit: number, retryOnly = false) {
           failed_at: status === 'failed' ? new Date().toISOString() : null,
           last_error: sent > 0 ? null : lastError ?? 'No enabled push token was available.',
           next_retry_at: sent > 0 ? new Date().toISOString() : nextRetryAt(attemptCount),
-          notification_title: '蒐集架 新刊情報',
+          notification_title: notification.title,
           response: { lastResponse, tickets },
           status,
         })
@@ -407,21 +411,30 @@ async function checkPushReceipts(limit: number) {
     .order('created_at', { ascending: true }).limit(limit);
   if (error) throw error;
   const results: Array<{ status: string; error?: string }> = [];
+  const receiptResponses = new Map<string, Record<string, unknown>>();
   for (const log of logs ?? []) {
     const tickets = log.response?.tickets;
     if (!Array.isArray(tickets) || tickets.length === 0) continue;
     const ids = tickets.filter(ticket => !ticket.receipt).map(ticket => ticket.id);
     if (ids.length === 0) continue;
-    const response = await fetch('https://exp.host/--/api/v2/push/getReceipts', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ids }),
-    });
-    const payload = await response.json();
-    if (!response.ok || !payload.data || typeof payload.data !== 'object' || payload.errors?.length) {
-      throw new Error(`Expo receipts HTTP ${response.status}`);
+    // A daily digest stores the same ticket in every included volume's log.
+    // Query each ticket group once per run, rather than once per volume.
+    const receiptKey = [...ids].sort().join(',');
+    let receiptData = receiptResponses.get(receiptKey);
+    if (!receiptData) {
+      const response = await fetch('https://exp.host/--/api/v2/push/getReceipts', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.data || typeof payload.data !== 'object' || payload.errors?.length) {
+        throw new Error(`Expo receipts HTTP ${response.status}`);
+      }
+      receiptData = payload.data;
+      receiptResponses.set(receiptKey, receiptData);
     }
     for (const ticket of tickets) {
-      const receipt = payload.data[ticket.id];
+      const receipt = receiptData[ticket.id];
       if (!receipt || !['ok', 'error'].includes(receipt.status)) continue;
       ticket.receipt = receipt;
       if (receipt.details?.error === 'DeviceNotRegistered') {
@@ -446,6 +459,26 @@ async function checkPushReceipts(limit: number) {
       ...(receiptError ? { error: receiptError.details?.error ?? 'Expo receipt error' } : {}) });
   }
   return results;
+}
+
+function buildNewReleaseMessage(logs: NotificationLogRow[]) {
+  const series = new Map<string, NotificationLogRow>();
+  for (const log of logs) {
+    const key = log.series_key || log.series_title;
+    const previous = series.get(key);
+    if (!previous || (log.volume_number ?? 0) > (previous.volume_number ?? 0)) series.set(key, log);
+  }
+  const entries = [...series.values()];
+  const listed = entries.slice(0, 3).map(log => {
+    const title = Array.from(log.series_title).slice(0, 35).join('');
+    const suffix = Array.from(log.series_title).length > 35 ? '…' : '';
+    return `『${title}${suffix}』${log.volume_number ? `第${log.volume_number}巻` : ''}`;
+  }).join('、');
+  const remaining = entries.length - Math.min(entries.length, 3);
+  return {
+    title: entries.length > 1 ? `本の間 ${entries.length}作品の新刊情報` : '本の間 新刊情報',
+    body: `${listed}${remaining > 0 ? ` ほか${remaining}作品` : ''}の新刊情報が見つかりました。`,
+  };
 }
 
 function nextAttemptCount(logs: NotificationLogRow[]) {

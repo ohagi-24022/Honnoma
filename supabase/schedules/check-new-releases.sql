@@ -12,7 +12,8 @@ select net.http_post(
   ),
   body := '{"mode":"check","limit":100}'::jsonb,
   timeout_milliseconds := 120000
-);
+)
+where exists (select 1 from public.series_subscriptions where enabled);
 $job$);
 
 select cron.schedule('honnoma-deliver-new-release-notifications-at-1200-jst', '0 3 * * *', $job$
@@ -25,7 +26,8 @@ select net.http_post(
   ),
   body := '{"mode":"deliver","userLimit":100}'::jsonb,
   timeout_milliseconds := 120000
-);
+)
+where exists (select 1 from public.notification_logs where status = 'pending' and next_retry_at <= now());
 $job$);
 
 select cron.schedule('honnoma-retry-new-release-notifications', '5-55/10 3-11 * * *', $job$
@@ -38,7 +40,8 @@ select net.http_post(
   ),
   body := '{"mode":"retry","userLimit":100}'::jsonb,
   timeout_milliseconds := 120000
-);
+)
+where exists (select 1 from public.notification_logs where status = 'pending' and attempt_count > 0 and next_retry_at <= now());
 $job$);
 
 select cron.schedule('honnoma-check-push-receipts', '*/15 * * * *', $job$
@@ -51,5 +54,6 @@ select net.http_post(
   ),
   body := '{"mode":"receipts","userLimit":500}'::jsonb,
   timeout_milliseconds := 120000
-);
+)
+where exists (select 1 from public.notification_logs where status = 'sent' and delivered_at is null and next_retry_at between now() - interval '24 hours' and now() - interval '15 minutes' and jsonb_array_length(coalesce(response->'tickets', '[]'::jsonb)) > 0);
 $job$);
