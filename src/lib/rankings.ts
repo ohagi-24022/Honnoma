@@ -55,6 +55,9 @@ export const rankingCategoryLabels: Record<RankingCategory, { description: strin
 
 export const rankingCategories = Object.keys(rankingCategoryLabels) as RankingCategory[];
 
+// Match the server's privacy threshold for each public category independently.
+const MIN_PUBLIC_RANKING_USERS = 3;
+
 function toNumber(value: number | string | null | undefined) {
   const numericValue = Number(value ?? 0);
   return Number.isFinite(numericValue) ? numericValue : 0;
@@ -135,7 +138,9 @@ export function buildRankingRows(
   wishlistItems: WishlistItem[],
 ) {
   if (category === 'favorite') {
-    return mergeDuplicateSeriesRows(globalRows.map(toDisplayRow))
+    return mergeDuplicateSeriesRows(
+      globalRows.filter((row) => Number(row.favorite_count ?? 0) >= MIN_PUBLIC_RANKING_USERS).map(toDisplayRow),
+    )
       .sort(
         (left, right) =>
           Number(right.favoriteCount ?? 0) - Number(left.favoriteCount ?? 0) ||
@@ -156,11 +161,15 @@ export function buildRankingRows(
       .sort((left, right) => Number(right.score ?? 0) - Number(left.score ?? 0) || left.title.localeCompare(right.title));
   }
 
-  const rows = mergeDuplicateSeriesRows(globalRows.map(toDisplayRow));
+  const categoryRows = globalRows.filter((row) => {
+    if (category === 'owned') return Number(row.owner_count ?? 0) >= MIN_PUBLIC_RANKING_USERS;
+    if (category === 'wanted') return Number(row.want_count ?? 0) >= MIN_PUBLIC_RANKING_USERS;
+    return true;
+  });
+  const rows = mergeDuplicateSeriesRows(categoryRows.map(toDisplayRow));
 
   if (category === 'wanted') {
     return rows
-      .filter((row) => Number(row.wantCount ?? 0) > 0)
       .sort(
         (left, right) =>
           Number(right.wantCount ?? 0) - Number(left.wantCount ?? 0) ||
@@ -171,12 +180,10 @@ export function buildRankingRows(
 
   if (category === 'owned') {
     return rows
-      .filter((row) => Number(row.ownerCount ?? 0) > 0)
       .sort(
         (left, right) =>
           Number(right.ownerCount ?? 0) - Number(left.ownerCount ?? 0) ||
-          Number(right.favoriteCount ?? 0) - Number(left.favoriteCount ?? 0) ||
-          Number(right.wantCount ?? 0) - Number(left.wantCount ?? 0) ||
+          Number(right.ownedVolumeCount ?? 0) - Number(left.ownedVolumeCount ?? 0) ||
           left.title.localeCompare(right.title),
       );
   }

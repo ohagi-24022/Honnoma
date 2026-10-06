@@ -60,6 +60,19 @@ https://supabase.com/docs/guides/auth/auth-smtp
 
 ## 実機確認
 
+### previewの接続設定
+
+2026年10月5日、EASの`preview`環境に`EXPO_PUBLIC_SUPABASE_URL`と
+`EXPO_PUBLIC_SUPABASE_ANON_KEY`を登録した。ローカルの`.env`だけでは
+クラウドで作るアプリに接続設定が入らない。
+`eas.json`で各ビルドの環境を明示し、クラウドビルド中にこの2項目が不足している場合は
+`app.config.js`でビルドを止める。値はEASで管理し、この文書には記載しない。
+
+接続設定の変更は新しく作成したビルドに反映される。
+古いpreviewはビルド11以降へ入れ替える。
+`development`と`production`でクラウドビルドする場合も、それぞれのEAS環境に
+同じ2項目を事前登録する。公開用キーのみを使い、`service_role`や秘密キーは使わない。
+
 送信サービス設定後、テスト用のメールアドレスを使って確認する。
 
 1. 新規登録 → 確認メールのリンク → 本の間で確認完了を表示。

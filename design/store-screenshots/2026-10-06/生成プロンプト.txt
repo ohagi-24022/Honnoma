@@ -1,0 +1,7 @@
+Use case: compositing.
+Asset type: Japanese App Store screenshot DESIGN PROOF, not final submission.
+Input image 1 is the edit target and the actual screenshot of the manga library app 本の間. Create ONE elegant tall portrait marketing screenshot, aspect ratio roughly 1290:2796.
+Layout: clean off-white background, restrained vivid iOS blue accent matching the app. Top 22% is a typography area, bottom 75% contains the entire provided screenshot scaled uniformly inside a simple thin rounded white card with very subtle shadow, generous side margins. No device hardware frame. Do not crop any app controls or distort the screenshot. A small blue rule and tiny brand label above headline.
+Exact added text: small brand label "本の間"; large bold Japanese headline split into two lines "漫画の本棚を、" and "すっきり。"; modest subtitle split into two lines "所持巻・抜け巻・読書状況を" and "まとめて管理。".
+Use crisp modern Japanese sans serif; black headline, muted gray subtitle. Large legible type and restrained spacing. Make the screenshot as large as possible within remaining space.
+CRITICAL: Treat the original screenshot as an immutable pasted image. Preserve its app UI, existing Japanese text, all book cover artwork, counts, button positions, colors and navigation exactly as supplied. Only add the surrounding canvas and marketing text. Do not redraw, invent or correct app content. Do not add stars, store badges, awards, extra features, logos or watermarks. This is a review draft.
