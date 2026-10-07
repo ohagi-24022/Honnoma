@@ -14,10 +14,10 @@ registerFont('W7', 'HonnomaBold');
 registerFont('W3', 'HonnomaRegular');
 
 const slides = [
-  { file: '01-bookshelf.png', source: 'bookshelf.jpg', title: ['漫画の本棚を、', 'すっきり。'], subtitle: ['所持巻・抜け巻・読書状況を', 'まとめて管理。'] },
+  { file: '01-bookshelf.png', source: 'bookshelf.jpg', title: ['あなたの本棚を、', 'すっきり。'], subtitle: ['所持巻・抜け巻・読書状況を', 'まとめて管理。'] },
   { file: '02-scan.png', source: 'scan.jpg', title: ['バーコードで、', 'かんたん登録。'], subtitle: ['ISBNを読み取って、', '本棚に追加。'] },
   { file: '03-series.png', source: 'series.jpg', title: ['抜けている巻が、', 'ひと目で。'], subtitle: ['シリーズごとに所持巻と', '読書状況を確認。'] },
-  { file: '04-wishlist.png', source: 'wishlist.jpg', title: ['次に買う一冊を、', '忘れない。'], subtitle: ['欲しい漫画を、', '優先度と一緒に整理。'] },
+  { file: '04-wishlist.png', source: 'wishlist.jpg', title: ['次に買う一冊を、', '忘れない。'], subtitle: ['欲しい本を、', '優先度と一緒に整理。'] },
   { file: '05-book-detail.png', source: 'book-detail.jpg', title: ['一冊の情報を、', 'まとめて確認。'], subtitle: ['表紙・作者・出版社・', '紹介文を確認。'] },
   { file: '06-rankings.png', source: 'rankings.jpg', title: ['みんなの本棚から、', '次の一冊へ。'], subtitle: ['欲しい・所持のランキングで', '作品を見つける。'] },
 ];
