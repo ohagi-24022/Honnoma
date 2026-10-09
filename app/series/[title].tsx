@@ -295,10 +295,11 @@ export default function SeriesScreen() {
 
   const openPurchaseCandidates = async (item: ShelfItem) => {
     const purchaseUrl = buildPurchaseUrl(item.seriesTitle, item.volumeNumber);
-    if (openExternalPurchaseLinks) {
-      await Linking.openURL(purchaseUrl);
-    } else {
-      await WebBrowser.openBrowserAsync(purchaseUrl);
+    try {
+      if (openExternalPurchaseLinks) await Linking.openURL(purchaseUrl);
+      else await WebBrowser.openBrowserAsync(purchaseUrl);
+    } catch {
+      Alert.alert('リンクを開けませんでした', '外部ブラウザを利用できるか確認してください。');
     }
   };
 

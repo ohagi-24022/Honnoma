@@ -44,6 +44,8 @@ export default function SettingsScreen() {
     setNewReleaseNotifications,
     openExternalPurchaseLinks,
     setOpenExternalPurchaseLinks,
+    showBookContent,
+    setShowBookContent,
     trackPurchasePrices,
     setTrackPurchasePrices,
   } = useAppSettings();
@@ -380,12 +382,24 @@ export default function SettingsScreen() {
       </View>
 
       <View style={[styles.section, { borderBottomColor: colors.border }]}>
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>本の表示</Text>
+        <View style={styles.row}>
+          <View style={styles.rowText}>
+            <Text style={[styles.rowTitle, { color: colors.text }]}>表紙・紹介文を表示</Text>
+            <Text style={[styles.rowCopy, { color: colors.muted }]}>確認済みの表紙・紹介文を表示します。OFFでも書名・巻数・読書記録は残ります。未確認の内容はONでも表示されません。</Text>
+          </View>
+          <Switch accessibilityLabel="表紙・紹介文を表示" disabled={!appSettingsHydrated}
+            onValueChange={setShowBookContent} value={showBookContent}
+            thumbColor="#ffffff" trackColor={{ false: '#d4d4d4', true: '#31c759' }} />
+        </View>
+      </View>
+      <View style={[styles.section, { borderBottomColor: colors.border }]}>
         <Text style={[styles.sectionTitle, { color: colors.text }]}>外部EC</Text>
         <View style={styles.row}>
           <View style={styles.rowText}>
-            <Text style={[styles.rowTitle, { color: colors.text }]}>外部アプリで直接開く</Text>
+            <Text style={[styles.rowTitle, { color: colors.text }]}>購入リンクを外部で開く</Text>
             <Text style={[styles.rowCopy, { color: colors.muted }]}>
-              ONは購入アプリへ直接遷移、OFFは本の間内ブラウザで開きます。
+              OFFはアプリ内ブラウザ、ONは外部ブラウザや対応する購入アプリで開きます。
             </Text>
           </View>
           <Switch

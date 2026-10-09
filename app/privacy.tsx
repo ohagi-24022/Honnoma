@@ -1,6 +1,5 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import * as WebBrowser from 'expo-web-browser';
 
 import { useAppTheme } from '../src/store/ThemeContext';
 
@@ -23,7 +22,7 @@ const sections = [
   {
     title: '外部サービス',
     body:
-      'Supabase、Expo Push Notifications、OpenBD、Google Books API、Rakuten Books API、NDL Search、外部ECサイトまたはブラウザを利用する場合があります。',
+      'Supabase、Expo Push Notifications、OpenBD、Google Books API、Rakuten Books API、NDL Search、OpenAI API、外部ECサイトまたはブラウザを利用する場合があります。表紙・紹介文の表示確認には、公開されている書誌情報と表紙画像をOpenAI APIへ送信します。ユーザーのメールアドレス、メモ、読書履歴は送信しません。',
   },
   {
     title: '削除',
@@ -42,7 +41,7 @@ export default function PrivacyScreen() {
 
   async function openContact(kind: 'form' | 'email') {
     try {
-      if (kind === 'form') await WebBrowser.openBrowserAsync('https://docs.google.com/forms/d/e/1FAIpQLSdKp8lpTAanF885CYChSQUafiQhV-YWXgQmeVTUxFu1612s3Q/viewform');
+      if (kind === 'form') await Linking.openURL('https://docs.google.com/forms/d/e/1FAIpQLSdKp8lpTAanF885CYChSQUafiQhV-YWXgQmeVTUxFu1612s3Q/viewform');
       else await Linking.openURL('mailto:ohagiworks.contact@gmail.com?subject=' + encodeURIComponent('本の間についてのお問い合わせ'));
     } catch {
       Alert.alert('開けませんでした', kind === 'email' ? 'メールアプリの設定を確認してください。下のメールアドレスをコピーして問い合わせることもできます。' : '通信環境を確認してください。下のURLをコピーしてブラウザで開くこともできます。');

@@ -8,7 +8,7 @@
     "userInterfaceStyle": "automatic",
     "scheme": "honnoma",
     "ios": {
-      "supportsTablet": true,
+      "supportsTablet": false,
       "icon": {
         "light": "./assets/icon.png",
         "dark": "./assets/icon.png",
@@ -19,7 +19,7 @@
         "NSCameraUsageDescription": "ISBNバーコードを読み取り、本を登録するためにカメラを使用します。",
         "ITSAppUsesNonExemptEncryption": false
       },
-      "buildNumber": "14"
+      "buildNumber": "16"
     },
     "android": {
       "package": "com.ohagiworks.honnoma",

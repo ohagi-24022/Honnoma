@@ -9,6 +9,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { OnboardingGate } from '../src/components/OnboardingGate';
 
+import { BookContentProvider } from '../src/store/BookContentContext';
 import { AppSettingsProvider } from '../src/store/AppSettingsContext';
 import { AuthProvider } from '../src/store/AuthContext';
 import { LibraryProvider } from '../src/store/LibraryContext';
@@ -39,12 +40,14 @@ export default function RootLayout() {
         <ThemeProvider>
         <AuthProvider>
           <AppSettingsProvider>
+            <BookContentProvider>
             <WishlistProvider>
               <LibraryProvider>
                 <RootStack />
                 <OnboardingGate />
               </LibraryProvider>
             </WishlistProvider>
+            </BookContentProvider>
           </AppSettingsProvider>
         </AuthProvider>
       </ThemeProvider>

@@ -1,8 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import * as WebBrowser from 'expo-web-browser';
 import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import { useLayoutEffect, useMemo } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { useAppTheme } from '../src/store/ThemeContext';
 
@@ -130,7 +129,11 @@ export default function ReportScreen() {
   }, [colors.text, navigation, router]);
 
   const openForm = async () => {
-    await WebBrowser.openBrowserAsync(REPORT_FORM_URL);
+    try {
+      await Linking.openURL(REPORT_FORM_URL);
+    } catch {
+      Alert.alert('リンクを開けませんでした', '外部ブラウザを利用できるか確認してください。');
+    }
   };
 
   return (

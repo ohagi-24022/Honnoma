@@ -79,11 +79,12 @@ export default function WishlistScreen() {
   });
 
   const openPurchaseCandidate = async (item: WishlistItem) => {
-    const purchaseUrl = item.purchaseUrl ?? buildPurchaseUrl(item.title);
-    if (openExternalPurchaseLinks) {
-      await Linking.openURL(purchaseUrl);
-    } else {
-      await WebBrowser.openBrowserAsync(purchaseUrl);
+    try {
+      const purchaseUrl = buildPurchaseUrl(item.title);
+      if (openExternalPurchaseLinks) await Linking.openURL(purchaseUrl);
+      else await WebBrowser.openBrowserAsync(purchaseUrl);
+    } catch {
+      Alert.alert('リンクを開けませんでした', '外部ブラウザを利用できるか確認してください。');
     }
   };
 

@@ -35,6 +35,7 @@ type UserSettings = {
 type LegacyUserSettings = Partial<UserSettings>;
 
 type DeviceSettings = {
+  showBookContent: boolean;
   openExternalPurchaseLinks: boolean;
   trackPurchasePrices: boolean;
 };
@@ -48,6 +49,7 @@ type AppSettingsContextValue = AppSettings & {
   setFavoriteSeries: (seriesTitle: string, favorite: boolean) => void;
   setNewReleaseNotifications: (value: boolean) => void;
   setOpenExternalPurchaseLinks: (value: boolean) => void;
+  setShowBookContent: (value: boolean) => void;
   setTrackPurchasePrices: (value: boolean) => void;
   toggleFavoriteSeries: (seriesTitle: string) => void;
 };
@@ -58,6 +60,7 @@ const defaultUserSettings: UserSettings = {
 };
 
 const defaultDeviceSettings: DeviceSettings = {
+  showBookContent: true,
   openExternalPurchaseLinks: false,
   trackPurchasePrices: false,
 };
@@ -185,8 +188,9 @@ export function AppSettingsProvider({ children }: PropsWithChildren) {
         });
         const { newReleaseNotifications: _legacyNewReleaseNotifications, ...cleanDeviceSettings } = parsedDeviceSettings as Partial<DeviceSettings> & { newReleaseNotifications?: boolean };
         setDeviceSettings({
-          ...defaultDeviceSettings,
-          ...cleanDeviceSettings,
+          showBookContent: typeof cleanDeviceSettings.showBookContent === 'boolean' ? cleanDeviceSettings.showBookContent : true,
+          openExternalPurchaseLinks: cleanDeviceSettings.openExternalPurchaseLinks ?? false,
+          trackPurchasePrices: cleanDeviceSettings.trackPurchasePrices ?? defaultDeviceSettings.trackPurchasePrices,
         });
       })
       .finally(() => {
@@ -280,6 +284,8 @@ export function AppSettingsProvider({ children }: PropsWithChildren) {
       },
       setOpenExternalPurchaseLinks: (openExternalPurchaseLinks: boolean) =>
         setDeviceSettings((current) => ({ ...current, openExternalPurchaseLinks })),
+      setShowBookContent: (showBookContent: boolean) =>
+        setDeviceSettings((current) => ({ ...current, showBookContent })),
       setTrackPurchasePrices: (trackPurchasePrices: boolean) =>
         setDeviceSettings((current) => ({ ...current, trackPurchasePrices })),
       toggleFavoriteSeries: (seriesTitle: string) => {

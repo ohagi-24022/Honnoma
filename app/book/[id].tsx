@@ -16,6 +16,7 @@ import { BookCover } from '../../src/components/BookCover';
 import { BookVolumeDetails } from '../../src/lib/bookApis';
 import { getBookVolumeDetails } from '../../src/lib/bookDetailsCache';
 import { getKnownBookCoverOverride } from '../../src/lib/knownBookOverrides';
+import { useReviewedBookContent, useRefreshBookContent } from '../../src/store/BookContentContext';
 import { useAppSettings } from '../../src/store/AppSettingsContext';
 import { useLibrary } from '../../src/store/LibraryContext';
 import { useAppTheme } from '../../src/store/ThemeContext';
@@ -35,12 +36,14 @@ export default function BookDetailsScreen() {
   const params = useLocalSearchParams<{ editPrice?: string; fromSeries?: string; id: string }>();
   const navigation = useNavigation();
   const { books, loading: libraryLoading, updateBook } = useLibrary();
-  const { trackPurchasePrices } = useAppSettings();
+  const { trackPurchasePrices, showBookContent } = useAppSettings();
   const { colors } = useAppTheme();
   const routeBookId = Array.isArray(params.id) ? params.id[0] : params.id;
   const activeBookIdRef = useRef(routeBookId);
   const priceEditParamConsumedRef = useRef<string | null>(null);
   const book = books.find((candidate) => candidate.id === routeBookId);
+  const reviewedContent = useReviewedBookContent(book?.isbn);
+  const refreshContent = useRefreshBookContent();
   const [details, setDetails] = useState<BookVolumeDetails | null>(null);
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -302,7 +305,7 @@ export default function BookDetailsScreen() {
           accessibilityLabel="巻の紹介を再取得"
           disabled={loading}
           hitSlop={8}
-          onPress={() => void loadDetails(true)}
+          onPress={() => { refreshContent(); void loadDetails(true); }}
           style={[styles.refreshButton, { borderColor: colors.border }, loading && styles.disabled]}
         >
           {loading ? (
@@ -313,16 +316,11 @@ export default function BookDetailsScreen() {
         </Pressable>
       </View>
 
-      {loading && !loaded ? (
-        <View style={styles.loadingRow}>
-          <ActivityIndicator color={colors.text} />
-          <Text style={[styles.loadingText, { color: colors.muted }]}>紹介文を取得しています</Text>
-        </View>
-      ) : details?.description ? (
-        <Text style={[styles.description, { color: colors.text }]}>{details.description}</Text>
+      {reviewedContent?.description ? (
+        <Text style={[styles.description, { color: colors.text }]}>{reviewedContent.description}</Text>
       ) : (
         <Text style={[styles.descriptionEmpty, { color: colors.muted }]}>
-          {error ?? 'この巻の紹介文は提供されていません。'}
+          {!showBookContent ? '紹介文の表示は設定でOFFになっています。' : '確認済みの紹介文はまだありません。書名・巻数・読書記録は引き続き利用できます。'}
         </Text>
       )}
 
