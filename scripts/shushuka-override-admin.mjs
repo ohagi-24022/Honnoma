@@ -65,8 +65,12 @@ function number(value,label) {if(!text(value))return null;const n=Number(value);
 export function overrideValues(body) {
   const isbn=normalizeIsbn(body.isbn);
   if(!/^(?:\d{13}|\d{9}[\dX])$/.test(isbn))throw new Error('ISBNは10桁または13桁で入力してください。');
+  for (const value of [body.source_url, body.thumbnail_url]) {
+    const mentioned = String(value ?? '').match(/(?:978|979)\d{10}/g) ?? [];
+    if (mentioned.some(other => other !== isbn)) throw new Error('URLに含まれるISBNが登録する本と異なります。通常版・限定版の取り違えがないか確認してください。');
+  }
   const series=text(body.series_title);const price=number(body.list_price,'価格');
-  return {isbn,normalized_isbn:isbn,title:text(body.title),series_title:series,
+  return {isbn,normalized_isbn:isbn,title:text(body.title),subtitle:text(body.subtitle),series_title:series,
     series_key:text(body.series_key) ?? series?.normalize('NFKC').replace(/[\s・･:：\-–—_'"()[\]{}「」『』【】〈〉《》!?！？。.．]/g,'') ?? null,
     volume_number:number(body.volume_number,'巻数'),author:text(body.author),publisher:text(body.publisher),
     thumbnail_url:url(body.thumbnail_url,'表紙URL'),source_url:url(body.source_url,'巻情報URL'),description:text(body.description),
@@ -84,15 +88,15 @@ export function registerOverrideAdmin(app,db,page,e) {
     </style>`;
   const field=(label,name,value,extra='')=>`<label ${extra}>${label}<input name="${name}" value="${e(value??'')}" ${name.includes('url')?'type="url" placeholder="https://…"':name==='isbn'?'required inputmode="numeric" placeholder="978…"':''}></label>`;
   const book=(row,href)=>`<a class="override-book" href="${e(href)}">${previewUrl(row.preview_url)?`<img loading="lazy" src="${e(previewUrl(row.preview_url))}" alt="表紙">`:'<span class="emptyCover cover"></span>'}<span><strong>${e(row.title??'タイトル未取得')}</strong><small>${e(row.publisher??'')} ${row.volume_number?e(row.volume_number)+'巻':''}</small><small>${e(row.isbn??'')} ／ ${e(row.label??'')}</small></span></a>`;
-  const editor=(draft={},action='/overrides',error='')=>`<section class="panel"><h2>補正URLを編集</h2><p class="muted">本を選ぶと入力欄に情報が入ります。間違っている項目を変更して保存してください。</p>${error?`<p class="override-error" role="alert">${e(error)}</p>`:''}${draft.title?`<div class="override-selected">${book(draft,draft.source==='review'?'/reviews/'+draft.isbn:'#')} ${draft.archived?'<p>このデータは確認対象から除外されています。ISBNと書誌情報を確認してください。</p>':''}</div>`:''}
+  const editor=(draft={},action='/overrides',error='')=>`<section class="panel"><h2>補正URLを編集</h2><p class="muted">保存した情報を、このISBNの確定データとして反映します。自動取得では上書きされません。通常版・限定版は別のISBNで登録してください。</p>${error?`<p class="override-error" role="alert">${e(error)}</p>`:''}${draft.title?`<div class="override-selected">${book(draft,draft.source==='review'?'/reviews/'+draft.isbn:'#')} ${draft.archived?'<p>このデータは確認対象から除外されています。ISBNと書誌情報を確認してください。</p>':''}</div>`:''}
     <form method="post" action="${e(action)}">${token}<div class="override-fields">
-    ${field('ISBN','isbn',draft.isbn??draft.normalized_isbn)}${field('タイトル','title',draft.title)}
-    ${field('巻情報URL','source_url',draft.source_url,'class="override-full"')}<small class="override-full">出版社などの、その巻の情報が掲載されているページのURL</small>
+    ${field('ISBN','isbn',draft.isbn??draft.normalized_isbn)}${field('タイトル','title',draft.title)}${field('版・付属品（任意）','subtitle',draft.subtitle,'class="override-full"')}
+    ${field('巻情報URL','source_url',draft.source_url,'class="override-full"')}<small class="override-full">出版社などの、そのISBN・版の情報が掲載されているページのURL。表示のたびにページから情報を取り直すことはありません。</small>
     ${field('表紙URL','thumbnail_url',draft.thumbnail_url,'class="override-full"')}<small class="override-full">画像そのもののURLを入力します。表紙の表示確認は「表紙・タイトルの確認」で行います。</small>
     <details class="override-full" ${error?'open':''}><summary>シリーズ・作者・価格などを編集</summary><div class="override-fields">
     ${field('シリーズ名','series_title',draft.series_title)}${field('巻数','volume_number',draft.volume_number)}${field('作者','author',draft.author)}${field('出版社','publisher',draft.publisher)}${field('新品参考価格（円）','list_price',draft.list_price)}${field('シリーズキー（空欄なら自動）','series_key',draft.series_key)}
-    <label class="override-full">説明文の直接補正<textarea name="description" rows="5">${e(draft.description??'')}</textarea><small>URLから取得できない場合に入力してください。</small></label></div></details></div>
-    <div class="override-save"><a href="/">入力をリセット</a><button type="submit">補正を保存</button></div></form></section>`;
+    <label class="override-full">説明文の直接補正<textarea name="description" rows="5">${e(draft.description??'')}</textarea><small>確定して保存する説明文を入力してください。公開する説明文の確認は別途必要です。</small></label></div></details></div>
+    <div class="override-save"><a href="/">入力をリセット</a><button type="submit">書誌情報を確定して保存</button></div></form></section>`;
   const guarded=handler=>async(req,res)=>{if(!db)return res.sendStatus(503);if(req.method==='POST'&&req.body.csrf!==csrf)return res.status(403).send('ページを開き直してください。');try{await handler(req,res);}catch(error){res.status(400).send(page('補正URL',styles+editor(req.body,req.path,error.message)));}};
   app.get('/',guarded(async(req,res)=>{
     const query=String(req.query.bookq??'').trim().slice(0,200);const historyQuery=String(req.query.q??'').trim().slice(0,200);
@@ -101,7 +105,7 @@ export function registerOverrideAdmin(app,db,page,e) {
     if(historyQuery)history=history.or(searchFilter(specs.overrides,historyQuery));
     const [candidates,selected,{data:rows,error}]=await Promise.all([searchCandidates(db,query),selectedCandidate(db,source,key),history]);if(error)throw error;
     const draft=selected ?? (/^[\d\s\-]+$/.test(query.normalize('NFKC'))?{isbn:normalizeIsbn(query)}:{});
-    res.send(page('補正URL',styles+`<div class="override-heading"><h2>本の情報を整える</h2><p class="muted">確認用に追加した本も、ISBN・タイトルで検索できます。</p>${req.query.saved?'<p role="status">補正を保存しました。</p>':''}</div><div class="override-layout"><section class="panel"><h2>本を選ぶ</h2><form class="override-search"><input aria-label="本の検索" name="bookq" value="${e(query)}" placeholder="ISBN・タイトル・作者"><button>検索</button></form><div class="override-candidates">${candidates.map(row=>book(row,'/?'+new URLSearchParams({source:row.source,key:row.source==='books'?row.id:row.isbn,bookq:query}))).join('')||'<p>該当する本がありません。ISBNを右の欄に入力して補正を追加できます。</p>'}</div><p class="muted">最大80件を表示します。ISBNで検索すると目的の巻を選びやすくなります。</p></section>${editor(draft)}</div>
+    res.send(page('補正URL',styles+`<div class="override-heading"><h2>本の情報を整える</h2><p class="muted">確認用に追加した本も、ISBN・タイトルで検索できます。</p>${req.query.saved?'<p role="status">書誌情報を確定し、取得済みデータにも反映しました。</p>':''}</div><div class="override-layout"><section class="panel"><h2>本を選ぶ</h2><form class="override-search"><input aria-label="本の検索" name="bookq" value="${e(query)}" placeholder="ISBN・タイトル・作者"><button>検索</button></form><div class="override-candidates">${candidates.map(row=>book(row,'/?'+new URLSearchParams({source:row.source,key:row.source==='books'?row.id:row.isbn,bookq:query}))).join('')||'<p>該当する本がありません。ISBNを右の欄に入力して補正を追加できます。</p>'}</div><p class="muted">最大80件を表示します。ISBNで検索すると目的の巻を選びやすくなります。</p></section>${editor(draft)}</div>
       <section class="panel override-history"><h2>保存済みの補正</h2><form class="override-search"><input name="q" aria-label="保存済み補正の検索" value="${e(historyQuery)}" placeholder="ISBN・タイトル"><button>検索</button></form>${(rows??[]).map(row=>`<div class="override-book"><span><strong>${e(row.title??'')}</strong><small>${e(row.normalized_isbn??row.isbn)} ／ ${row.enabled?'有効':'無効'}</small><small>${e(row.source_url??'巻情報URLなし')}</small></span><div class="actions"><a class="button" href="/overrides/${e(row.id)}/edit">編集</a><form method="post" action="/overrides/${e(row.id)}/toggle">${token}<button class="secondary">${row.enabled?'無効化':'有効化'}</button></form></div></div>`).join('')||'<p class="muted">該当する補正はありません。</p>'}</section>`));
   }));
   app.get('/overrides/:id/edit',guarded(async(req,res)=>{const {data,error}=await db.from('book_metadata_overrides').select('*').eq('id',req.params.id).single();if(error)throw error;res.send(page('補正編集',styles+editor({...data,preview_url:data.thumbnail_url,label:'補正済み'},req.path)));}));

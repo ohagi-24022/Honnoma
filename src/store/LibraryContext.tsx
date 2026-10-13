@@ -210,6 +210,7 @@ function metadataDetailsToBookPatch(metadata: Awaited<ReturnType<typeof getBookM
   if (!metadata) return null;
   const patch: Partial<BookInput> = {};
   if (metadata.title) patch.title = metadata.title;
+  if (typeof metadata.volumeNumber === 'number') patch.volumeNumber = metadata.volumeNumber;
   if (metadata.seriesTitle) patch.seriesTitle = metadata.seriesTitle;
   if (metadata.author) patch.author = metadata.author;
   if (metadata.publisher) patch.publisher = metadata.publisher;

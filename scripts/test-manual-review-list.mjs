@@ -1,15 +1,15 @@
 import assert from 'node:assert/strict';
-import { registerReviewAdmin, bulkGeneralSelectionScript } from './shushuka-review-admin.mjs';
+import { registerReviewAdmin, bulkGeneralSelectionScript, bulkCoverSelectionScript, reviewPageSize, reviewReturnTo } from './shushuka-review-admin.mjs';
 import { runInNewContext } from 'node:vm';
 const jobs=[{isbn13:'9784088914763',title:'Sample <book>',adult_only:null,status:'pending_review',content_hash:'hash',cover_status:'unreviewed',candidate:{title:'Sample <book>',publisher:'集英社',cover_hash:'cover',source_url:'https://example.test'}},
  {isbn13:'9780306406157',title:'Other',adult_only:false,status:'pending_review',content_hash:'other',cover_status:'unreviewed',candidate:{title:'Other',publisher:'講談社'}}];
-const handlers=new Map(),writes=[];
+const handlers=new Map(),writes=[],published=[];
 let csrf;
 const app={get:(p,fn)=>handlers.set('GET '+p,fn),post:(p,fn)=>handlers.set('POST '+p,fn)};
 function query(table){const filters=[];let fields,options={},start=0,end=999;
  const q={select(f,o={}){fields=f;options=o;return q},eq(k,v){filters.push([k,v]);return q},is(k,v){filters.push([k,v]);return q},not(k){filters.push([k,'not-null']);return q},ilike(k,v){filters.push([k,v]);return q},order(){return q},in(){return q},limit(){return q},range(a,b){start=a;end=b;return q},single:async()=>({data:table==='book_content_review_config'?{enabled:false,daily_limit:50}:jobs.find(x=>x.isbn13===filters.find(x=>x[0]==='isbn13')?.[1])}),then(resolve){
-  let data=table==='book_content_review_jobs'?jobs:[];
-  for(const [k,v]of filters){if(k==='adult_only')data=data.filter(x=>x.adult_only===v);if(k==='candidate->>title')data=data.filter(x=>v==='not-null'?!!x.candidate?.title:!x.candidate?.title);if(k==='candidate->>publisher')data=data.filter(x=>x.candidate?.publisher===v);if(k==='title'||k==='isbn13'){const needle=v.replaceAll('%','');data=data.filter(x=>String(x[k]).includes(needle));}}
+  let data=table==='book_content_review_jobs'?jobs:table==='reviewed_book_content'?published:[];
+  for(const [k,v]of filters){if(k==='enabled')data=data.filter(x=>x.enabled===v);if(k==='cover_url')data=data.filter(x=>!!x.cover_url);if(k==='adult_only')data=data.filter(x=>x.adult_only===v);if(k==='candidate->>title')data=data.filter(x=>v==='not-null'?!!x.candidate?.title:!x.candidate?.title);if(k==='candidate->>publisher')data=data.filter(x=>x.candidate?.publisher===v);if(k==='title'||k==='isbn13'){const needle=v.replaceAll('%','');data=data.filter(x=>String(x[k]).includes(needle));}}
   const count=data.length;data=data.slice(start,end+1);
   if(fields==='candidate->>publisher')data=data.map(x=>({publisher:x.candidate.publisher}));
   resolve({data:options.head?null:data,count});}};return q;}
@@ -67,3 +67,33 @@ original[0].adult_only=true;const beforeBlocked=writes.length;await coverRequest
 await coverRequest({cover_0:'hide',adult_0:'false'});assert.equal(writes.at(-1).args.p_show,false);assert.equal(writes.at(-1).args.p_cover,null);assert.equal(imageReads,1);assert(!('p_adult' in writes.at(-1).args));
 const beforeStale=writes.length;await coverRequest({hash_0:'stale',cover_0:'hide'});assert.equal(writes.length,beforeStale);
 console.log('Individual cover control: separate save, general-only approval, immutable snapshot, hide without fetch/classification, CSRF and stale content: OK');
+
+const coverButtons={select:{},undo:{disabled:true},status:{textContent:''}};
+for(const button of [coverButtons.select,coverButtons.undo])button.addEventListener=(_event,handler)=>{button.click=handler;};
+const coverRadios=[{value:'show',checked:false},{value:'hide',checked:true},{value:'show',checked:false},{value:'hide',checked:false}];
+const coverInitial=coverRadios.map(x=>x.checked);const classificationState=radios.map(x=>x.checked);
+runInNewContext(bulkCoverSelectionScript,{document:{querySelector:()=>({querySelector:selector=>({'[data-select-cover]':coverButtons.select,'[data-undo-cover]':coverButtons.undo,'[data-cover-selection-status]':coverButtons.status}[selector]),querySelectorAll:selector=>selector.startsWith('[data-cover-eligible')?coverRadios.slice(0,2):coverRadios})}});
+coverButtons.select.click();assert.deepEqual(coverRadios.map(x=>x.checked),[true,false,false,false]);assert.deepEqual(radios.map(x=>x.checked),classificationState);assert(coverButtons.status.textContent.includes('1件'));coverButtons.undo.click();assert.deepEqual(coverRadios.map(x=>x.checked),coverInitial);
+original[0].adult_only=false;original[1].candidate.cover_hash='cover';
+const batchBefore=writes.length;
+await coverRequest({cover_row:'all',isbn_1:original[1].isbn13,hash_1:'other',cover_1:'hide',isbn_2:original[0].isbn13,hash_2:'stale',cover_2:'show'});
+assert.equal(code,409);assert.equal(writes.length,batchBefore+2);assert(writes.slice(batchBefore).every(x=>x.name==='set_book_cover_review'&&!('p_adult' in x.args)));assert(html.includes('2件保存'));
+const filterFixture={...original[0],isbn13:'9784088926629',title:'Unreviewed',cover_status:'unreviewed'};
+jobs.splice(0,jobs.length,original[0],original[1],filterFixture);
+original[0].cover_status='held';original[1].cover_status='held';published.push({isbn13:original[0].isbn13,enabled:true,cover_url:'https://example.test/approved.jpg'});
+for(let n=0;n<14;n++)jobs.push({...filterFixture,isbn13:String(9800000000000+n)});
+await handlers.get('GET /reviews')({query:{view:'all',cover:'show',size:'10'}},res);assert.equal((html.match(/class="review-row"/g)||[]).length,1);assert(html.includes('全1件'));assert(html.includes('Sample &lt;book>'));
+await handlers.get('GET /reviews')({query:{view:'all',cover:'hide'}},res);assert.equal((html.match(/class="review-row"/g)||[]).length,1);assert(html.includes('Other'));assert(!html.includes('Sample &lt;book>'));
+await handlers.get('GET /reviews')({query:{view:'all',cover:'unreviewed',size:'10',page:'2'}},res);assert.equal((html.match(/class="review-row"/g)||[]).length,5);assert(html.includes('全15件'));assert(html.includes('cover=unreviewed'));assert(html.includes('2 / 2ページ'));
+await handlers.get('GET /reviews')({query:{view:'all',cover:'unreviewed',size:'10',page:'99'}},res);assert(html.includes('2 / 2ページ'));
+console.log('Cover bulk: eligible-only selection, undo, independent saves, partial/stale failure; actual cover filters before pagination: OK');
+
+assert.equal(reviewPageSize('100'),100);assert.equal(reviewPageSize(undefined,'other=x; honnoma_review_size=50'),50);assert.equal(reviewPageSize('10','honnoma_review_size=100'),10);assert.equal(reviewPageSize('999','honnoma_review_size=100'),100);assert.equal(reviewPageSize(undefined,'honnoma_review_size=999'),30);
+assert.equal(reviewReturnTo({body:{return_to:'https://example.test'}}),'/reviews');
+const retained='/reviews?view=general&cover=unreviewed&size=100&page=2';
+await coverRequest({cover_row:'all',hash_0:'stale',return_to:retained});assert.equal(code,409);assert(html.includes('href="/reviews?view=general&amp;cover=unreviewed&amp;size=100&amp;page=2"'));
+await handlers.get('POST /reviews/classify')({method:'POST',body:{csrf,row:'0',isbn_0:original[0].isbn13,hash_0:'stale',adult_0:'false',return_to:retained}},res);assert.equal(code,409);assert(html.includes('size=100&amp;page=2'));
+let cookie='';res.setHeader=(name,value)=>{assert.equal(name,'Set-Cookie');cookie=value;};
+await handlers.get('GET /reviews')({query:{view:'all',size:'100'},secure:true},res);assert(cookie.includes('honnoma_review_size=100'));assert(cookie.includes('HttpOnly'));assert(cookie.includes('Secure'));
+await handlers.get('GET /reviews')({query:{view:'all'},headers:{cookie:'honnoma_review_size=100'}},res);assert(html.includes('<option value="100" selected>100件'));
+console.log('Page size: remembered cookie, explicit selection, invalid fallback, partial failures preserve filters and pagination: OK');

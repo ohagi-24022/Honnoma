@@ -33,3 +33,8 @@ assert(!writes.some(x=>['reviewed_book_content','book_content_review_jobs'].incl
 assert.throws(()=>overrideValues({isbn,list_price:'12xyz'}));
 await readMetadataCacheFallback(db,{normalizedIsbn:isbn});assert.deepEqual(calls.at(-1).eq,['normalized_isbn',isbn]);
 console.log('Preloaded ISBN lookup, normalized ISBN, quoted title filters, URL prefill, validation/CSRF, correction-only writes and public cache fallback: OK');
+
+assert.throws(()=>overrideValues({isbn:'9784089082386',source_url:'https://www.s-manga.net/items/contents.html?isbn=9784088803166'}),/ISBN/);
+assert.throws(()=>overrideValues({isbn:'9784089082386',thumbnail_url:'https://example.org/9784088803166.jpg'}),/ISBN/);
+assert.equal(overrideValues({isbn:'9784089082386',subtitle:'DVDアニメ同梱版'}).subtitle,'DVDアニメ同梱版');
+console.log('Edition label and source/cover ISBN mismatch rejection: OK');

@@ -6,6 +6,7 @@ import { getKnownBookCoverOverride, getKnownIsbnCoverOverride } from './knownBoo
 import { normalizeSeriesKey, parseSeriesTitle } from './series';
 import { normalizeVolumeKind } from './volumeKind';
 import { supabase } from './supabase';
+import { getConfirmedBookMetadata } from './confirmedBookMetadata';
 
 type GoogleBooksResponse = {
   items?: Array<{
@@ -125,6 +126,7 @@ export type SeriesPublicationInfo = {
 };
 
 export type BookVolumeDetails = {
+  volumeNumber?: number;
   title?: string;
   subtitle?: string;
   seriesTitle?: string;
@@ -1488,6 +1490,23 @@ export async function lookupBookByIsbn(isbn: string): Promise<BookInput | null> 
   const normalizedIsbn = normalizeIsbn(isbn);
   if (!isBookIsbnBarcode(normalizedIsbn)) return null;
 
+  const confirmed = await getConfirmedBookMetadata(normalizedIsbn);
+  if (confirmed?.title) {
+    const parsed = parseSeriesTitle(confirmed.title);
+    return {
+      isbn: normalizedIsbn,
+      title: confirmed.title,
+      seriesTitle: confirmed.series_title ?? parsed.seriesTitle,
+      volumeNumber: confirmed.volume_number ?? parsed.volumeNumber,
+      author: confirmed.author ?? undefined,
+      publisher: confirmed.publisher ?? undefined,
+      thumbnailUrl: confirmed.thumbnail_url ?? undefined,
+      listPrice: confirmed.list_price ?? undefined,
+      priceSource: confirmed.price_source ?? undefined,
+      priceFetchedAt: confirmed.price_fetched_at ?? undefined,
+      status: 'unread',
+    };
+  }
   const knownFallback = lookupKnownBookFallbackByIsbn(normalizedIsbn);
   const ndlResult = await tryLookup('NDL Search', () => lookupNdlByIsbn(normalizedIsbn));
   const openBdResult = await tryLookup('OpenBD', () => lookupOpenBd(normalizedIsbn));

@@ -3,6 +3,7 @@ import { BookVolumeDetails } from './bookApis';
 import { env } from './env';
 import { getKnownBookMetadataOverride, KnownBookMetadataOverride, normalizeKnownIsbn } from './knownBookOverrides';
 import { normalizeSeriesKey } from './series';
+import { getConfirmedBookMetadata } from './confirmedBookMetadata';
 
 type RemoteBookMetadataOverrideResponse = {
   override?: {
@@ -22,66 +23,7 @@ type RemoteBookMetadataOverrideResponse = {
   } | null;
 };
 
-type SourcePageDetails = {
-  description?: string;
-  thumbnailUrl?: string;
-};
-
 const SOURCE_FETCH_TIMEOUT_MS = 10000;
-
-function decodeHtml(value: string) {
-  return value
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/p>/gi, '\n')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/&amp;/gi, '&')
-    .replace(/&lt;/gi, '<')
-    .replace(/&gt;/gi, '>')
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;/gi, "'")
-    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number.parseInt(code, 10)))
-    .replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCharCode(Number.parseInt(code, 16)))
-    .replace(/\s+\n/g, '\n')
-    .replace(/\n\s+/g, '\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .replace(/[ \t]{2,}/g, ' ')
-    .trim();
-}
-
-function firstMetaContent(html: string, names: string[]) {
-  for (const name of names) {
-    const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const patterns = [
-      new RegExp(`<meta[^>]+(?:name|property)=["']${escapedName}["'][^>]+content=["']([^"']+)["'][^>]*>`, 'i'),
-      new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]+(?:name|property)=["']${escapedName}["'][^>]*>`, 'i'),
-    ];
-    const match = patterns.map((pattern) => html.match(pattern)).find(Boolean);
-    if (match?.[1]) return decodeHtml(match[1]);
-  }
-  return undefined;
-}
-
-async function fetchSourcePageDetails(sourceUrl?: string | null): Promise<SourcePageDetails> {
-  if (!sourceUrl) return {};
-
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), SOURCE_FETCH_TIMEOUT_MS);
-  try {
-    const response = await fetch(sourceUrl, { signal: controller.signal });
-    if (!response.ok) return {};
-    const html = await response.text();
-    return {
-      description: firstMetaContent(html, ['description', 'og:description']),
-      thumbnailUrl: firstMetaContent(html, ['og:image', 'twitter:image']),
-    };
-  } catch (error) {
-    console.warn('Failed to fetch book metadata override source page', error);
-    return {};
-  } finally {
-    clearTimeout(timeoutId);
-  }
-}
 
 async function getRemoteBookMetadataOverride(book: Book): Promise<KnownBookMetadataOverride | null> {
   if (!env.metadataOverrideApiUrl) return null;
@@ -105,6 +47,8 @@ async function getRemoteBookMetadataOverride(book: Book): Promise<KnownBookMetad
     const payload = (await response.json()) as RemoteBookMetadataOverrideResponse;
     const override = payload.override;
     if (!override) return null;
+    const requestedIsbn = normalizeKnownIsbn(book.isbn);
+    if (requestedIsbn && normalizeKnownIsbn(override.normalized_isbn ?? override.isbn) !== requestedIsbn) return null;
 
     return {
       author: override.author ?? undefined,
@@ -128,21 +72,37 @@ async function getRemoteBookMetadataOverride(book: Book): Promise<KnownBookMetad
 }
 
 export async function getBookMetadataOverrideDetails(book: Book): Promise<BookVolumeDetails | null> {
+  const confirmed = await getConfirmedBookMetadata(book.isbn);
+  if (confirmed) {
+    return {
+      title: confirmed.title,
+      volumeNumber: confirmed.volume_number ?? undefined,
+      subtitle: confirmed.subtitle ?? undefined,
+      seriesTitle: confirmed.series_title ?? undefined,
+      author: confirmed.author ?? undefined,
+      publisher: confirmed.publisher ?? undefined,
+      description: confirmed.description ?? undefined,
+      thumbnailUrl: confirmed.thumbnail_url ?? undefined,
+      listPrice: confirmed.list_price ?? undefined,
+      priceSource: confirmed.price_source ?? undefined,
+      priceFetchedAt: confirmed.price_fetched_at ?? undefined,
+      source: 'Developer Override',
+      sourceUrl: confirmed.source_url ?? undefined,
+      checkedAt: confirmed.confirmed_at ?? new Date().toISOString(),
+    };
+  }
   const override =
-    (await getRemoteBookMetadataOverride(book)) ??
+    (confirmed === undefined ? await getRemoteBookMetadataOverride(book) : null) ??
     getKnownBookMetadataOverride({ isbn: book.isbn, title: book.title });
   if (!override) return null;
 
-  const sourcePage = await fetchSourcePageDetails(override.sourceUrl);
-
   return {
     title: override.title,
-    subtitle: undefined,
     seriesTitle: override.seriesTitle,
     author: override.author,
     publisher: override.publisher,
-    description: override.description ?? sourcePage.description,
-    thumbnailUrl: override.thumbnailUrl ?? sourcePage.thumbnailUrl,
+    description: override.description,
+    thumbnailUrl: override.thumbnailUrl,
     listPrice: override.listPrice,
     priceSource: override.priceSource,
     priceFetchedAt: override.priceFetchedAt,
@@ -151,4 +111,3 @@ export async function getBookMetadataOverrideDetails(book: Book): Promise<BookVo
     checkedAt: new Date().toISOString(),
   };
 }
-

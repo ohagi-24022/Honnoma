@@ -47,3 +47,7 @@ const handlers=new Map();registerReviewPublic({post:(path,fn)=>handlers.set(path
 const res={code:200,set(){return this;},status(code){this.code=code;return this;},json(){return this;}};
 await handlers.get('/api/book-content-review')({body:{isbns:['9784088914764']},socket:{remoteAddress:'test'}},res);assert.equal(res.code,400);
 console.log('Automatic content review: source matching, independent gates, fail-closed AI, image hosts, disabled keys, mail success/retry and ISBN validation: OK');
+
+const confirmedEdition=await fetchBook({from(table){assert.equal(table,'confirmed_book_metadata');const q={select(){return q},eq(){return q},async maybeSingle(){return {data:{metadata:{normalized_isbn:'9784089082386',title:'Confirmed DVD edition',thumbnail_url:book.cover_url}},error:null};}};return q;},functions:{invoke(){throw new Error('Must not replace confirmed data');}}},'9784089082386');
+assert.equal(confirmedEdition.title,'Confirmed DVD edition');assert.equal(confirmedEdition.provider,'administrator');
+console.log('Content review uses exact-ISBN administrator metadata before providers: OK');

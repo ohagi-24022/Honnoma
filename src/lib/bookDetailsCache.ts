@@ -94,7 +94,7 @@ async function readSupabaseCache(book: Book) {
       }
     }
 
-    if (seriesKey && book.volumeNumber) {
+    if (!normalizedIsbn && seriesKey && book.volumeNumber) {
       const { data, error } = await supabase
         .from('book_metadata_cache')
         .select('*')
@@ -210,13 +210,17 @@ export async function getBookVolumeDetails(
   const key = cacheKey(book);
   const legacyKey = legacyCacheKey(book);
   const overrideDetails = await getBookMetadataOverrideDetails(book);
+  if (overrideDetails?.title) {
+    // Confirmed metadata is complete and must survive force-refresh without provider merging.
+    return overrideDetails;
+  }
 
   if (!options.forceRefresh) {
     try {
       const cached = await getStorageItemWithLegacy(key, legacyKey);
       if (cached) {
         const entry = JSON.parse(cached) as CacheEntry;
-        if (Date.now() - entry.fetchedAt < CACHE_TTL_MS) {
+        if (entry.details?.source !== 'Developer Override' && Date.now() - entry.fetchedAt < CACHE_TTL_MS) {
           return mergeOverrideDetails(book, entry.details, overrideDetails);
         }
       }

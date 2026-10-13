@@ -61,6 +61,7 @@ export function getKnownBookMetadataOverride(params: { isbn?: string | null; tit
     ? KNOWN_BOOK_METADATA_OVERRIDES.find((entry) => normalizeKnownIsbn(entry.isbn) === normalizedIsbn)
     : undefined;
   if (isbnMatch) return isbnMatch;
+  if (normalizedIsbn) return undefined; // Never apply a different edition by title when ISBN is known.
 
   const normalizedTitle = params.title?.normalize('NFKC') ?? '';
   return KNOWN_BOOK_METADATA_OVERRIDES.find((entry) =>

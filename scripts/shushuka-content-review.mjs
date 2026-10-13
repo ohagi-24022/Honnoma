@@ -25,7 +25,17 @@ async function rpc(db, name, args) {
   return data;
 }
 export async function fetchBook(db, isbn, fetcher = fetch) {
-  // Fetch authoritative providers independently; never use client-editable cache payloads.
+  // Administrator-confirmed exact-ISBN records precede providers; client-editable cache rows never do.
+  if (typeof db.from === 'function') {
+    const { data, error } = await db.from('confirmed_book_metadata').select('metadata').eq('normalized_isbn', isbn).eq('enabled', true).maybeSingle();
+    if (error) throw new Error('Confirmed metadata unavailable');
+    const info = data?.metadata;
+    if (info?.normalized_isbn === isbn && info.title) return {
+      title: String(info.title).slice(0, 1000), publisher: info.publisher || '', imprint: '',
+      description: String(info.description ?? '').slice(0, 20000), cover_url: info.thumbnail_url || null,
+      source_url: info.source_url || '', provider: 'administrator',
+    };
+  }
   const result = await db.functions.invoke('rakuten-books', { body: {
     path: 'BooksBook/Search/20170404', params: { isbn, hits: '1', format: 'json' },
   }}).catch(() => ({ error: true }));
