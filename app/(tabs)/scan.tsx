@@ -1,8 +1,13 @@
+import { BookFormatControl } from '../../src/components/BookFormatControl';
+import { BookFormatFilter, inferBookFormat, matchesBookFormat, resolveBookFormat } from '../../src/lib/bookFormat';
+import { useOnboardingTour } from '../../src/store/OnboardingContext';
 import { useIsFocused, useScrollToTop } from 'expo-router/react-navigation';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
+  AppState,
   Alert,
   KeyboardAvoidingView,
   Platform,
@@ -16,15 +21,16 @@ import {
 } from 'react-native';
 
 import { BookCover } from '../../src/components/BookCover';
-import { isBookIsbnBarcode, lookupBookByIsbn } from '../../src/lib/bookApis';
+import { isBookIsbnBarcode, lookupBookByIsbn, searchBookCandidates } from '../../src/lib/bookApis';
 import { formatNetworkAwareError, NETWORK_ERROR_MESSAGE } from '../../src/lib/errorMessages';
 import { registerScanQueueReviewHandler } from '../../src/lib/scanQueueReviewBridge';
 import { parseSeriesTitle } from '../../src/lib/series';
+import { resolveUserSeriesName } from '../../src/lib/userSeriesNames';
 import { normalizeVolumeKind } from '../../src/lib/volumeKind';
 import { useAppSettings } from '../../src/store/AppSettingsContext';
 import { useLibrary } from '../../src/store/LibraryContext';
 import { useAppTheme } from '../../src/store/ThemeContext';
-import { BookInput, BookVolumeKind, ReadingStatus } from '../../src/types';
+import { BookFormat, BookInput, BookVolumeKind, ReadingStatus } from '../../src/types';
 
 const statusOptions: Array<{ label: string; value: ReadingStatus }> = [
   { label: '未読', value: 'unread' },
@@ -58,19 +64,35 @@ function formatLookupNotice(error: unknown) {
 export default function ScanScreen() {
   const router = useRouter();
   const isFocused = useIsFocused();
+  const tour = useOnboardingTour();
+  const tourActive = tour.focus !== null;
+  const tourActiveRef = useRef(tourActive);
+  tourActiveRef.current = tourActive;
   const scrollRef = useRef<ScrollView>(null);
   const tabScrollToTopRef = useRef({
     scrollToTop: () => scrollRef.current?.scrollTo({ y: 0, animated: true }),
   });
   useScrollToTop(tabScrollToTopRef);
+  useEffect(() => {
+    if (tour.focus === 'scan' || tour.focus === 'series') scrollRef.current?.scrollTo({ y: 0, animated: false });
+  }, [tour.focus]);
   const [permission, requestPermission] = useCameraPermissions();
-  const { addBook, deleteBook, findDuplicateBook } = useLibrary();
+  const { books = [], addBook, deleteBook, findDuplicateBook } = useLibrary();
   const { trackPurchasePrices } = useAppSettings();
   const { colors } = useAppTheme();
   const [isScanning, setIsScanning] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [showManualForm, setShowManualForm] = useState(false);
+  const [bulkRegistrationMode, setBulkRegistrationMode] = useState(false);
+  const [isManualLookingUp, setIsManualLookingUp] = useState(false);
+  const [manualLookupNotice, setManualLookupNotice] = useState<ScanNotice | null>(null);
+  const [appActive, setAppActive] = useState(AppState.currentState === 'active');
+  const manualLookupRef = useRef(false);
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => setAppActive(state === 'active'));
+    return () => subscription.remove();
+  }, []);
   const [scanMode, setScanMode] = useState<'confirm' | 'continuous'>('confirm');
   const [scanQueue, setScanQueue] = useState<QueuedScanItem[]>([]);
   const [showQueueReview, setShowQueueReview] = useState(false);
@@ -85,6 +107,12 @@ export default function ScanScreen() {
   const queuedLookupsRef = useRef<Array<{ isbn: string; queueId: string }>>([]);
   const queueWorkerRunningRef = useRef(false);
 
+  const [manualSearchQuery, setManualSearchQuery] = useState('');
+  const [searchFormat, setSearchFormat] = useState<BookFormatFilter>('all');
+  const [bookFormat, setBookFormat] = useState<BookFormat>('unknown');
+  const [manualCandidates, setManualCandidates] = useState<BookInput[]>([]);
+  const volumeKindEdited = useRef(false);
+  const bookFormatEdited = useRef(false);
   const [title, setTitle] = useState('');
   const [author, setAuthor] = useState('');
   const [publisher, setPublisher] = useState('');
@@ -102,6 +130,8 @@ export default function ScanScreen() {
 
   const onTitleChange = (value: string) => {
     setTitle(value);
+    if (!bookFormatEdited.current) setBookFormat(inferBookFormat({ title: value }));
+    if (!volumeKindEdited.current) setVolumeKind(normalizeVolumeKind(undefined, value));
     const parsed = parseSeriesTitle(value);
     setSeriesTitle((current) => current || parsed.seriesTitle);
     setVolumeNumber((current) => current || (parsed.volumeNumber ? String(parsed.volumeNumber) : ''));
@@ -109,13 +139,18 @@ export default function ScanScreen() {
 
   const applyLookupResult = (bookInput: BookInput | null) => {
     if (!bookInput) return;
+    bookInput = resolveUserSeriesName(books, bookInput);
 
+    volumeKindEdited.current = false;
+    bookFormatEdited.current = false;
+    setManualCandidates([]);
     setTitle(bookInput.title);
     setAuthor(bookInput.author ?? '');
     setPublisher(bookInput.publisher ?? '');
     setSeriesTitle(bookInput.seriesTitle);
     setVolumeNumber(bookInput.volumeNumber ? String(bookInput.volumeNumber) : '');
     setVolumeKind(normalizeVolumeKind(bookInput.volumeKind, bookInput.title));
+    setBookFormat(resolveBookFormat(bookInput));
     setIsbn(bookInput.isbn ?? '');
     setThumbnailUrl(bookInput.thumbnailUrl ?? '');
     setStatus(bookInput.status);
@@ -142,6 +177,7 @@ export default function ScanScreen() {
     seriesTitle: seriesTitle.trim(),
     volumeNumber: volumeNumber ? Number.parseInt(volumeNumber, 10) : undefined,
     volumeKind,
+    bookFormat,
     thumbnailUrl: thumbnailUrl || undefined,
     purchasePrice: selectedPurchasePrice(),
     listPrice: normalPurchasePrice ?? undefined,
@@ -151,12 +187,18 @@ export default function ScanScreen() {
   });
 
   const resetForm = () => {
+    volumeKindEdited.current = false;
+    bookFormatEdited.current = false;
+    setBulkRegistrationMode(false);
+    setManualCandidates([]);
+    setManualSearchQuery('');
     setTitle('');
     setAuthor('');
     setPublisher('');
     setSeriesTitle('');
     setVolumeNumber('');
     setVolumeKind('main');
+    setBookFormat('unknown');
     setIsbn('');
     setThumbnailUrl('');
     setStatus('unread');
@@ -388,6 +430,7 @@ export default function ScanScreen() {
   };
 
   const handleScanModeChange = (nextMode: 'confirm' | 'continuous') => {
+    setBulkRegistrationMode(false);
     if (scanMode === 'continuous' && nextMode === 'confirm' && scanQueue.length > 0) {
       setScanMode(nextMode);
       openQueueReview();
@@ -397,6 +440,12 @@ export default function ScanScreen() {
   };
 
   const handleScanToggle = () => {
+    if (showManualForm) {
+      setShowManualForm(false);
+      setBulkRegistrationMode(false);
+      setIsScanning(true);
+      return;
+    }
     if (scanMode === 'continuous' && isScanning && scanQueue.length > 0) {
       openQueueReview();
       return;
@@ -420,8 +469,13 @@ export default function ScanScreen() {
     setIsSubmitting(true);
     try {
       const book = await addBook(bookInput, { allowDuplicate });
+      const continueBulkRegistration = bulkRegistrationMode;
       resetForm();
       setNotice({ tone: 'success', message: `${book.title} を追加しました。` });
+      if (continueBulkRegistration) {
+        router.replace({ pathname: '/series/[title]', params: { title: book.seriesTitle, bulk: '1' } });
+        return;
+      }
       router.replace('/');
       Alert.alert('追加しました', `${book.title} を本棚に追加しました。`, [
         {
@@ -481,36 +535,65 @@ export default function ScanScreen() {
     );
   };
 
-  const lookupManualIsbn = async () => {
-    const normalized = normalizeBarcode(isbn);
-    if (!isBookIsbnBarcode(normalized)) {
-      setNotice({
-        tone: 'warning',
-        message: normalized
-          ? '有効なISBNを入力してください。978または979で始まる13桁のISBNを推奨します。'
-          : 'ISBNを入力してください。',
-      });
+  const lookupManualTitle = async () => {
+    if (manualLookupRef.current || isSubmitting) return;
+    if (!manualSearchQuery.trim()) {
+      setManualLookupNotice({ tone: 'warning', message: '作品名を入力してください。' });
       return;
     }
-
+    manualLookupRef.current = true;
+    setIsManualLookingUp(true);
     setIsSubmitting(true);
-    setNotice({ tone: 'neutral', message: `${normalized} を検索しています。` });
+    setIsScanning(false);
+    setManualCandidates([]);
+    setManualLookupNotice({ tone: 'neutral', message: '作品を検索しています。' });
+    try {
+      const candidates = await searchBookCandidates(manualSearchQuery);
+      setManualCandidates(candidates);
+      setManualLookupNotice({ tone: candidates.length ? 'success' : 'warning', message: candidates.length
+        ? '登録する本を選んでください。巻数・作者・出版社も確認できます。'
+        : '作品が見つかりませんでした。作品名や巻数を変えるか、下の欄に入力して登録してください。' });
+    } catch (error) {
+      setManualLookupNotice({ tone: 'error', message: formatLookupNotice(error) });
+    } finally {
+      manualLookupRef.current = false;
+      setIsManualLookingUp(false);
+      setIsSubmitting(false);
+    }
+  };
 
+  const lookupManualIsbn = async () => {
+    if (manualLookupRef.current || isSubmitting) return;
+    const normalized = normalizeBarcode(isbn.normalize('NFKC'));
+    const report = (value: ScanNotice) => {
+      setManualLookupNotice(value);
+      setNotice(value);
+    };
+    if (!isBookIsbnBarcode(normalized)) {
+      report({ tone: 'warning', message: normalized
+        ? '有効なISBNを入力してください。978または979で始まる13桁のISBNを推奨します。'
+        : 'ISBNを入力してから検索してください。' });
+      return;
+    }
+    setManualCandidates([]);
+    manualLookupRef.current = true;
+    setIsManualLookingUp(true);
+    setIsSubmitting(true);
+    setIsScanning(false);
+    report({ tone: 'neutral', message: '書籍情報を検索しています。通信状況によって時間がかかることがあります。' });
     try {
       const bookInput = await lookupBookByIsbn(normalized);
       if (!bookInput) {
-        setNotice({ tone: 'warning', message: '書籍データが見つかりませんでした。' });
+        report({ tone: 'warning', message: '書籍データが見つかりませんでした。ISBNを確認するか、タイトルなどを入力して登録してください。' });
         return;
       }
-
       applyLookupResult(bookInput);
-      setNotice({ tone: 'success', message: `${bookInput.title} の内容を確認してください。` });
+      report({ tone: 'success', message: `${bookInput.title} の内容を確認してください。` });
     } catch (error) {
-      setNotice({
-        tone: 'error',
-        message: formatLookupNotice(error),
-      });
+      report({ tone: 'error', message: formatLookupNotice(error) });
     } finally {
+      manualLookupRef.current = false;
+      setIsManualLookingUp(false);
       setIsSubmitting(false);
     }
   };
@@ -523,7 +606,7 @@ export default function ScanScreen() {
       const wasJustScanned =
         lastScanRef.current.isbn === normalized && now - lastScanRef.current.at < repeatScanWindowMs;
 
-      if (!isScanning || wasJustScanned) return;
+      if (tourActiveRef.current || !isFocused || !appActive || showManualForm || isSubmitting || !isScanning || wasJustScanned) return;
       if (scanMode === 'continuous' && now < continuousScanCooldownUntilRef.current) return;
       if (scanMode !== 'continuous' && processingRef.current) return;
       if (normalized.length !== 10 && normalized.length !== 13) return;
@@ -559,6 +642,7 @@ export default function ScanScreen() {
 
       try {
         const bookInput = await lookupBookByIsbn(normalized);
+        if (tourActiveRef.current) return;
         if (bookInput) {
           applyLookupResult({ ...bookInput, isbn: bookInput.isbn ?? normalized });
           setIsScanning(false);
@@ -584,7 +668,7 @@ export default function ScanScreen() {
         }, 1200);
       }
     },
-    [isScanning, scanMode, scanQueue, runQueuedLookups],
+    [isScanning, isFocused, appActive, showManualForm, isSubmitting, scanMode, scanQueue, runQueuedLookups, tourActive],
   );
 
   const reviewManual = () => {
@@ -609,7 +693,7 @@ export default function ScanScreen() {
     setNotice({ tone: 'neutral', message: '内容を確認して追加してください。' });
   };
 
-  const cameraVisible = isFocused && !showConfirmation && !showQueueReview;
+  const cameraVisible = !tourActive && isFocused && appActive && isScanning && !showManualForm && !isSubmitting && !showConfirmation && !showQueueReview;
 
   const noticeColor =
     notice.tone === 'success'
@@ -633,9 +717,36 @@ export default function ScanScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       style={[styles.screen, { backgroundColor: colors.background }]}
     >
-      <ScrollView ref={scrollRef} contentContainerStyle={styles.content}>
-        {cameraVisible && <View style={styles.cameraShell}>
-          {permission?.granted ? (
+      <ScrollView ref={scrollRef} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        {!showConfirmation && !showQueueReview && scanQueue.length === 0 && (
+          <Pressable accessibilityRole="button" accessibilityLabel="スキャンからシリーズ登録を始める"
+            disabled={isSubmitting}
+            accessibilityState={{ selected: bulkRegistrationMode, disabled: isSubmitting }}
+            onPress={() => {
+              setBulkRegistrationMode(true);
+              setScanMode('confirm');
+              setShowManualForm(false);
+              setIsScanning(true);
+              setManualCandidates([]);
+              setManualLookupNotice(null);
+              setNotice({ tone: 'neutral', message: '登録するシリーズのISBNバーコードを読み取ってください。確認後に、何巻まで持っているかを指定できます。' });
+              scrollRef.current?.scrollTo({ y: 0, animated: true });
+            }}
+            style={[styles.bulkEntry, { backgroundColor: tour.focus === 'series' ? colors.elevated : colors.input, borderColor: colors.primary, borderWidth: tour.focus === 'series' ? 3 : 1 }]}>
+            <View style={styles.bulkEntryBody}>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>シリーズ登録</Text>
+              <Text style={[styles.purchaseHint, { color: colors.muted }]}>スキャン → 本を確認 → 持っている巻数を指定</Text>
+            </View>
+            <Text style={[styles.bulkEntryAction, { color: colors.primary }]}>{bulkRegistrationMode ? '選択中' : 'はじめる ›'}</Text>
+          </Pressable>
+        )}
+        {(cameraVisible || tour.focus === 'scan') && <View style={styles.cameraShell}>
+          {tourActive ? (
+            <View style={styles.tourCameraPreview}>
+              <Text style={[styles.tourBarcode, { color: colors.primary }]}>▌▏▌▌▏▌▏▌▌▏▌</Text>
+              <Text style={[styles.purchaseHint, { color: colors.muted }]}>ここでISBNバーコードを読み取ります</Text>
+            </View>
+          ) : permission?.granted ? (
             <>
               <CameraView
                 barcodeScannerSettings={{ barcodeTypes: ['ean13', 'ean8', 'upc_a', 'upc_e'] }}
@@ -663,15 +774,15 @@ export default function ScanScreen() {
         {!showConfirmation && !showQueueReview && <View style={styles.scanControls}>
           <View style={[styles.modeSwitch, { backgroundColor: colors.elevated }]}>
             {[
-              ['confirm', '確認'],
+              ['confirm', '通常'],
               ['continuous', '連続登録'],
             ].map(([value, label]) => (
               <Pressable
                 key={value}
                 onPress={() => handleScanModeChange(value as 'confirm' | 'continuous')}
-                style={[styles.modeButton, scanMode === value && { backgroundColor: colors.text }]}
+                style={[styles.modeButton, scanMode === value && !bulkRegistrationMode && { backgroundColor: colors.text }]}
               >
-                <Text style={[styles.modeText, { color: scanMode === value ? colors.background : colors.muted }]}>
+                <Text style={[styles.modeText, { color: scanMode === value && !bulkRegistrationMode ? colors.background : colors.muted }]}>
                   {label}
                 </Text>
               </Pressable>
@@ -716,7 +827,7 @@ export default function ScanScreen() {
             <ScrollView style={styles.queueList} contentContainerStyle={styles.queueListContent} nestedScrollEnabled showsVerticalScrollIndicator>
               {scanQueue.map((item, index) => (
               <View key={item.queueId} style={[styles.queueItem, { borderColor: colors.border }]}>
-                <BookCover
+                <BookCover displayContext="personal"
                   thumbnailUrl={item.thumbnailUrl}
                   isbn={item.isbn}
                   style={styles.queueCover}
@@ -792,7 +903,7 @@ export default function ScanScreen() {
 
         {showConfirmation && (
           <View style={[styles.confirmation, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <BookCover
+            <BookCover displayContext="personal"
               thumbnailUrl={thumbnailUrl || undefined}
               isbn={isbn || undefined}
               style={styles.confirmationCover}
@@ -835,7 +946,7 @@ export default function ScanScreen() {
                     isSubmitting && styles.disabled,
                   ]}
                 >
-                  <Text style={styles.primaryButtonText}>{isSubmitting ? '追加中' : '追加'}</Text>
+                  <Text style={styles.primaryButtonText}>{isSubmitting ? '追加中' : bulkRegistrationMode ? '登録して巻数を選ぶ' : '追加'}</Text>
                 </Pressable>
               </View>
             </View>
@@ -847,12 +958,18 @@ export default function ScanScreen() {
             <View style={styles.manualToggleText}>
               <Text style={[styles.sectionTitle, { color: colors.text }]}>手動登録</Text>
               <Text style={[styles.manualToggleCopy, { color: colors.muted }]}>
-                ISBN検索やバーコードなしの本を入力する時だけONにします。
+                作品名・ISBNで探す場合や、バーコードなしの本を登録する場合にONにします。
               </Text>
             </View>
             <Switch
               value={showManualForm}
-              onValueChange={setShowManualForm}
+              disabled={isSubmitting}
+              onValueChange={(enabled) => {
+                setShowManualForm(enabled);
+                if (!enabled) setBulkRegistrationMode(false);
+                setIsScanning(!enabled);
+                setManualLookupNotice(null);
+              }}
               trackColor={{ false: colors.elevated, true: colors.success }}
               thumbColor={showManualForm ? '#ffffff' : colors.muted}
             />
@@ -861,6 +978,43 @@ export default function ScanScreen() {
 
         {!showConfirmation && !showQueueReview && showManualForm && <View style={styles.form}>
           <Text style={[styles.sectionTitle, { color: colors.text }]}>手動登録</Text>
+          <Text style={[styles.purchaseHint, { color: colors.muted }]}>ISBNが分からない場合は、作品名や巻数から検索できます。</Text>
+          <View style={styles.inputRow}>
+            <TextInput
+              value={manualSearchQuery}
+              onChangeText={(value) => { setManualSearchQuery(value); setManualCandidates([]); setManualLookupNotice(null); }}
+              editable={!isManualLookingUp}
+              placeholder="作品名・巻数で検索"
+              placeholderTextColor={colors.muted}
+              returnKeyType="search"
+              onSubmitEditing={() => { void lookupManualTitle(); }}
+              style={[styles.input, styles.flexInput, { backgroundColor: colors.input, color: colors.text }]}
+            />
+            <Pressable accessibilityRole="button" accessibilityLabel={isManualLookingUp ? '作品名を検索中' : '作品名で検索'}
+              accessibilityState={{ busy: isManualLookingUp, disabled: isSubmitting }} disabled={isSubmitting}
+              onPress={lookupManualTitle}
+              style={[styles.lookupButton, { backgroundColor: colors.primary }, isSubmitting && styles.disabled]}>
+              {isManualLookingUp && <ActivityIndicator size="small" color="#ffffff" />}
+              <Text style={styles.lookupButtonText}>{isManualLookingUp ? '検索中' : '検索'}</Text>
+            </Pressable>
+          </View>
+          <BookFormatControl label="検索する本の種類" value={searchFormat} onChange={setSearchFormat} includeAll disabled={isSubmitting} />
+          {manualCandidates.length > 0 && !manualCandidates.some(candidate => matchesBookFormat(candidate, searchFormat)) && (
+            <Text style={[styles.purchaseHint, { color: colors.muted }]}>この種類の候補はありません。「すべて」もお試しください。</Text>
+          )}
+          {manualCandidates.filter(candidate => matchesBookFormat(candidate, searchFormat)).map((candidate, index) => (
+            <Pressable key={`${candidate.isbn ?? candidate.title}-${index}`}
+              accessibilityLabel={`${candidate.title}の登録内容を確認`}
+              onPress={() => applyLookupResult(candidate)}
+              style={[styles.queueItem, { borderColor: colors.border }]}>
+              <BookCover displayContext="personal" isbn={candidate.isbn} thumbnailUrl={candidate.thumbnailUrl} style={styles.queueCover} />
+              <View style={styles.queueItemBody}>
+                <Text style={[styles.queueItemTitle, { color: colors.text }]}>{candidate.title}</Text>
+                <Text style={[styles.purchaseHint, { color: colors.muted }]}>{[candidate.volumeNumber ? `${candidate.volumeNumber}巻` : undefined, candidate.author, candidate.publisher].filter(Boolean).join(' / ')}</Text>
+              </View>
+            </Pressable>
+          ))}
+
           <TextInput
             autoCorrect={false}
             value={title}
@@ -888,7 +1042,8 @@ export default function ScanScreen() {
             />
             <TextInput
               value={isbn}
-              onChangeText={setIsbn}
+              onChangeText={(value) => { setIsbn(value); setManualLookupNotice(null); }}
+              editable={!isManualLookingUp}
               autoCapitalize="characters"
               autoCorrect={false}
               keyboardType="number-pad"
@@ -899,12 +1054,20 @@ export default function ScanScreen() {
             <Pressable
               disabled={isSubmitting}
               onPress={lookupManualIsbn}
+              accessibilityRole="button"
+              accessibilityLabel={isManualLookingUp ? 'ISBNを検索中' : 'ISBNで検索'}
+              accessibilityState={{ busy: isManualLookingUp, disabled: isSubmitting }}
               style={[styles.lookupButton, { backgroundColor: colors.primary }, isSubmitting && styles.disabled]}
             >
-              <Text style={styles.lookupButtonText}>検索</Text>
+              {isManualLookingUp && <ActivityIndicator size="small" color="#ffffff" />}
+              <Text style={styles.lookupButtonText}>{isManualLookingUp ? '検索中' : '検索'}</Text>
             </Pressable>
           </View>
-          <VolumeKindControls colors={colors} value={volumeKind} onChange={setVolumeKind} />
+          {manualLookupNotice && <View accessibilityLiveRegion="polite" style={[styles.notice, { marginTop: 0, backgroundColor: colors.elevated }]}>
+            <Text style={[styles.noticeText, { color: manualLookupNotice.tone === 'error' ? colors.danger : colors.text }]}>{manualLookupNotice.message}</Text>
+          </View>}
+          <BookFormatControl label="本の種類" value={bookFormat} onChange={value => { if (value !== 'all') { bookFormatEdited.current = true; setBookFormat(value); } }} disabled={isSubmitting} />
+          <VolumeKindControls colors={colors} value={volumeKind} onChange={(value) => { volumeKindEdited.current = true; setVolumeKind(value); }} />
           <TextInput
             autoCorrect={false}
             value={author}
@@ -948,7 +1111,7 @@ export default function ScanScreen() {
               </Pressable>
             ))}
           </View>
-          <Pressable style={[styles.submitButton, { backgroundColor: colors.text }]} onPress={reviewManual}>
+          <Pressable disabled={isSubmitting} style={[styles.submitButton, { backgroundColor: colors.text }, isSubmitting && styles.disabled]} onPress={reviewManual}>
             <Text style={[styles.submitButtonText, { color: colors.background }]}>内容を確認</Text>
           </Pressable>
         </View>}
@@ -1039,6 +1202,11 @@ function PurchasePriceControls({
 }
 
 const styles = StyleSheet.create({
+  tourCameraPreview: { minHeight: 210, alignItems: 'center', justifyContent: 'center', gap: 16 },
+  tourBarcode: { fontSize: 44, letterSpacing: 3 },
+  bulkEntry: { borderWidth: 1, borderRadius: 12, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
+  bulkEntryBody: { flex: 1, gap: 4 },
+  bulkEntryAction: { fontSize: 13, fontWeight: '800' },
   screen: { flex: 1 },
   content: { padding: 18, paddingBottom: 40 },
   cameraShell: {
@@ -1187,6 +1355,8 @@ const styles = StyleSheet.create({
   compactInput: { width: 82 },
   flexInput: { flex: 1 },
   lookupButton: {
+    flexDirection: 'row',
+    gap: 6,
     alignItems: 'center',
     borderRadius: 8,
     height: 46,

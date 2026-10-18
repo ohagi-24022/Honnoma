@@ -80,7 +80,7 @@ export function SeriesCard({
   return (
     <View style={[styles.row, { backgroundColor: colors.surface, borderColor: colors.border }]}>
       <Pressable accessibilityLabel={`${group.title}の詳細を開く`} onPress={openSeries} style={styles.coverPress}>
-        <BookCover
+        <BookCover displayContext="personal"
           thumbnailUrl={seriesCoverUrl ?? group.representative.thumbnailUrl}
           isbn={group.representative.isbn}
           style={styles.cover}

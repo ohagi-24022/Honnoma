@@ -1,8 +1,9 @@
 -- Apply notification_scheduler_setup first, and store project_url and
 -- notification_gateway_key (legacy anon JWT) in Vault.
--- All schedules use UTC; daily check/send run at 11:30/12:00 Japan time.
+-- All schedules use UTC; checks at 11:30, 11:40 and 11:50, send at 12:00 Japan time.
+-- Successful publication lookups are cached for 20 hours; follow-ups reuse them.
 -- Retry only previously attempted deliveries between 12:05 and 20:55 Japan time.
-select cron.schedule('honnoma-check-new-releases-at-1130-jst', '30 2 * * *', $job$
+select cron.schedule('honnoma-check-new-releases-at-1130-jst', '30,40,50 2 * * *', $job$
 select net.http_post(
   url := (select decrypted_secret from vault.decrypted_secrets where name = 'project_url') || '/functions/v1/check-new-releases',
   headers := jsonb_build_object(

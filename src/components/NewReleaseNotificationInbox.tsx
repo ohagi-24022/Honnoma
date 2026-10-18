@@ -4,6 +4,7 @@ import { useCallback, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { archiveNewReleaseNotifications, getNewReleaseNotificationLogs, markNewReleaseNotificationsSeen, NewReleaseNotificationLog } from '../lib/newReleaseNotifications';
+import { formatPublicationDate } from '../lib/publicationDate';
 import { useAppTheme } from '../store/ThemeContext';
 
 export function useNewReleaseNotificationInbox(userId?: string) {
@@ -91,7 +92,8 @@ export function NewReleaseNotificationInbox({ inbox }: { inbox: ReturnType<typeo
           <View style={styles.body}>
             <Text style={[styles.logTitle, { color: colors.text }]}>{log.seriesTitle}</Text>
             <Text style={[styles.copy, { color: colors.muted }]}>{log.volumeNumber ? `${log.volumeNumber}巻の新刊候補` : '新刊候補'}</Text>
-            <Text style={[styles.meta, { color: colors.muted }]}>{formatDate(log.createdAt)} / {formatStatus(log.status)}</Text>
+            <Text style={[styles.copy, { color: colors.muted }]}>発売日：{formatPublicationDate(log.publishedDate) ?? '未取得'}</Text>
+            <Text style={[styles.meta, { color: colors.muted }]}>通知日：{formatDate(log.createdAt)} / {formatStatus(log.status)}</Text>
           </View>
         </View>
       ))}

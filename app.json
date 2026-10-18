@@ -17,7 +17,11 @@
       "bundleIdentifier": "com.ohagiworks.honnoma",
       "infoPlist": {
         "NSCameraUsageDescription": "ISBNバーコードを読み取り、本を登録するためにカメラを使用します。",
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "CFBundleDevelopmentRegion": "ja",
+        "CFBundleLocalizations": [
+          "ja"
+        ]
       },
       "buildNumber": "16"
     },

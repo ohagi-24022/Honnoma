@@ -13,6 +13,7 @@ import {
 
 import { getStorageItemWithLegacy } from '../lib/asyncStorageCompat';
 import { parseSeriesTitle } from '../lib/series';
+import { wishlistCoverIdentity } from '../lib/wishlistCover';
 import { supabase } from '../lib/supabase';
 import { useAuth } from './AuthContext';
 
@@ -26,6 +27,7 @@ export type WishlistItem = {
   title: string;
   score: number;
   coverUrl?: string;
+  isbn?: string;
   cloudNormalizedTitle?: string;
   note?: string;
   purchaseUrl?: string;
@@ -37,6 +39,7 @@ type WishlistInput = {
   title: string;
   score: number;
   coverUrl?: string;
+  isbn?: string;
   note?: string;
   purchaseUrl?: string;
 };
@@ -51,6 +54,7 @@ type WishlistContextValue = {
 type WantedMangaRow = {
   created_at?: string | null;
   cover_url?: string | null;
+  isbn?: string | null;
   id?: string | null;
   note?: string | null;
   normalized_title: string;
@@ -94,7 +98,7 @@ function toWishlistItem(row: WantedMangaRow): WishlistItem {
     id: row.id ?? `cloud-${row.normalized_title}`,
     title: row.title,
     score: clampScore(row.score),
-    coverUrl: row.cover_url ?? undefined,
+    ...wishlistCoverIdentity({isbn: row.isbn ?? undefined, coverUrl: row.cover_url ?? undefined}),
     cloudNormalizedTitle: row.normalized_title,
     note: row.note ?? undefined,
     purchaseUrl: row.purchase_url ?? undefined,
@@ -110,7 +114,7 @@ function mergeItems(localItems: WishlistItem[], cloudItems: WishlistItem[]) {
     if (!key) continue;
     const current = byTitle.get(key);
     if (!current || item.updatedAt.localeCompare(current.updatedAt) >= 0) {
-      byTitle.set(key, { ...item, cloudNormalizedTitle: item.cloudNormalizedTitle ?? current?.cloudNormalizedTitle });
+      byTitle.set(key, { ...item, isbn: wishlistCoverIdentity(item).isbn ?? current?.isbn, cloudNormalizedTitle: item.cloudNormalizedTitle ?? current?.cloudNormalizedTitle });
     } else if (item.cloudNormalizedTitle && !current.cloudNormalizedTitle) {
       byTitle.set(key, { ...current, cloudNormalizedTitle: item.cloudNormalizedTitle });
     }
@@ -118,11 +122,11 @@ function mergeItems(localItems: WishlistItem[], cloudItems: WishlistItem[]) {
   return [...byTitle.values()];
 }
 
-function parseStoredItems(value: string | null) {
+function parseStoredItems(value: string | null): WishlistItem[] {
   if (!value) return [];
   try {
     const parsed = JSON.parse(value);
-    return Array.isArray(parsed) ? (parsed as WishlistItem[]) : [];
+    return Array.isArray(parsed) ? (parsed as WishlistItem[]).map((item) => ({ ...item, ...wishlistCoverIdentity(item) })) : [];
   } catch {
     return [];
   }
@@ -153,6 +157,7 @@ export function WishlistProvider({ children }: PropsWithChildren) {
         {
           note: item.note ?? null,
           cover_url: item.coverUrl ?? null,
+          isbn: wishlistCoverIdentity(item).isbn ?? null,
           normalized_title: normalizedTitle,
           purchase_url: item.purchaseUrl ?? null,
           score: item.score,
@@ -197,7 +202,7 @@ export function WishlistProvider({ children }: PropsWithChildren) {
       if (supabase && user) {
         const { data, error } = await supabase
           .from('wanted_manga')
-          .select('id,title,normalized_title,score,cover_url,note,purchase_url,created_at,updated_at')
+          .select('id,title,normalized_title,score,cover_url,isbn,note,purchase_url,created_at,updated_at')
           .eq('user_id', user.id);
         if (!error) {
           nextItems = mergeItems(nextItems, (data ?? []).map(toWishlistItem));
@@ -243,10 +248,12 @@ export function WishlistProvider({ children }: PropsWithChildren) {
         setItems((current) => {
           const normalizedTitle = normalizeWantedTitle(title);
           const existing = current.find((item) => normalizeWantedTitle(item.title) === normalizedTitle);
+          const identity = wishlistCoverIdentity(input);
           const nextItem: WishlistItem = existing
             ? {
                 ...existing,
-                coverUrl: input.coverUrl?.trim() || existing.coverUrl,
+                coverUrl: identity.coverUrl || existing.coverUrl,
+                isbn: identity.isbn ?? existing.isbn,
                 note: input.note?.trim() || existing.note,
                 purchaseUrl: input.purchaseUrl?.trim() || existing.purchaseUrl,
                 score: clampScore(input.score),
@@ -257,7 +264,7 @@ export function WishlistProvider({ children }: PropsWithChildren) {
                 id: createId(),
                 title,
                 score: clampScore(input.score),
-                coverUrl: input.coverUrl?.trim() || undefined,
+                ...identity,
                 note: input.note?.trim() || undefined,
                 purchaseUrl: input.purchaseUrl?.trim() || undefined,
                 createdAt: now,
@@ -285,7 +292,7 @@ export function WishlistProvider({ children }: PropsWithChildren) {
               ...item,
               ...(input.title !== undefined ? { title: input.title.trim() || item.title } : {}),
               ...(input.score !== undefined ? { score: clampScore(input.score) } : {}),
-              ...(input.coverUrl !== undefined ? { coverUrl: input.coverUrl.trim() || undefined } : {}),
+              ...(input.coverUrl !== undefined || input.isbn !== undefined ? wishlistCoverIdentity({ isbn: input.isbn ?? item.isbn, coverUrl: input.coverUrl ?? item.coverUrl }) : {}),
               ...(input.note !== undefined ? { note: input.note.trim() || undefined } : {}),
               ...(input.purchaseUrl !== undefined
                 ? { purchaseUrl: input.purchaseUrl.trim() || undefined }

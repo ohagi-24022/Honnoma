@@ -112,7 +112,7 @@ export default function RankingCategoryScreen() {
       return;
     }
     if (!supabase) {
-      setError('Supabaseが未設定のため、ランキングを取得できません。');
+      setError('現在ランキングを利用できません。しばらくしてからもう一度お試しください。');
       return;
     }
     setLoading(true);
@@ -189,7 +189,7 @@ export default function RankingCategoryScreen() {
               const owned = category !== 'personal' && isOwnedSeriesTitle(row.title, ownedSeriesKeys);
               const canAddWishlist = category !== 'personal' && !owned;
               return (
-                <RankingCard
+                <RankingCard personal={category === 'personal'}
                   key={`${category}-${row.title}-${(page - 1) * PAGE_SIZE + index}`}
                   added={addedTitles.has(normalizeRankingTitle(row.title))}
                   disabledAddLabel={owned ? '所持済み' : undefined}
@@ -201,6 +201,7 @@ export default function RankingCategoryScreen() {
                             title: row.title,
                             score: row.score ?? 75,
                             coverUrl: row.coverUrl,
+                            isbn: row.isbn,
                             purchaseUrl: buildPurchaseUrl(row.title),
                           })
                       : undefined

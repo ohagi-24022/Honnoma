@@ -94,13 +94,13 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }, []);
 
   const signIn = useCallback(async (email: string, password: string) => {
-    if (!supabase) throw new Error('Supabase is not configured.');
+    if (!supabase) throw new Error('現在ログインを利用できません。しばらくしてからもう一度お試しください。');
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw new Error(toAuthMessage(error));
   }, []);
 
   const signUp = useCallback(async (email: string, password: string) => {
-    if (!supabase) throw new Error('Supabase is not configured.');
+    if (!supabase) throw new Error('現在ログインを利用できません。しばらくしてからもう一度お試しください。');
     const { error } = await supabase.auth.signUp({ email, password, options: { emailRedirectTo: AUTH_REDIRECT_URL } });
     if (error) throw new Error(toAuthMessage(error));
   }, []);

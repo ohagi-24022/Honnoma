@@ -1,3 +1,5 @@
+import { BookFormatControl } from '../../src/components/BookFormatControl';
+import { resolveBookFormat } from '../../src/lib/bookFormat';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { router, useLocalSearchParams, useNavigation } from 'expo-router';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
@@ -51,6 +53,7 @@ export default function BookDetailsScreen() {
   const [editingPrice, setEditingPrice] = useState(false);
   const [draftPurchasePrice, setDraftPurchasePrice] = useState('');
   const [savingPrice, setSavingPrice] = useState(false);
+  const [savingFormat, setSavingFormat] = useState(false);
 
   const goBack = useCallback(() => {
     const fromSeries = Array.isArray(params.fromSeries) ? params.fromSeries[0] : params.fromSeries;
@@ -275,7 +278,7 @@ export default function BookDetailsScreen() {
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
-      <BookCover
+      <BookCover displayContext="personal"
         thumbnailUrl={displayCover}
         isbn={book.isbn}
         style={styles.cover}
@@ -296,6 +299,15 @@ export default function BookDetailsScreen() {
       <MetadataRow label="出版社" value={displayPublisher} />
       <MetadataRow label="状態" value={statusLabels[book.status]} />
       <MetadataRow label="ISBN" value={book.isbn} />
+      <BookFormatControl label="本の種類" value={resolveBookFormat(book)} disabled={loading || savingFormat}
+        onChange={value => {
+          if (value === 'all' || savingFormat) return;
+          setSavingFormat(true);
+          void updateBook(book.id, { bookFormat: value }).catch(saveError => {
+            Alert.alert('保存できませんでした', saveError instanceof Error ? saveError.message : 'もう一度お試しください。');
+          }).finally(() => setSavingFormat(false));
+        }} />
+
 
       {shouldPrioritizePriceEditor ? priceSection : null}
 

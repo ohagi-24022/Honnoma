@@ -78,6 +78,7 @@ export type NewReleaseCheckResult = {
 };
 
 export type NewReleaseNotificationLog = {
+  publishedDate?: string;
   createdAt: string;
   id?: string;
   notificationTitle?: string;
@@ -193,7 +194,7 @@ export async function enableNewReleaseNotifications(
   userId: string,
   seriesGroups: SeriesGroup[],
 ) {
-  if (!supabase) throw new Error('Supabaseが設定されていません。');
+  if (!supabase) throw new Error('現在新刊通知を利用できません。しばらくしてからもう一度お試しください。');
 
   const expoPushToken = await registerForNewReleasePushToken();
   const now = new Date().toISOString();
@@ -326,7 +327,7 @@ export async function setNewReleaseSeriesSubscription(
   subscription: NewReleaseSubscriptionInput,
   enabled: boolean,
 ) {
-  if (!supabase) throw new Error('Supabaseが設定されていません。');
+  if (!supabase) throw new Error('現在新刊通知を利用できません。しばらくしてからもう一度お試しください。');
 
   const { error } = await supabase.from('series_subscriptions').upsert(
     {
@@ -343,7 +344,7 @@ export async function setNewReleaseSeriesSubscription(
 }
 
 export async function runNewReleaseCheck(limit = 10) {
-  if (!supabase) throw new Error('Supabaseが設定されていません。');
+  if (!supabase) throw new Error('現在新刊通知を利用できません。しばらくしてからもう一度お試しください。');
 
   const { data, error } = await supabase.functions.invoke<NewReleaseCheckResult>(
     'check-new-releases',
@@ -360,11 +361,11 @@ export async function runNewReleaseCheck(limit = 10) {
 }
 
 export async function getNewReleaseNotificationLogs(userId: string, limit = 50, view: 'new' | 'history' = 'new') {
-  if (!supabase) throw new Error('Supabaseが設定されていません。');
+  if (!supabase) throw new Error('現在新刊通知を利用できません。しばらくしてからもう一度お試しください。');
 
   let query = supabase
     .from('notification_logs')
-    .select('id,series_title,volume_number,status,notification_title,created_at')
+    .select('id,series_title,volume_number,status,notification_title,created_at,published_date')
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
     .limit(limit);
@@ -375,6 +376,7 @@ export async function getNewReleaseNotificationLogs(userId: string, limit = 50, 
 
   return (data ?? []).map((row) => ({
     createdAt: String(row.created_at),
+    publishedDate: typeof row.published_date === 'string' ? row.published_date : undefined,
     id: String(row.id),
     notificationTitle: row.notification_title ? String(row.notification_title) : undefined,
     seriesTitle: String(row.series_title),
@@ -385,7 +387,7 @@ export async function getNewReleaseNotificationLogs(userId: string, limit = 50, 
 }
 
 export async function archiveNewReleaseNotifications(userId: string, notificationIds: string[]) {
-  if (!supabase) throw new Error('Supabaseが設定されていません。');
+  if (!supabase) throw new Error('現在新刊通知を利用できません。しばらくしてからもう一度お試しください。');
   if (notificationIds.length === 0) return;
   const { error } = await supabase.from('notification_logs')
     .update({ archived_at: new Date().toISOString() })
@@ -394,7 +396,7 @@ export async function archiveNewReleaseNotifications(userId: string, notificatio
 }
 
 export async function getServerOperationDiagnostics(hours = 24) {
-  if (!supabase) throw new Error('Supabaseが設定されていません。');
+  if (!supabase) throw new Error('現在新刊通知を利用できません。しばらくしてからもう一度お試しください。');
 
   const since = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
   const { data, error } = await supabase
@@ -433,7 +435,7 @@ export async function getServerOperationDiagnostics(hours = 24) {
 }
 
 export async function getNewReleaseDiagnostics(userId: string) {
-  if (!supabase) throw new Error('Supabaseが設定されていません。');
+  if (!supabase) throw new Error('現在新刊通知を利用できません。しばらくしてからもう一度お試しください。');
 
   const [subscriptions, tokenResult, logResult] = await Promise.all([
     getNewReleaseSubscriptions(userId),
@@ -444,7 +446,7 @@ export async function getNewReleaseDiagnostics(userId: string) {
       .eq('enabled', true),
     supabase
       .from('notification_logs')
-      .select('series_title,volume_number,status,notification_title,created_at')
+      .select('series_title,volume_number,status,notification_title,created_at,published_date')
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
       .limit(3),
@@ -455,6 +457,7 @@ export async function getNewReleaseDiagnostics(userId: string) {
 
   const recentLogs = (logResult.data ?? []).map((row) => ({
     createdAt: String(row.created_at),
+    publishedDate: typeof row.published_date === 'string' ? row.published_date : undefined,
     notificationTitle: row.notification_title ? String(row.notification_title) : undefined,
     seriesTitle: String(row.series_title),
     status: String(row.status),

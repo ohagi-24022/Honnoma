@@ -17,6 +17,7 @@ import {
 } from 'react-native';
 
 import { BookCover } from '../../src/components/BookCover';
+import { resolveWishlistCover, wishlistCoverIdentity } from '../../src/lib/wishlistCover';
 import { buildPurchaseUrl, searchSeriesCandidates, SeriesSearchCandidate } from '../../src/lib/bookApis';
 import { normalizeSeriesKey } from '../../src/lib/series';
 import { useAppSettings } from '../../src/store/AppSettingsContext';
@@ -34,15 +35,6 @@ function priorityLabel(score: number) {
   if (score >= 90) return '最優先';
   if (score >= 70) return '気になる';
   return 'いつか欲しい';
-}
-
-function normalizeTitleForCover(value?: string) {
-  return value
-    ?.normalize('NFKC')
-    .toLowerCase()
-    .replace(/[「」『』【】［］\[\]（）()]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
 }
 
 export default function WishlistScreen() {
@@ -156,43 +148,6 @@ export default function WishlistScreen() {
       });
     });
   };
-  const coverByTitle = useMemo(() => {
-    const map = new Map<string, { coverUrl: string; rank: number }>();
-    const sortedBooks = [...books].sort((left, right) => {
-      const leftVolume = left.volumeNumber ?? Number.MAX_SAFE_INTEGER;
-      const rightVolume = right.volumeNumber ?? Number.MAX_SAFE_INTEGER;
-      return (
-        leftVolume - rightVolume ||
-        left.createdAt.localeCompare(right.createdAt) ||
-        left.title.localeCompare(right.title)
-      );
-    });
-
-    for (const book of sortedBooks) {
-      if (!book.thumbnailUrl) continue;
-      const rank = book.volumeNumber === 1 ? 0 : book.volumeNumber ?? Number.MAX_SAFE_INTEGER;
-      for (const key of [book.title, book.seriesTitle]) {
-        const normalizedKey = normalizeTitleForCover(key);
-        if (!normalizedKey) continue;
-        const current = map.get(normalizedKey);
-        if (!current || rank < current.rank) {
-          map.set(normalizedKey, { coverUrl: book.thumbnailUrl, rank });
-        }
-      }
-    }
-    return map;
-  }, [books]);
-
-  const findCoverUrl = (value: string) => {
-    const normalizedTitle = normalizeTitleForCover(value);
-    if (!normalizedTitle) return undefined;
-    const exactCover = coverByTitle.get(normalizedTitle)?.coverUrl;
-    if (exactCover) return exactCover;
-    return [...coverByTitle.entries()]
-      .filter(([key]) => key.includes(normalizedTitle) || normalizedTitle.includes(key))
-      .sort((left, right) => left[1].rank - right[1].rank)?.[0]?.[1].coverUrl;
-  };
-
   const refineCandidates = (results: SeriesSearchCandidate[]) => {
     const queryKey = normalizeSeriesKey(trimmedTitle);
     const exactMatches = results.filter((candidate) => normalizeSeriesKey(candidate.seriesTitle) === queryKey);
@@ -238,11 +193,11 @@ export default function WishlistScreen() {
       return;
     }
     const addTitle = selectedCandidate?.seriesTitle ?? trimmedTitle;
-    const addCoverUrl = selectedCandidate?.coverUrl ?? findCoverUrl(addTitle);
+    const cover = resolveWishlistCover({ title: addTitle, isbn: selectedCandidate?.isbn, coverUrl: selectedCandidate?.coverUrl }, books);
     addItem({
       title: addTitle,
       score: selectedPriority.score,
-      coverUrl: addCoverUrl,
+      ...cover,
       note,
       purchaseUrl: buildPurchaseUrl(addTitle),
     });
@@ -287,6 +242,7 @@ export default function WishlistScreen() {
       title: lastDeleted.title,
       score: lastDeleted.score,
       coverUrl: lastDeleted.coverUrl,
+      isbn: lastDeleted.isbn,
       note: lastDeleted.note,
       purchaseUrl: lastDeleted.purchaseUrl,
     });
@@ -442,8 +398,10 @@ export default function WishlistScreen() {
                   ]}
                 >
                   <BookCover
+                    displayContext="personal"
                     placeholderText="No Cover"
                     style={styles.candidateCover}
+                    isbn={wishlistCoverIdentity(candidate).isbn}
                     thumbnailUrl={candidate.coverUrl}
                   />
                   <View style={styles.candidateBody}>
@@ -575,7 +533,9 @@ export default function WishlistScreen() {
               <View key={item.id} style={[styles.topCandidateCard, { borderColor: colors.border }]}>
                 <View style={styles.topCoverWrap}>
                   <BookCover
-                    thumbnailUrl={findCoverUrl(item.title) ?? item.coverUrl}
+                    displayContext="personal"
+                    isbn={resolveWishlistCover(item, books).isbn}
+                    thumbnailUrl={resolveWishlistCover(item, books).coverUrl}
                     style={styles.topCover}
                     placeholderText="No Cover"
                   />
@@ -635,7 +595,9 @@ export default function WishlistScreen() {
               <View style={styles.cardHeader}>
                 <Text style={[styles.rankText, { color: colors.text }]}>#{index + 1}</Text>
                 <BookCover
-                  thumbnailUrl={findCoverUrl(item.title) ?? item.coverUrl}
+                  displayContext="personal"
+                  isbn={resolveWishlistCover(item, books).isbn}
+                  thumbnailUrl={resolveWishlistCover(item, books).coverUrl}
                   style={styles.cover}
                   placeholderText="No Cover"
                 />

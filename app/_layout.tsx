@@ -1,3 +1,4 @@
+import { OnboardingProvider } from '../src/store/OnboardingContext';
 import Constants from 'expo-constants';
 import { router, Stack, type ErrorBoundaryProps } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -8,6 +9,8 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { OnboardingGate } from '../src/components/OnboardingGate';
+import { RegistrationProgressBanner } from '../src/components/RegistrationProgressBanner';
+import { RegistrationProgressProvider } from '../src/store/RegistrationProgressContext';
 
 import { BookContentProvider } from '../src/store/BookContentContext';
 import { AppSettingsProvider } from '../src/store/AppSettingsContext';
@@ -43,8 +46,13 @@ export default function RootLayout() {
             <BookContentProvider>
             <WishlistProvider>
               <LibraryProvider>
-                <RootStack />
-                <OnboardingGate />
+                <RegistrationProgressProvider>
+                  <OnboardingProvider>
+                  <RootStack />
+                  <RegistrationProgressBanner />
+                  <OnboardingGate />
+                  </OnboardingProvider>
+                </RegistrationProgressProvider>
               </LibraryProvider>
             </WishlistProvider>
             </BookContentProvider>

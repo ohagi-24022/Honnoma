@@ -7,6 +7,7 @@ import { BookCover } from './BookCover';
 
 type RankingCardProps = {
   added?: boolean;
+  personal?: boolean;
   disabledAddLabel?: string;
   expanded?: boolean;
   index: number;
@@ -19,6 +20,7 @@ type RankingCardProps = {
 
 export function RankingCard({
   added = false,
+  personal = false,
   disabledAddLabel,
   expanded = false,
   index,
@@ -50,6 +52,7 @@ export function RankingCard({
     >
       <Text style={[styles.rank, { color: colors.text }]}>#{index + 1}</Text>
       <BookCover
+        displayContext={personal ? 'personal' : 'reviewed'}
         isbn={row.isbn}
         preferIsbnCover={row.preferIsbnCover}
         thumbnailUrl={row.coverUrl}

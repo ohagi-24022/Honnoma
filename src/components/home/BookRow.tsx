@@ -11,7 +11,7 @@ export function BookRow({ book }: { book: Book }) {
   return (
     <Link href={`/book/${encodeURIComponent(book.id)}`} asChild>
       <Pressable style={StyleSheet.flatten([styles.row, { backgroundColor: colors.surface, borderColor: colors.border }])}>
-        <BookCover thumbnailUrl={book.thumbnailUrl} isbn={book.isbn} style={styles.cover} />
+        <BookCover displayContext="personal" thumbnailUrl={book.thumbnailUrl} isbn={book.isbn} style={styles.cover} />
         <View style={styles.body}>
           <Text numberOfLines={2} style={[styles.title, { color: colors.text }]}>
             {book.title}

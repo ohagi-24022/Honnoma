@@ -1,3 +1,4 @@
+import { resolveBookFormat } from '../lib/bookFormat';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppState } from 'react-native';
 import {
@@ -15,6 +16,7 @@ import { getStorageItemWithLegacy, removeStorageItemWithLegacy } from '../lib/as
 import { lookupBookByIsbn, lookupBookByTitle } from '../lib/bookApis';
 import { getBookMetadataOverrideDetails } from '../lib/bookMetadataOverrides';
 import { normalizeAuthor } from '../lib/bookMetadata';
+import { DuplicateBookError } from '../lib/bookRegistration';
 import { createDemoBooks, repairDemoBook } from '../lib/demoLibrary';
 import {
   findDuplicateBook as findDuplicate,
@@ -23,6 +25,7 @@ import {
 import { normalizeKanaReading } from '../lib/kana';
 import { getKnownBookCoverOverride } from '../lib/knownBookOverrides';
 import { parseSeriesTitle } from '../lib/series';
+import { hasUserSeriesName, renamedBook, resolveUserSeriesName } from '../lib/userSeriesNames';
 import { formatNetworkAwareError, isNetworkError } from '../lib/errorMessages';
 import { normalizeVolumeKind } from '../lib/volumeKind';
 import {
@@ -54,9 +57,11 @@ type BookRow = {
   title: string;
   title_reading?: string | null;
   series_title: string;
+  series_aliases?: string[] | null;
   series_reading?: string | null;
   volume_number: number | null;
   volume_kind?: 'main' | 'extra' | null;
+  book_format?: 'comic' | 'novel' | 'unknown' | null;
   author: string | null;
   publisher: string | null;
   published_date?: string | null;
@@ -71,7 +76,7 @@ type BookRow = {
 
 const BASE_BOOK_SELECT_COLUMNS =
   'id,user_id,isbn,title,series_title,volume_number,author,publisher,thumbnail_url,status,created_at';
-const BOOK_SELECT_COLUMNS = `${BASE_BOOK_SELECT_COLUMNS},purchase_price,list_price,price_source,price_fetched_at,volume_kind,published_date,title_reading,series_reading`;
+const BOOK_SELECT_COLUMNS = `${BASE_BOOK_SELECT_COLUMNS},book_format,series_aliases,purchase_price,list_price,price_source,price_fetched_at,volume_kind,published_date,title_reading,series_reading`;
 
 type SupabaseLikeError = {
   message?: string;
@@ -230,6 +235,7 @@ function bookToBookInput(book: Book): BookInput {
     seriesReading: book.seriesReading,
     volumeNumber: book.volumeNumber,
     volumeKind: book.volumeKind,
+    bookFormat: book.bookFormat,
     author: book.author,
     publisher: book.publisher,
     publishedDate: book.publishedDate,
@@ -271,9 +277,11 @@ function fromBookRow(row: BookRow): Book {
   const parsedTitle = parseSeriesTitle(row.title);
   const parsedSeries = parseSeriesTitle(row.series_title || row.title);
   const shouldRepairSeriesTitle =
-    !row.series_title ||
-    row.series_title.trim() === row.title.trim() ||
-    !!parsedSeries.volumeNumber;
+    !row.series_aliases?.length && (
+      !row.series_title ||
+      row.series_title.trim() === row.title.trim() ||
+      !!parsedSeries.volumeNumber
+    );
 
   return {
     id: row.id,
@@ -282,9 +290,11 @@ function fromBookRow(row: BookRow): Book {
     title: row.title,
     titleReading: normalizeKanaReading(row.title_reading),
     seriesTitle: shouldRepairSeriesTitle ? parsedSeries.seriesTitle || parsedTitle.seriesTitle : row.series_title,
+    seriesAliases: row.series_aliases ?? [],
     seriesReading: normalizeKanaReading(row.series_reading),
     volumeNumber: row.volume_number ?? parsedTitle.volumeNumber ?? parsedSeries.volumeNumber,
     volumeKind: normalizeVolumeKind(row.volume_kind, row.title),
+    bookFormat: resolveBookFormat({ title: row.title, seriesTitle: row.series_title, isbn: row.isbn ?? undefined, bookFormat: row.book_format }),
     author: normalizeAuthor(row.author ?? undefined),
     publisher: row.publisher ?? undefined,
     publishedDate: row.published_date ?? undefined,
@@ -310,9 +320,11 @@ function toBookInsert(bookInput: BookInput, userId: string, bookId: string) {
     title: bookInput.title,
     title_reading: normalizeKanaReading(bookInput.titleReading) ?? null,
     series_title: seriesTitle,
+    series_aliases: bookInput.seriesAliases ?? [],
     series_reading: normalizeKanaReading(bookInput.seriesReading) ?? null,
     volume_number: volumeNumber,
     volume_kind: normalizeVolumeKind(bookInput.volumeKind, bookInput.title),
+    book_format: resolveBookFormat(bookInput),
     author: bookInput.author ?? null,
     publisher: bookInput.publisher ?? null,
     published_date: bookInput.publishedDate ?? null,
@@ -331,8 +343,10 @@ function toBookUpdate(updates: Partial<BookInput>) {
     ...(updates.title !== undefined ? { title: updates.title } : {}),
     ...(updates.titleReading !== undefined ? { title_reading: normalizeKanaReading(updates.titleReading) ?? null } : {}),
     ...(updates.seriesTitle !== undefined ? { series_title: updates.seriesTitle } : {}),
+    ...(updates.seriesAliases !== undefined ? { series_aliases: updates.seriesAliases } : {}),
     ...(updates.seriesReading !== undefined ? { series_reading: normalizeKanaReading(updates.seriesReading) ?? null } : {}),
     ...(updates.volumeNumber !== undefined ? { volume_number: updates.volumeNumber ?? null } : {}),
+    ...(updates.bookFormat !== undefined ? { book_format: updates.bookFormat } : {}),
     ...(updates.volumeKind !== undefined ? { volume_kind: normalizeVolumeKind(updates.volumeKind, updates.title) } : {}),
     ...(updates.author !== undefined ? { author: updates.author || null } : {}),
     ...(updates.publisher !== undefined ? { publisher: updates.publisher || null } : {}),
@@ -368,9 +382,11 @@ function omitOptionalSchemaColumns<T extends {
   price_source?: unknown;
   price_fetched_at?: unknown;
   volume_kind?: unknown;
+  book_format?: unknown;
   published_date?: unknown;
   title_reading?: unknown;
   series_reading?: unknown;
+  series_aliases?: unknown;
 }>(value: T) {
   const {
     purchase_price: _purchasePrice,
@@ -378,9 +394,11 @@ function omitOptionalSchemaColumns<T extends {
     price_source: _priceSource,
     price_fetched_at: _priceFetchedAt,
     volume_kind: _volumeKind,
+    book_format: _bookFormat,
     published_date: _publishedDate,
     title_reading: _titleReading,
     series_reading: _seriesReading,
+    series_aliases: _seriesAliases,
     ...rest
   } = value;
   return rest;
@@ -389,10 +407,12 @@ function omitOptionalSchemaColumns<T extends {
 function formatSupabaseError(error: unknown, fallback: string) {
   const supabaseError = error as SupabaseLikeError;
   if (supabaseError.code === '42501') {
-    return '蔵書データへのアクセス権限がありません。Supabaseの権限設定を確認してください。';
+    return '蔵書データにアクセスできません。ログイン状態を確認し、解決しない場合はお問い合わせください。';
   }
   if (supabaseError.code === '23505') {
-    return '同じISBNの本がすでに登録されています。';
+    return /books_user_isbn_unique/.test(`${supabaseError.message ?? ''} ${supabaseError.details ?? ''}`)
+      ? '同じISBNの本がすでに登録されています。'
+      : '登録データが競合しました。本棚を更新してからもう一度お試しください。';
   }
   if (isNetworkError(error)) {
     return formatNetworkAwareError(error, fallback);
@@ -408,9 +428,11 @@ function isMissingOptionalSchemaColumnError(error: SupabaseLikeError) {
     message.includes('price_source') ||
     message.includes('price_fetched_at') ||
     message.includes('volume_kind') ||
+    message.includes('book_format') ||
     message.includes('published_date') ||
     message.includes('title_reading') ||
     message.includes('series_reading') ||
+    message.includes('series_aliases') ||
     error.code === 'PGRST204'
   );
 }
@@ -552,11 +574,12 @@ export function LibraryProvider({ children }: PropsWithChildren) {
         const booksToImport: Book[] = [];
 
         for (const localBook of pendingLocalBooks) {
-          const input = normalizeBookInput({
+          const input = resolveUserSeriesName(comparisonBooks, normalizeBookInput({
             isbn: localBook.isbn,
             title: localBook.title,
             titleReading: localBook.titleReading,
             seriesTitle: localBook.seriesTitle,
+            seriesAliases: localBook.seriesAliases,
             volumeNumber: localBook.volumeNumber,
             author: localBook.author,
             seriesReading: localBook.seriesReading,
@@ -568,7 +591,7 @@ export function LibraryProvider({ children }: PropsWithChildren) {
             priceFetchedAt: localBook.priceFetchedAt,
             thumbnailUrl: localBook.thumbnailUrl,
             status: localBook.status,
-          });
+          }));
           if (findDuplicate(comparisonBooks, input)) continue;
 
           const importedBook: Book = {
@@ -673,6 +696,7 @@ export function LibraryProvider({ children }: PropsWithChildren) {
 
           const updates: Partial<BookInput> = {
             thumbnailUrl: metadata.thumbnailUrl ?? (isKnownUnavailableCoverUrl(book.thumbnailUrl) ? '' : book.thumbnailUrl),
+            bookFormat: resolveBookFormat(book) === 'unknown' ? metadata.bookFormat ?? book.bookFormat : book.bookFormat,
             listPrice: metadata.listPrice ?? book.listPrice,
             priceSource: metadata.priceSource ?? book.priceSource,
             priceFetchedAt: metadata.priceFetchedAt ?? book.priceFetchedAt,
@@ -682,7 +706,7 @@ export function LibraryProvider({ children }: PropsWithChildren) {
             titleReading: usableReading(metadata.titleReading) ?? usableReading(book.titleReading),
             seriesReading: usableReading(metadata.seriesReading) ?? usableReading(book.seriesReading),
             seriesTitle:
-              book.seriesTitle.trim() === book.title.trim() || parseSeriesTitle(book.seriesTitle).volumeNumber
+              !hasUserSeriesName(book) && (book.seriesTitle.trim() === book.title.trim() || parseSeriesTitle(book.seriesTitle).volumeNumber)
                 ? metadata.seriesTitle
                 : book.seriesTitle,
           };
@@ -695,10 +719,10 @@ export function LibraryProvider({ children }: PropsWithChildren) {
             isUuid(book.id) || !book.isbn ? await query.eq('id', book.id) : await query.eq('isbn', book.isbn);
 
           if (updateError) {
-            if ((updates.purchasePrice !== undefined || updates.listPrice !== undefined || updates.priceSource !== undefined || updates.priceFetchedAt !== undefined || updates.volumeKind !== undefined || updates.publishedDate !== undefined || updates.titleReading !== undefined || updates.seriesReading !== undefined) && isMissingOptionalSchemaColumnError(updateError)) {
-              throw new Error('購入価格を保存するにはSupabaseの最新migrationを適用してください。');
+            if ((updates.purchasePrice !== undefined || updates.listPrice !== undefined || updates.priceSource !== undefined || updates.priceFetchedAt !== undefined || updates.volumeKind !== undefined || updates.bookFormat !== undefined || updates.publishedDate !== undefined || updates.titleReading !== undefined || updates.seriesReading !== undefined) && isMissingOptionalSchemaColumnError(updateError)) {
+              throw new Error('現在購入価格を保存できません。しばらくしてからもう一度お試しください。');
             }
-            throw new Error(formatSupabaseError(updateError, 'Supabaseの更新に失敗しました。'));
+            throw new Error(formatSupabaseError(updateError, '本の情報を保存できませんでした。'));
           }
 
           await saveMetadataEnrichmentAttempt(target, 'success');
@@ -723,9 +747,11 @@ export function LibraryProvider({ children }: PropsWithChildren) {
   );
 
   const addBook = useCallback(async (bookInput: BookInput, options: AddBookOptions = {}) => {
-    const normalizedBookInput = normalizeReadingBookInput(normalizeBookInput(bookInput));
+    const normalizedBookInput = resolveUserSeriesName(books, normalizeReadingBookInput(normalizeBookInput(bookInput)));
     if (!options.allowDuplicate && findDuplicate(books, normalizedBookInput)) {
-      throw new Error('同じISBN、または同じシリーズ・巻数の本がすでに登録されています。');
+      const duplicate = findDuplicate(books, normalizedBookInput);
+      const sameIsbn = !!normalizedBookInput.isbn && normalizedBookInput.isbn.replace(/[^0-9X]/gi, '') === duplicate?.isbn?.replace(/[^0-9X]/gi, '');
+      throw new DuplicateBookError('同じISBN、または同じシリーズ・巻数の本がすでに登録されています。', sameIsbn ? 'isbn' : 'volume');
     }
 
     if (configured) {
@@ -755,10 +781,10 @@ export function LibraryProvider({ children }: PropsWithChildren) {
       }
 
       if (insertError) {
-        if (insertError.code === '23505') {
-          throw new Error('同じISBNの本がすでに登録されています。');
+        if (insertError.code === '23505' && /books_user_isbn_unique/.test(`${insertError.message ?? ''} ${insertError.details ?? ''}`)) {
+          throw new DuplicateBookError('同じISBNの本がすでに登録されています。登録済みの本と巻数・ISBNが合っているか確認してください。', 'isbn');
         }
-        throw new Error(formatSupabaseError(insertError, 'Supabaseへの登録に失敗しました。'));
+        throw new Error(formatSupabaseError(insertError, '本を登録できませんでした。'));
       }
 
       const book: Book = {
@@ -800,11 +826,12 @@ export function LibraryProvider({ children }: PropsWithChildren) {
     const booksToImport: Book[] = [];
 
     for (const localBook of pendingLocalBooks) {
-      const input = normalizeBookInput({
+      const input = resolveUserSeriesName(comparisonBooks, normalizeBookInput({
         isbn: localBook.isbn,
         title: localBook.title,
         titleReading: localBook.titleReading,
         seriesTitle: localBook.seriesTitle,
+        seriesAliases: localBook.seriesAliases,
         volumeNumber: localBook.volumeNumber,
         author: localBook.author,
         seriesReading: localBook.seriesReading,
@@ -816,7 +843,7 @@ export function LibraryProvider({ children }: PropsWithChildren) {
         priceFetchedAt: localBook.priceFetchedAt,
         thumbnailUrl: localBook.thumbnailUrl,
         status: localBook.status,
-      });
+      }));
       if (findDuplicate(comparisonBooks, input)) continue;
 
       const importedBook: Book = {
@@ -853,7 +880,11 @@ export function LibraryProvider({ children }: PropsWithChildren) {
 
   const updateBook = useCallback(async (bookId: string, updates: Partial<BookInput>) => {
     const book = books.find((candidate) => candidate.id === bookId);
-    const normalizedUpdates = normalizeReadingBookInput(updates);
+    const normalizedUpdates = normalizeReadingBookInput({
+      ...updates,
+      ...(book && updates.seriesTitle !== undefined && updates.seriesTitle !== book.seriesTitle
+        ? { seriesAliases: renamedBook(book, updates.seriesTitle).seriesAliases } : {}),
+    });
     const changesIdentity =
       normalizedUpdates.isbn !== undefined ||
       normalizedUpdates.seriesTitle !== undefined ||
@@ -876,10 +907,10 @@ export function LibraryProvider({ children }: PropsWithChildren) {
           isUuid(bookId) || !book?.isbn ? await query.eq('id', bookId) : await query.eq('isbn', book.isbn);
 
         if (updateError) {
-          if ((normalizedUpdates.purchasePrice !== undefined || normalizedUpdates.listPrice !== undefined || normalizedUpdates.priceSource !== undefined || normalizedUpdates.priceFetchedAt !== undefined || normalizedUpdates.volumeKind !== undefined || normalizedUpdates.publishedDate !== undefined || normalizedUpdates.titleReading !== undefined || normalizedUpdates.seriesReading !== undefined) && isMissingOptionalSchemaColumnError(updateError)) {
-            throw new Error('購入価格を保存するにはSupabaseの最新migrationを適用してください。');
+          if ((normalizedUpdates.purchasePrice !== undefined || normalizedUpdates.listPrice !== undefined || normalizedUpdates.priceSource !== undefined || normalizedUpdates.priceFetchedAt !== undefined || normalizedUpdates.volumeKind !== undefined || normalizedUpdates.bookFormat !== undefined || normalizedUpdates.publishedDate !== undefined || normalizedUpdates.titleReading !== undefined || normalizedUpdates.seriesReading !== undefined) && isMissingOptionalSchemaColumnError(updateError)) {
+            throw new Error('現在購入価格を保存できません。しばらくしてからもう一度お試しください。');
           }
-          throw new Error(formatSupabaseError(updateError, 'Supabaseの更新に失敗しました。'));
+          throw new Error(formatSupabaseError(updateError, '本の情報を保存できませんでした。'));
         }
       }
     }
@@ -913,7 +944,7 @@ export function LibraryProvider({ children }: PropsWithChildren) {
           deleteConditions.length > 0 ? await query.or(deleteConditions.join(',')) : { error: null };
 
         if (deleteError) {
-          throw new Error(formatSupabaseError(deleteError, 'Supabaseの削除に失敗しました。'));
+          throw new Error(formatSupabaseError(deleteError, '本を削除できませんでした。'));
         }
       }
     }
@@ -950,13 +981,13 @@ export function LibraryProvider({ children }: PropsWithChildren) {
 
     setBooks((currentBooks) =>
       currentBooks.map((book) =>
-        book.seriesTitle === fromSeriesTitle ? { ...book, seriesTitle: nextSeriesTitle } : book,
+        book.seriesTitle === fromSeriesTitle ? renamedBook(book, nextSeriesTitle) : book,
       ),
     );
     if (configured && !user) {
       setPendingLocalBooks((currentBooks) =>
         currentBooks.map((book) =>
-          book.seriesTitle === fromSeriesTitle ? { ...book, seriesTitle: nextSeriesTitle } : book,
+          book.seriesTitle === fromSeriesTitle ? renamedBook(book, nextSeriesTitle) : book,
         ),
       );
     }
@@ -982,7 +1013,8 @@ export function LibraryProvider({ children }: PropsWithChildren) {
       options.updatePurchasePrice && typeof book.purchasePrice !== 'number' && nextListPrice !== null;
     const shouldUpdateListPrice = metadataListPrice !== null && metadataListPrice !== (book.listPrice ?? null);
     const updates: Partial<BookInput> = {
-      seriesTitle: options.preserveIdentity ? book.seriesTitle : metadata.seriesTitle,
+      seriesTitle: options.preserveIdentity || hasUserSeriesName(book) ? book.seriesTitle : resolveUserSeriesName(books, metadata).seriesTitle,
+      bookFormat: resolveBookFormat(book) === 'unknown' ? metadata.bookFormat ?? book.bookFormat : book.bookFormat,
       volumeNumber: options.preserveIdentity ? book.volumeNumber : metadata.volumeNumber,
       volumeKind: options.preserveIdentity ? book.volumeKind : normalizeVolumeKind(metadata.volumeKind, metadata.title),
       author: metadata.author ?? book.author,
@@ -1032,7 +1064,7 @@ export function LibraryProvider({ children }: PropsWithChildren) {
           .eq('user_id', user.id);
 
         if (updateError) {
-          throw new Error(formatSupabaseError(updateError, 'Supabaseの一括更新に失敗しました。'));
+          throw new Error(formatSupabaseError(updateError, '選択した本の情報を保存できませんでした。'));
         }
       }
     }

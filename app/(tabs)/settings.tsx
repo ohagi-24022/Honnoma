@@ -238,7 +238,7 @@ export default function SettingsScreen() {
             <Text style={[styles.rowCopy, { color: colors.muted }]}>
               {configured
                 ? 'ログインしなくても端末内に保存できます。アカウント作成後にクラウドへ移行できます。'
-                : 'Supabase の環境変数を追加すると認証が有効になります。'}
+                : '現在ログインを利用できません。端末内への保存は引き続き利用できます。'}
             </Text>
             <TextInput
               autoCapitalize="none"

@@ -1,3 +1,4 @@
+import { isNisekoiUrabanaTitle } from './knownCompanionBooks';
 import { BookInput, BookVolumeKind } from '../types';
 
 const EXTRA_VOLUME_KEYWORDS = [
@@ -28,6 +29,10 @@ const EXTRA_VOLUME_PATTERNS = [/after\s*story/i, /side\s*story/i, /anthology/i, 
 export function inferVolumeKindFromText(value: string | undefined | null): BookVolumeKind {
   const text = value?.normalize('NFKC').trim() ?? '';
   if (!text) return 'main';
+  if (isNisekoiUrabanaTitle(text)) return 'extra';
+  // 芳文社公式: https://www.dokidokivisual.com/comics/5370/
+  const knownTitle = text.replace(/[\s!！:：~〜～ー\-()（）]/g, '');
+  if (/^がっこうぐらしおたより(?:[0-9]+巻?)?$/.test(knownTitle)) return 'extra';
   return EXTRA_VOLUME_KEYWORDS.some((keyword) => text.includes(keyword)) ||
     EXTRA_VOLUME_PATTERNS.some((pattern) => pattern.test(text))
     ? 'extra'
@@ -42,6 +47,6 @@ export function normalizeVolumeKind(value: unknown, fallbackText?: string | null
 export function withInferredVolumeKind<T extends Partial<BookInput>>(book: T): T & { volumeKind: BookVolumeKind } {
   return {
     ...book,
-    volumeKind: normalizeVolumeKind(book.volumeKind, [book.title, book.seriesTitle].filter(Boolean).join(' ')),
+    volumeKind: normalizeVolumeKind(book.volumeKind, inferVolumeKindFromText(book.title) === 'extra' ? book.title : book.seriesTitle),
   };
 }

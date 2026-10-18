@@ -6,8 +6,11 @@ import { queueBookContentReviews } from '../lib/bookContentReviewQueue';
 import { supabase } from '../lib/supabase';
 import { useAppSettings } from './AppSettingsContext';
 
+type ContentLookupState = 'loading' | 'ready' | 'error';
+
 const Context = createContext<{
   rows: ReviewedBookContent[];
+  lookupState: ContentLookupState;
   register: (key: string) => () => void;
   refresh: () => void;
 } | null>(null);
@@ -17,8 +20,10 @@ export function BookContentProvider({ children }: PropsWithChildren) {
   const activeKeys = useRef(new Map<string, number>());
   const [revision, setRevision] = useState(0);
   const [rows, setRows] = useState<ReviewedBookContent[]>([]);
+  const [lookupState, setLookupState] = useState<ContentLookupState>('loading');
   const refresh = useCallback(() => {
     setRows([]);
+    setLookupState('loading');
     setRevision((value) => value + 1);
   }, []);
   const register = useCallback((key: string) => {
@@ -47,8 +52,10 @@ export function BookContentProvider({ children }: PropsWithChildren) {
     const client = supabase;
     if (!hydrated || !showBookContent || !client || AppState.currentState === 'background') {
       setRows([]);
+      setLookupState('loading');
       return;
     }
+    setLookupState('loading');
     let cancelled = false;
     const controller = new AbortController();
     let deadline: ReturnType<typeof setTimeout> | undefined;
@@ -70,17 +77,18 @@ export function BookContentProvider({ children }: PropsWithChildren) {
         }
         if (!cancelled) {
           setRows(collected);
+          setLookupState('ready');
           const known = new Set(collected.map((row) => row.isbn13));
           void queueBookContentReviews(keys.filter((key) => key.startsWith('isbn:')).map((key) => key.slice(5)).filter((isbn) => !known.has(isbn)), controller.signal);
         }
       })().catch(() => {
-        if (!cancelled) setRows([]);
+        if (!cancelled) { setRows([]); setLookupState('error'); }
       }).finally(() => { if (deadline) clearTimeout(deadline); });
     }, 150);
     return () => { cancelled = true; clearTimeout(timer); if (deadline) clearTimeout(deadline); controller.abort(); };
   }, [hydrated, revision, showBookContent]);
 
-  return <Context.Provider value={{ rows, register, refresh }}>{children}</Context.Provider>;
+  return <Context.Provider value={{ rows, lookupState, register, refresh }}>{children}</Context.Provider>;
 }
 
 export function useReviewedBookContent(isbn?: string, coverUrl?: string) {
@@ -94,4 +102,8 @@ export function useReviewedBookContent(isbn?: string, coverUrl?: string) {
 
 export function useRefreshBookContent() {
   return useContext(Context)?.refresh ?? (() => {});
+}
+
+export function useBookContentLookupState(): ContentLookupState {
+  return useContext(Context)?.lookupState ?? 'loading';
 }

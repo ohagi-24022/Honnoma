@@ -1,5 +1,6 @@
 // Install alongside ShushukaAdmin/server.js, after requireAdmin middleware.
 import { randomBytes } from 'node:crypto';
+import { registerRankingAdmin, rankingReturnTo } from './shushuka-ranking-admin.mjs';
 
 export function registerContentAdmin(app, supabase, page, escapeHtml) {
   const csrf = randomBytes(32).toString('hex');
@@ -17,7 +18,7 @@ export function registerContentAdmin(app, supabase, page, escapeHtml) {
     if (!supabase) return res.status(503).send('Supabase is not configured.');
     if (req.method === 'POST' && req.body.csrf !== csrf) return res.status(403).send('ページを開き直して保存してください。');
     try { await handler(req, res); }
-    catch (error) { res.status(400).send(page('保存・取得エラー', `<p>${e(error.message)}</p><a href="${req.path}">戻る</a>`)); }
+    catch (error) { res.status(400).send(page('保存・取得エラー', `<p>${e(error.message)}</p><a href="${e(req.path.startsWith('/rankings') ? rankingReturnTo(req.body?.return_to) : req.path)}">戻る</a>`)); }
   };
   app.get('/content', guarded(async (req, res) => {
     const isbn = String(req.query.isbn ?? '').replace(/[^0-9]/g, '');
@@ -51,27 +52,5 @@ export function registerContentAdmin(app, supabase, page, escapeHtml) {
     if (error) throw error;
     res.redirect(303, `/content?isbn=${isbn}`);
   }));
-  app.get('/rankings', guarded(async (req, res) => {
-    const { data, error } = await supabase.from('public_ranking_catalog').select('*').order('reviewed_at', { ascending: false }).limit(200);
-    if (error) throw error;
-    const row = data.find((item) => item.ranking_key === req.query.key) ?? {};
-    res.send(page('ランキング掲載管理', `<section class="panel"><h2>公開ランキング</h2><p>成人向け専用・未確認は公開されません。本棚の登録や表示設定には影響しません。シリーズキーは既存データのキーを使用してください。</p>
-      <form method="post">${token}${field('ranking_key', 'シリーズキー', row.ranking_key)}${field('title', '公開作品名', row.title)}${field('isbn13', '代表巻のISBN', row.isbn)}${field('cover_url', '確認した表紙URL', row.cover_url)}${field('source_url', '確認元URL', row.source_url)}
-      <label>成人向け専用の分類</label><select name="adult_only"><option value="" ${row.adult_only == null ? 'selected' : ''}>未確認</option><option value="false" ${row.adult_only === false ? 'selected' : ''}>一般向けとして確認済み</option><option value="true" ${row.adult_only === true ? 'selected' : ''}>成人向け専用</option></select>
-      <label>掲載状態</label><select name="enabled"><option value="false" ${!row.enabled ? 'selected' : ''}>非掲載</option><option value="true" ${row.enabled ? 'selected' : ''}>掲載（一般向け確認済みのみ）</option></select><button>保存</button></form></section>
-      <section class="panel"><table><tr><th>作品</th><th>状態</th></tr>${data.map((item) => `<tr><td><a href="/rankings?key=${encodeURIComponent(item.ranking_key)}">${e(item.title)}</a></td><td>${item.enabled && item.adult_only === false ? '掲載対象' : '非掲載'}</td></tr>`).join('')}</table></section>`));
-  }));
-  app.post('/rankings', guarded(async (req, res) => {
-    const rankingKey = String(req.body.ranking_key ?? '').trim();
-    const title = String(req.body.title ?? '').trim();
-    const isbn = String(req.body.isbn13 ?? '').replace(/[^0-9]/g, '');
-    if (!rankingKey || !title || !/^\d{13}$/.test(isbn)) throw new Error('キー・作品名・ISBNを入力してください。');
-    const adultOnly = req.body.adult_only === 'false' ? false : req.body.adult_only === 'true' ? true : null;
-    const { error } = await supabase.from('public_ranking_catalog').upsert({
-      ranking_key: rankingKey, title, isbn: isbn, cover_url: https(req.body.cover_url), source_url: https(req.body.source_url, true),
-      adult_only: adultOnly, enabled: req.body.enabled === 'true' && adultOnly === false, reviewed_at: new Date().toISOString(),
-    });
-    if (error) throw error;
-    res.redirect(303, `/rankings?key=${encodeURIComponent(rankingKey)}`);
-  }));
+  registerRankingAdmin(app, supabase, page, e, { csrf, guarded, https, token });
 }

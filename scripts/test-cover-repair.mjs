@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';
+import {repairPendingCover} from './shushuka-cover-repair.mjs';
+let job={candidate:{cover_url:'https://cover.openbd.jp/9784757519633.jpg',cover_hash:'old'},content_hash:'content',adult_only:false,cover_status:'unreviewed',status:'pending_review'},published=null,writes=[],reads=0,changed=false;
+const db={from(table){let write;const q={select(){return q},eq(){return q},is(){return q},update(value){write=value;return q},async maybeSingle(){return {data:table==='reviewed_book_content'?published:job};},then(resolve){if(write)writes.push(write);resolve({data:changed?[]:[{isbn13:'9784757519633'}]});}};return q;}};
+const reader=async()=>{reads++;return {hash:'cloud-hash'};};
+assert.equal(await repairPendingCover(db,'9784757519633',reader),'repaired');
+assert.equal(writes[0].candidate.cover_hash,'cloud-hash');assert.equal(writes[0].candidate.cover_reference_before_server_repair.cover_hash,'old');
+assert(!('adult_only' in writes[0]));assert(!('cover_status' in writes[0]));assert(!('status' in writes[0]));
+job={...job,cover_status:'approved'};assert.equal(await repairPendingCover(db,'9784757519633',reader),'skipped');
+job={...job,cover_status:'unreviewed'};published={isbn13:'9784757519633'};assert.equal(await repairPendingCover(db,'9784757519633',reader),'skipped');assert.equal(reads,1);
+published=null;job={...job,candidate:{...job.candidate,cover_repair_context:'server-v1'}};assert.equal(await repairPendingCover(db,'9784757519633',reader),'already-repaired');
+job={...job,candidate:{...job.candidate,cover_repair_context:null}};changed=true;assert.equal(await repairPendingCover(db,'9784757519633',reader),'changed');
+console.log('Server cover repair: server hash, preserved references/classification/permissions, approved exclusion, idempotence and concurrent update guard: OK');

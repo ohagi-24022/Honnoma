@@ -1,3 +1,4 @@
+import { verifiedSeriesPublication } from '../../src/lib/verifiedSeriesPublication';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as WebBrowser from 'expo-web-browser';
@@ -16,6 +17,7 @@ import {
 } from 'react-native';
 
 import { BookCover } from '../../src/components/BookCover';
+import { addMissingVolume, missingRegistrationTargets } from '../../src/lib/bookRegistration';
 import { getStorageItemWithLegacy } from '../../src/lib/asyncStorageCompat';
 import { buildPurchaseUrl, lookupBookByTitle, SeriesPublicationInfo } from '../../src/lib/bookApis';
 import { migrateNewReleaseSeriesSubscription } from '../../src/lib/newReleaseNotifications';
@@ -28,6 +30,7 @@ import {
 import { useAppSettings } from '../../src/store/AppSettingsContext';
 import { useAuth } from '../../src/store/AuthContext';
 import { useLibrary } from '../../src/store/LibraryContext';
+import { useRegistrationProgress } from '../../src/store/RegistrationProgressContext';
 import { useAppTheme } from '../../src/store/ThemeContext';
 import { useWishlist } from '../../src/store/WishlistContext';
 import { Book, BookInput, MissingBook, ReadingStatus, ShelfItem } from '../../src/types';
@@ -59,13 +62,14 @@ function compareSeriesItems(left: ShelfItem, right: ShelfItem) {
 }
 
 export default function SeriesScreen() {
-  const params = useLocalSearchParams<{ title: string }>();
+  const params = useLocalSearchParams<{ title: string; bulk?: string }>();
   const navigation = useNavigation();
   const router = useRouter();
   const seriesTitle = decodeURIComponent(params.title ?? '');
   const { user } = useAuth();
-  const { addBook, getSeriesItems, bulkUpdateStatus, updateBook, renameSeries, deleteBook, repairBookMetadata } =
+  const { books, refreshLibrary, addBook, getSeriesItems, bulkUpdateStatus, updateBook, renameSeries, deleteBook, repairBookMetadata } =
     useLibrary();
+  const { begin: beginRegistration, update: updateRegistration, finish: finishRegistration } = useRegistrationProgress();
   const { addItem: addWishlistItem } = useWishlist();
   const { isFavoriteSeries, migrateFavoriteSeries, openExternalPurchaseLinks, setFavoriteSeries, trackPurchasePrices } =
     useAppSettings();
@@ -92,8 +96,8 @@ export default function SeriesScreen() {
 
   const baseItems = useMemo(() => getSeriesItems(seriesTitle), [getSeriesItems, seriesTitle]);
   const effectivePublicationInfo = useMemo(
-    () => mergeSeriesPublicationInfo(publicationInfo, seriesMetadata ?? undefined) ?? null,
-    [publicationInfo, seriesMetadata],
+    () => mergeSeriesPublicationInfo(verifiedSeriesPublication(seriesTitle) ?? publicationInfo, seriesMetadata ?? undefined) ?? null,
+    [publicationInfo, seriesMetadata, seriesTitle],
   );
   const items = useMemo(() => {
     if (!effectivePublicationInfo?.latestVolume) return baseItems;
@@ -157,11 +161,18 @@ export default function SeriesScreen() {
       .filter((volume): volume is number => typeof volume === 'number'),
     effectivePublicationInfo?.latestVolume ?? 0,
   );
+  const bulkEntryRoute = useRef('');
+  useEffect(() => {
+    if (params.bulk !== '1' || bulkEntryRoute.current === seriesTitle) return;
+    bulkEntryRoute.current = seriesTitle;
+    setBulkFillOpen(true);
+    // The target stays editable; opening this route never starts registration.
+    setBulkFillTargetVolume(current => current || (latestKnownMainVolume > 0 ? String(latestKnownMainVolume) : ''));
+  }, [params.bulk, seriesTitle, latestKnownMainVolume]);
   const bulkFillTarget = Number.parseInt(bulkFillTargetVolume.replace(/[^0-9]/g, ''), 10);
-  const bulkFillMissingTargets = items
-    .filter((item): item is MissingBook => item.isMissing === true)
-    .filter((item) => typeof item.volumeNumber === 'number' && item.volumeNumber <= (Number.isFinite(bulkFillTarget) ? bulkFillTarget : 0))
-    .sort(compareSeriesItems);
+  const bulkFillMissingTargets = missingRegistrationTargets(
+    seriesTitle, books, bulkFillTarget, user?.id ?? 'local-user', effectivePublicationInfo?.latestVolume,
+  );
   const resetSeriesView = useCallback((animated = false) => {
     shouldKeepBottomRef.current = false;
     setPage(1);
@@ -307,32 +318,7 @@ export default function SeriesScreen() {
     if (isOwnedBook(item) || refreshingId) return;
     setRefreshingId(item.id);
     try {
-      const metadata = await lookupBookByTitle(`${item.seriesTitle} ${item.volumeNumber}巻`);
-      const metadataMatchesExpected =
-        !!metadata &&
-        metadata.volumeNumber === item.volumeNumber &&
-        normalizeSeriesKey(metadata.seriesTitle || item.seriesTitle) === normalizeSeriesKey(item.seriesTitle);
-      const trustedMetadata = metadataMatchesExpected ? metadata : null;
-      const bookInput: BookInput = {
-        isbn: trustedMetadata?.isbn,
-        title: trustedMetadata?.title ?? item.title,
-        seriesTitle: item.seriesTitle,
-        volumeNumber: item.volumeNumber,
-        volumeKind: 'main',
-        author: trustedMetadata?.author,
-        publisher: trustedMetadata?.publisher,
-        thumbnailUrl: trustedMetadata?.thumbnailUrl,
-        status: 'unread',
-      };
-
-      try {
-        await addBook(bookInput);
-      } catch (addError) {
-        if (!bookInput.isbn || !(addError instanceof Error) || !/ISBN|登録済|already/i.test(addError.message)) {
-          throw addError;
-        }
-        await addBook({ ...bookInput, isbn: undefined });
-      }
+      await addMissingVolume(item, books, lookupBookByTitle, addBook);
     } catch (error) {
       Alert.alert('追加できませんでした', error instanceof Error ? error.message : 'もう一度お試しください。');
     } finally {
@@ -342,8 +328,8 @@ export default function SeriesScreen() {
 
   const addMissingVolumesAsOwnedQueue = async () => {
     const targetVolume = Number.parseInt(bulkFillTargetVolume.replace(/[^0-9]/g, ''), 10);
-    if (!Number.isFinite(targetVolume) || targetVolume <= 0) {
-      Alert.alert('追加する範囲を入力してください', '「何巻まで所持しているか」を数字で入力してください。');
+    if (!Number.isInteger(targetVolume) || targetVolume <= 0 || targetVolume > 500) {
+      Alert.alert('追加する範囲を入力してください', '何巻まで持っているか、1〜500の数字で入力してください。');
       return;
     }
 
@@ -353,68 +339,43 @@ export default function SeriesScreen() {
       return;
     }
 
+    let registrationId: number;
+    try { registrationId = beginRegistration(seriesTitle, targets.length); }
+    catch (error) { Alert.alert('一括登録中です', error instanceof Error ? error.message : '完了してからお試しください。'); return; }
     setBulkFillRunning(true);
     setBulkFillProgress({ current: 0, total: targets.length });
     let addedCount = 0;
     let skippedCount = 0;
+    const failures: Array<{ title: string; message: string }> = [];
+    const registeredBooks = [...books];
     try {
       for (const [index, item] of targets.entries()) {
         setBulkFillProgress({ current: index + 1, total: targets.length });
-        const metadata = await lookupBookByTitle(`${item.seriesTitle} ${item.volumeNumber}巻`);
-        const metadataMatchesExpected =
-          !!metadata &&
-          metadata.volumeNumber === item.volumeNumber &&
-          normalizeSeriesKey(metadata.seriesTitle || item.seriesTitle) === normalizeSeriesKey(item.seriesTitle);
-        const trustedMetadata = metadataMatchesExpected ? metadata : null;
-        const bookInput: BookInput = {
-          isbn: trustedMetadata?.isbn,
-          title: trustedMetadata?.title ?? item.title,
-          seriesTitle: item.seriesTitle,
-          volumeNumber: item.volumeNumber,
-          volumeKind: 'main',
-          author: trustedMetadata?.author,
-          publisher: trustedMetadata?.publisher,
-          publishedDate: trustedMetadata?.publishedDate,
-          thumbnailUrl: trustedMetadata?.thumbnailUrl,
-          listPrice: trustedMetadata?.listPrice,
-          priceSource: trustedMetadata?.priceSource,
-          priceFetchedAt: trustedMetadata?.priceFetchedAt,
-          status: 'unread',
-        };
-
+        updateRegistration(registrationId, { completed: index, currentTitle: item.title, added: addedCount, skipped: skippedCount });
+        if (!item.isMissing) continue;
         try {
-          await addBook(bookInput);
-          addedCount += 1;
-        } catch (addError) {
-          const addErrorMessage = addError instanceof Error ? addError.message : '';
-          if (bookInput.isbn && /ISBN|already/i.test(addErrorMessage)) {
-            await addBook({ ...bookInput, isbn: undefined });
+          const added = await addMissingVolume(item, registeredBooks, lookupBookByTitle, addBook);
+          if (added) {
+            registeredBooks.push(added);
             addedCount += 1;
-          } else if (addErrorMessage.includes('同じシリーズ') || addErrorMessage.includes('登録') || /already/i.test(addErrorMessage)) {
-            skippedCount += 1;
           } else {
-            throw addError;
+            skippedCount += 1;
           }
+        } catch (error) {
+          failures.push({ title: item.title, message: error instanceof Error ? error.message : '登録に失敗しました。' });
         }
-
-        if (index < targets.length - 1) {
-          await wait(MISSING_VOLUME_QUEUE_INTERVAL_MS);
-        }
+        updateRegistration(registrationId, { completed: index + 1, added: addedCount, skipped: skippedCount });
+        if (index < targets.length - 1) await wait(MISSING_VOLUME_QUEUE_INTERVAL_MS);
       }
-
-      setBulkFillOpen(false);
-      setBulkFillTargetVolume('');
-      Alert.alert(
-        '未登録巻を追加しました',
-        skippedCount > 0
-          ? `${addedCount}冊を追加しました。${skippedCount}冊は登録済みのためスキップしました。`
-          : `${addedCount}冊を追加しました。`,
-      );
-    } catch (error) {
-      Alert.alert('未登録巻を追加しました', error instanceof Error ? error.message : '??????????????????????');
+      if (!failures.length) {
+        setBulkFillOpen(false);
+        setBulkFillTargetVolume('');
+      }
     } finally {
+      finishRegistration(registrationId, { added: addedCount, skipped: skippedCount, failures });
       setBulkFillRunning(false);
       setBulkFillProgress(null);
+      refreshLibrary();
     }
   };
 
@@ -574,22 +535,6 @@ export default function SeriesScreen() {
           <Ionicons color={colors.text} name="create-outline" size={19} />
         </Pressable>
         <Pressable
-          accessibilityLabel="未登録巻をまとめて追加"
-          disabled={bulkFillRunning}
-          onPress={() => {
-            setBulkFillTargetVolume((current) => current || (latestKnownMainVolume > 0 ? String(latestKnownMainVolume) : ''));
-            setBulkFillOpen((current) => !current);
-          }}
-          style={[styles.bulkFillShortcutButton, { borderColor: colors.border }, bulkFillRunning && styles.disabledButton]}
-        >
-          {bulkFillRunning ? (
-            <ActivityIndicator color={colors.text} size="small" />
-          ) : (
-            <Ionicons color={colors.text} name="albums-outline" size={17} />
-          )}
-          <Text style={[styles.bulkFillShortcutLabel, { color: colors.text }]}>未登録巻を追加</Text>
-        </Pressable>
-        <Pressable
           accessibilityLabel={allSelected ? '選択をすべて解除' : '全巻を選択'}
           disabled={ownedItems.length === 0}
           onPress={toggleAllSelected}
@@ -598,6 +543,22 @@ export default function SeriesScreen() {
           <Ionicons color={colors.text} name={allSelected ? 'close-circle-outline' : 'checkbox-outline'} size={19} />
         </Pressable>
       </View>
+
+      <Pressable accessibilityRole="button" accessibilityLabel="シリーズ登録で未登録巻を追加"
+        accessibilityState={{ expanded: bulkFillOpen, disabled: bulkFillRunning }}
+        disabled={bulkFillRunning}
+        onPress={() => {
+          setBulkFillTargetVolume(current => current || (latestKnownMainVolume > 0 ? String(latestKnownMainVolume) : ''));
+          setBulkFillOpen(current => !current);
+        }}
+        style={[styles.bulkRegistrationEntry, { backgroundColor: colors.input, borderColor: colors.primary }, bulkFillRunning && styles.disabledButton]}>
+        {bulkFillRunning ? <ActivityIndicator color={colors.primary} /> : <Ionicons color={colors.primary} name="albums-outline" size={24} />}
+        <View style={styles.bulkRegistrationEntryBody}>
+          <Text style={[styles.rowTitle, { color: colors.text }]}>シリーズ登録</Text>
+          <Text style={[styles.renameCopy, { color: colors.muted }]}>持っている巻数を指定して、未登録の巻をまとめて追加</Text>
+        </View>
+        <Ionicons color={colors.primary} name={bulkFillOpen ? 'chevron-up' : 'chevron-down'} size={20} />
+      </Pressable>
 
       <View style={[styles.statusSlot, { borderBottomColor: colors.border }]}>
         {selectedCount > 0 ? (
@@ -679,9 +640,9 @@ export default function SeriesScreen() {
         <View style={[styles.bulkFillBox, { borderBottomColor: colors.border }]}>
           <View style={styles.bulkFillHeader}>
             <View style={styles.bulkFillTitleWrap}>
-              <Text style={[styles.rowTitle, { color: colors.text }]}>未登録巻をまとめて追加</Text>
+              <Text style={[styles.rowTitle, { color: colors.text }]}>シリーズ登録：何巻まで持っていますか？</Text>
               <Text style={[styles.renameCopy, { color: colors.muted }]}>
-                指定した巻までの未登録巻を、1冊ずつ順番に取得して追加します。APIを一気に呼ばないため、初回登録向けです。
+                1巻から指定した巻まで、未登録の巻を追加します。登録済みの巻はスキップします。
               </Text>
             </View>
             <Pressable
@@ -715,7 +676,7 @@ export default function SeriesScreen() {
               {bulkFillRunning ? (
                 <ActivityIndicator color={colors.background} size="small" />
               ) : (
-                <Text style={[styles.bulkFillButtonText, { color: colors.background }]}>追加</Text>
+                <Text style={[styles.bulkFillButtonText, { color: colors.background }]}>シリーズ登録</Text>
               )}
             </Pressable>
           </View>
@@ -803,7 +764,7 @@ export default function SeriesScreen() {
                 <Text style={[styles.checkboxText, { color: colors.text }]}>{selected ? '✓' : missing ? '+' : ''}</Text>
               </Pressable>
 
-              <BookCover
+              <BookCover displayContext="personal"
                 thumbnailUrl={item.thumbnailUrl}
                 isbn={isOwnedBook(item) ? item.isbn : undefined}
                 style={styles.cover}
@@ -1104,6 +1065,8 @@ function Pagination({
 }
 
 const styles = StyleSheet.create({
+  bulkRegistrationEntry: { marginHorizontal: 14, marginTop: 12, padding: 14, borderWidth: 1, borderRadius: 12, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  bulkRegistrationEntryBody: { flex: 1, gap: 4 },
   screen: { flex: 1 },
   headerBackButton: {
     alignItems: 'center',

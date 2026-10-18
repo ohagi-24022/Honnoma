@@ -1,3 +1,6 @@
+import { isNisekoiUrabanaTitle, knownCompanionByIsbn, searchKnownCompanionBooks } from './knownCompanionBooks';
+import { inferBookFormat } from './bookFormat';
+import { verifiedSeriesPublication } from './verifiedSeriesPublication';
 import { Book, BookInput } from '../types';
 import { normalizeAuthor } from './bookMetadata';
 import { env } from './env';
@@ -7,6 +10,7 @@ import { normalizeSeriesKey, parseSeriesTitle } from './series';
 import { normalizeVolumeKind } from './volumeKind';
 import { supabase } from './supabase';
 import { getConfirmedBookMetadata } from './confirmedBookMetadata';
+import { verifiedBakemonogatariBooks } from './verifiedBakemonogatari';
 
 type GoogleBooksResponse = {
   items?: Array<{
@@ -18,6 +22,7 @@ type GoogleBooksResponse = {
       publishedDate?: string;
       publisher?: string;
       description?: string;
+      categories?: string[];
       imageLinks?: {
         thumbnail?: string;
         smallThumbnail?: string;
@@ -79,6 +84,8 @@ type RakutenBooksResponse = {
       subTitle?: string;
       author?: string;
       publisherName?: string;
+      seriesName?: string;
+      size?: string | number;
       itemCaption?: string;
       isbn?: string;
       largeImageUrl?: string;
@@ -120,7 +127,7 @@ type RakutenProxyMetadata = {
 
 export type SeriesPublicationInfo = {
   latestVolume: number;
-  source: 'Rakuten Books' | 'Google Books';
+  source: 'Rakuten Books' | 'Google Books' | 'Publisher';
   checkedAt: string;
   isCompleted?: boolean;
 };
@@ -143,6 +150,7 @@ export type BookVolumeDetails = {
 };
 
 export type SeriesSearchCandidate = {
+  isbn?: string;
   author?: string;
   coverUrl?: string;
   publisher?: string;
@@ -169,6 +177,7 @@ const SERIES_SEARCH_ALIASES: Record<string, string[]> = {
 };
 
 const KNOWN_BOOK_FALLBACKS: BookInput[] = [
+  ...verifiedBakemonogatariBooks,
   {
     isbn: '9784088927343',
     title: 'GIFT 久保さんは僕(モブ)を許さない 完結記念公式ファンブック',
@@ -268,6 +277,8 @@ function lookupKnownBookFallbackByTitle(title: string) {
     .filter(Boolean);
   const targetVolume = extractKnownFallbackVolume(title, parsed.volumeNumber);
   const fallback = KNOWN_BOOK_FALLBACKS.find((book) => {
+    const edition = (value: string) => (value.match(/特装版|限定版|完全版|文庫版|新装版|愛蔵版/g) ?? []).sort().join('|');
+    if (edition(title) !== edition(book.title)) return false;
     const knownKeys = buildSeriesTitleSearchAliases(book.seriesTitle).map((candidate) => normalizeSeriesKey(candidate));
     const matchesSeries = knownKeys.some((knownKey) =>
       targetKeys.some((targetKey) => isSeriesKeyCandidate(knownKey, targetKey) || isSeriesKeyCandidate(targetKey, knownKey)),
@@ -425,6 +436,9 @@ function hasMatchingIndustryIdentifier(
 
 function mergeBookMetadata(primary: BookInput, fallback: BookInput | null): BookInput {
   if (!fallback) return primary;
+  // Different ISBNs must not supply a missing volume number (or other metadata).
+  if (primary.isbn && fallback.isbn && !isSameIsbn(primary.isbn, fallback.isbn)) return primary;
+  if (isNisekoiUrabanaTitle(primary.title) !== isNisekoiUrabanaTitle(fallback.title)) return primary;
 
   return {
     ...primary,
@@ -433,6 +447,7 @@ function mergeBookMetadata(primary: BookInput, fallback: BookInput | null): Book
     seriesReading: primary.seriesReading ?? fallback.seriesReading,
     volumeNumber: primary.volumeNumber ?? fallback.volumeNumber,
     volumeKind: primary.volumeKind ?? fallback.volumeKind,
+    bookFormat: primary.bookFormat && primary.bookFormat !== 'unknown' ? primary.bookFormat : fallback.bookFormat ?? primary.bookFormat,
     author: normalizeAuthor(primary.author ?? fallback.author),
     publisher: primary.publisher ?? fallback.publisher,
     publishedDate: primary.publishedDate ?? fallback.publishedDate,
@@ -513,6 +528,7 @@ function rakutenItemToBookInput(item: RakutenItem, fallbackIsbn?: string): BookI
     seriesReading: item.titleKana ? normalizeKanaReading(parseSeriesTitle(item.titleKana).seriesTitle) : undefined,
     volumeNumber: parsed.volumeNumber,
     volumeKind: normalizeVolumeKind(undefined, item.title),
+    bookFormat: inferBookFormat({ title: item.title, isbn: item.isbn ?? fallbackIsbn, size: item.size, labels: [item.seriesName ?? '', item.subTitle ?? ''] }),
     author: normalizeAuthor(item.author),
     publisher: item.publisherName,
     publishedDate: item.salesDate,
@@ -643,6 +659,7 @@ async function lookupOpenBd(isbn: string): Promise<BookInput | null> {
     seriesTitle: collectionTitle ?? parsed.seriesTitle,
     volumeNumber: parsed.volumeNumber,
     volumeKind: normalizeVolumeKind(undefined, title),
+    bookFormat: inferBookFormat({ title, isbn, labels: [collectionTitle ?? ''] }),
     author: normalizeAuthor(item.summary?.author),
     publisher: item.summary?.publisher,
     publishedDate: item.summary?.pubdate,
@@ -684,6 +701,7 @@ async function lookupNdlByIsbn(isbn: string): Promise<BookInput | null> {
     seriesTitle,
     volumeNumber,
     volumeKind: normalizeVolumeKind(undefined, title),
+    bookFormat: inferBookFormat({ title, isbn }),
     author: normalizeAuthor(firstXmlTag(item, 'dc:creator', 'author')),
     publisher: firstXmlTag(item, 'dc:publisher', 'publisher'),
     publishedDate: firstXmlTag(item, 'dc:date', 'pubDate'),
@@ -766,12 +784,39 @@ async function searchRakutenBookInputs(params: {
   );
 }
 
+/** Book-level results keep individual volumes and editions for manual registration. */
+export async function searchBookCandidates(query: string): Promise<BookInput[]> {
+  const title = query.normalize('NFKC').trim();
+  if (!title) return [];
+  // Known companions must never fall through to a similarly named main comic.
+  if (isNisekoiUrabanaTitle(title)) return searchKnownCompanionBooks(title);
+  const results = await Promise.allSettled([
+    searchRakutenBookInputs({ path: 'BooksBook/Search/20170404', queryParamName: 'title', query: title }),
+    searchRakutenBookInputs({ path: 'BooksTotal/Search/20170404', queryParamName: 'keyword', query: title }),
+  ]);
+  const books = [...searchKnownCompanionBooks(title), ...results.flatMap(result => result.status === 'fulfilled' ? result.value : [])];
+  const parsed = parseSeriesTitle(title);
+  if (!books.length || parsed.volumeNumber) {
+    const precise = await tryLookup('Title search', () => lookupBookByTitle(title), { silent: true });
+    if (precise) books.unshift(precise);
+  }
+  const seen = new Set<string>();
+  return books.filter(book => {
+    if (parsed.volumeNumber && book.volumeNumber !== parsed.volumeNumber) return false;
+    const key = book.isbn || `${book.title}|${book.author}|${book.publisher}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, 20);
+}
+
 function toSeriesSearchCandidate(book: BookInput, source: SeriesSearchCandidate['source']): SeriesSearchCandidate | null {
   const parsed = parseSeriesTitle(book.seriesTitle || book.title);
   const seriesTitle = parsed.seriesTitle.trim();
   if (!seriesTitle) return null;
 
   return {
+    isbn: book.isbn,
     author: book.author,
     coverUrl: book.thumbnailUrl,
     publisher: book.publisher,
@@ -850,7 +895,7 @@ export async function searchSeriesCandidates(query: string): Promise<SeriesSearc
 function findLatestVolumeFromTitles(titles: Array<string | undefined>, seriesTitle: string) {
   const expectedKeys = buildSeriesTitleSearchAliases(seriesTitle).map(normalizeSeriesKey).filter(Boolean);
   const volumes = titles
-    .map((title) => (title ? parseSeriesTitle(title) : null))
+    .map((title) => (title && normalizeVolumeKind(undefined, title) === 'main' ? parseSeriesTitle(title) : null))
     .filter(
       (
         parsed,
@@ -861,7 +906,7 @@ function findLatestVolumeFromTitles(titles: Array<string | undefined>, seriesTit
         !!parsed?.volumeNumber &&
         parsed.volumeNumber > 0 &&
         parsed.volumeNumber <= 500 &&
-        expectedKeys.some((expectedKey) => isSeriesKeyCandidate(normalizeSeriesKey(parsed.seriesTitle), expectedKey)),
+        expectedKeys.some((expectedKey) => normalizeSeriesKey(parsed.seriesTitle) === expectedKey),
     )
     .map((parsed) => parsed.volumeNumber);
 
@@ -919,7 +964,7 @@ function rakutenItemsToTitleTexts(items?: RakutenBooksResponse['Items']) {
     items
       ?.map((entry) => entry.Item)
       .filter((item): item is RakutenItem => !!item && !isNonBookRakutenItem(item))
-      .flatMap((item) => [item.title, item.subTitle, item.itemCaption]) ?? []
+      .flatMap((item) => [item.title]) ?? []
   );
 }
 
@@ -1075,7 +1120,7 @@ async function lookupLatestGoogleSeriesVolume(seriesTitle: string) {
     if (!response.ok) continue;
 
     const payload = (await response.json()) as GoogleBooksResponse;
-    const titles = googleBookItems(payload).flatMap((item) => [item.volumeInfo?.title, item.volumeInfo?.subtitle]);
+    const titles = googleBookItems(payload).flatMap((item) => [item.volumeInfo?.title]);
     const latestVolume = findLatestVolumeFromTitles(titles, seriesTitle);
     if (latestVolume) {
       return {
@@ -1095,6 +1140,8 @@ export async function lookupLatestSeriesPublication(
   const normalizedTitle = seriesTitle.trim();
   if (!normalizedTitle) return null;
 
+  const verified = verifiedSeriesPublication(normalizedTitle);
+  if (verified) return verified;
   const rakutenPublication = await lookupLatestRakutenSeriesVolume(normalizedTitle);
   if (rakutenPublication) {
     const isCompleted = getSeriesOngoingOverride(normalizedTitle)
@@ -1147,8 +1194,8 @@ async function lookupGoogleBooksByQuery(
     if (response.status === 403 || response.status === 429) {
       throw new Error(
         env.googleBooksApiKey
-          ? 'Google Books APIが拒否しました。APIキーの有効化、制限、割り当てを確認してください。'
-          : 'Google Books APIキーがアプリに読み込まれていません。EXPO_PUBLIC_GOOGLE_BOOKS_API_KEYを設定して再起動してください。',
+          ? '現在本を検索できません。しばらくしてからもう一度お試しください。'
+          : '現在本を検索できません。しばらくしてからもう一度お試しください。',
       );
     }
     return null;
@@ -1195,6 +1242,7 @@ async function lookupGoogleBooksByQuery(
     seriesTitle: parsed.seriesTitle,
     volumeNumber: parsed.volumeNumber,
     volumeKind: normalizeVolumeKind(undefined, volume.title),
+    bookFormat: inferBookFormat({ title: volume.title, labels: volume.categories }),
     author: normalizeAuthor(volume.authors?.join(', ')),
     publisher: volume.publisher,
     publishedDate: volume.publishedDate,
@@ -1447,9 +1495,20 @@ export async function lookupBookVolumeDetails(
 export async function lookupBookByTitle(title: string, fallbackIsbn?: string): Promise<BookInput | null> {
   const trimmedTitle = title.trim();
   if (!trimmedTitle) return null;
+  if (isNisekoiUrabanaTitle(trimmedTitle)) {
+    const candidates = searchKnownCompanionBooks(trimmedTitle);
+    return (fallbackIsbn ? candidates.find(book => isSameIsbn(book.isbn, fallbackIsbn)) : candidates[0]) ?? null;
+  }
   let firstResult: BookInput | null = null;
   const expected = parseSeriesTitle(trimmedTitle);
-  const knownFallback = lookupKnownBookFallbackByTitle(trimmedTitle);
+  const fallbackCandidate = lookupKnownBookFallbackByTitle(trimmedTitle);
+  const knownFallback = !fallbackIsbn || isSameIsbn(fallbackCandidate?.isbn, fallbackIsbn)
+    ? fallbackCandidate : null;
+  // Use the verified regular edition for this reported mismatch before a search
+  // provider can substitute another volume or special edition's ISBN.
+  if (knownFallback && verifiedBakemonogatariBooks.some((book) => book.isbn === knownFallback.isbn)
+    && normalizeSeriesKey(expected.seriesTitle) === normalizeSeriesKey('化物語')
+    && expected.volumeNumber === knownFallback.volumeNumber && !/特装版|限定版|完全版|文庫版|新装版|愛蔵版/.test(trimmedTitle)) return knownFallback;
 
   for (const query of buildTitleQueries(trimmedTitle)) {
     const rakutenResult = keepThumbnailOnlyForSafeMatch(
@@ -1489,6 +1548,8 @@ export async function lookupBookByTitle(title: string, fallbackIsbn?: string): P
 export async function lookupBookByIsbn(isbn: string): Promise<BookInput | null> {
   const normalizedIsbn = normalizeIsbn(isbn);
   if (!isBookIsbnBarcode(normalizedIsbn)) return null;
+  const companion = knownCompanionByIsbn(normalizedIsbn);
+  if (companion) return companion;
 
   const confirmed = await getConfirmedBookMetadata(normalizedIsbn);
   if (confirmed?.title) {
@@ -1498,6 +1559,8 @@ export async function lookupBookByIsbn(isbn: string): Promise<BookInput | null> 
       title: confirmed.title,
       seriesTitle: confirmed.series_title ?? parsed.seriesTitle,
       volumeNumber: confirmed.volume_number ?? parsed.volumeNumber,
+      volumeKind: normalizeVolumeKind(undefined, confirmed.title),
+      bookFormat: inferBookFormat({ title: confirmed.title, isbn: normalizedIsbn }),
       author: confirmed.author ?? undefined,
       publisher: confirmed.publisher ?? undefined,
       thumbnailUrl: confirmed.thumbnail_url ?? undefined,
@@ -1601,7 +1664,7 @@ async function fetchRakutenWithTimeout(
   proxyRequest?: RakutenProxyRequest,
   timeoutMs = 12000,
 ): Promise<FetchLikeResponse> {
-  const response = await fetchRakutenProxy(proxyRequest);
+  const response = await fetchRakutenProxy(proxyRequest, timeoutMs);
   if (!response) {
     return createJsonResponse(503, {
       error: 'RAKUTEN_PROXY_UNAVAILABLE',
@@ -1612,7 +1675,7 @@ async function fetchRakutenWithTimeout(
 
   await new Promise((resolve) => setTimeout(resolve, 1200));
   return (
-    (await fetchRakutenProxy(proxyRequest)) ??
+    (await fetchRakutenProxy(proxyRequest, timeoutMs)) ??
     createJsonResponse(503, {
       error: 'RAKUTEN_PROXY_UNAVAILABLE',
       message: 'Supabase Edge Function rakuten-books is not available after retry.',
@@ -1620,8 +1683,10 @@ async function fetchRakutenWithTimeout(
   );
 }
 
-async function fetchRakutenProxy(proxyRequest?: RakutenProxyRequest): Promise<FetchLikeResponse | null> {
+async function fetchRakutenProxy(proxyRequest?: RakutenProxyRequest, timeoutMs = 12000): Promise<FetchLikeResponse | null> {
   if (!supabase || !proxyRequest) return null;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const { data, error } = await supabase.functions.invoke<{
@@ -1631,6 +1696,7 @@ async function fetchRakutenProxy(proxyRequest?: RakutenProxyRequest): Promise<Fe
       proxy?: RakutenProxyMetadata;
     }>('rakuten-books', {
       body: proxyRequest,
+      signal: controller.signal,
     });
     if (error) {
       return createJsonResponse(503, {
@@ -1665,6 +1731,8 @@ async function fetchRakutenProxy(proxyRequest?: RakutenProxyRequest): Promise<Fe
       error: 'RAKUTEN_PROXY_INVOCATION_FAILED',
       message,
     });
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 

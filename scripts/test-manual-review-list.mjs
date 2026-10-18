@@ -97,3 +97,34 @@ let cookie='';res.setHeader=(name,value)=>{assert.equal(name,'Set-Cookie');cooki
 await handlers.get('GET /reviews')({query:{view:'all',size:'100'},secure:true},res);assert(cookie.includes('honnoma_review_size=100'));assert(cookie.includes('HttpOnly'));assert(cookie.includes('Secure'));
 await handlers.get('GET /reviews')({query:{view:'all'},headers:{cookie:'honnoma_review_size=100'}},res);assert(html.includes('<option value="100" selected>100件'));
 console.log('Page size: remembered cookie, explicit selection, invalid fallback, partial failures preserve filters and pagination: OK');
+
+// An ISBN registered while AI is OFF must remain visible before metadata is prepared.
+const waiting={isbn13:'9784065116173',title:'化物語 <登録時の名前>',adult_only:null,status:'queued',content_hash:null,candidate:null,cover_status:'unreviewed'};
+jobs.push(waiting);
+await handlers.get('GET /reviews')({query:{q:waiting.isbn13,view:'unclassified'}},res);
+assert(html.includes('化物語 &lt;登録時の名前>'));
+assert(html.includes('書誌情報の取得待ち（AI判別前）'));
+assert(html.includes('formaction="/reviews/prepare" name="prepare_isbn"'));
+assert(!html.includes('name="adult_0"'));
+assert(!html.includes('name="cover_0"'));
+assert(!html.includes(`/reviews/${waiting.isbn13}/cover`));
+await handlers.get('GET /reviews')({query:{q:waiting.isbn13,cover:'unreviewed'}},res);
+assert(html.includes('全1件'));
+await handlers.get('GET /reviews')({query:{prepared:'0',prepare_failed:'1',q:waiting.isbn13}},res);
+assert(html.includes('1件は取得できませんでした'));
+console.log('Intake while AI OFF: unprepared books visible/searchable, escaped registration label, per-ISBN prepare button, no premature classification or cover approval, failure notice: OK');
+let fetchFails=false;const preparedIsbns=[];
+registerReviewAdmin(app,db,{ready:()=>false,mailReady:()=>false},(_title,body)=>body,escape,{
+  fetchBook:async(_db,isbn)=>{preparedIsbns.push(isbn);if(fetchFails)throw new Error('internal upstream error');return {title:'Publisher title',publisher:'Publisher',cover_url:null};},
+});
+await handlers.get('GET /reviews')({query:{q:waiting.isbn13}},res);
+const prepareCsrf=html.match(/name="csrf" value="([^"]+)"/)[1];
+await handlers.get('POST /reviews/prepare')({method:'POST',body:{csrf:prepareCsrf,prepare_isbn:waiting.isbn13,return_to:'/reviews?view=unclassified&size=100&q=9784065116173'}},res);
+assert.deepEqual(preparedIsbns,[waiting.isbn13]);
+assert.equal(writes.at(-1).name,'prepare_book_content_review');
+assert.equal(writes.at(-1).args.p_isbn,waiting.isbn13);
+assert(redirect.includes('prepared=1'));assert(redirect.includes('size=100'));
+fetchFails=true;
+await handlers.get('POST /reviews/prepare')({method:'POST',body:{csrf:prepareCsrf,prepare_isbn:waiting.isbn13}},res);
+assert(redirect.includes('prepare_failed=1'));
+console.log('Per-ISBN preparation: server bibliographic fetch only, no AI, exact target, retained filters/size, honest success/failure counts: OK');

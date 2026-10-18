@@ -108,7 +108,7 @@ export default function RankingScreen() {
 
   const loadRankings = async () => {
     if (!supabase) {
-      setError('Supabaseが未設定のため、ランキングを取得できません。');
+      setError('現在ランキングを利用できません。しばらくしてからもう一度お試しください。');
       return;
     }
     setLoading(true);
@@ -177,6 +177,7 @@ export default function RankingScreen() {
                     title: row.title,
                     score: row.score ?? 75,
                     coverUrl: row.coverUrl,
+                    isbn: 'isbn' in row ? row.isbn : undefined,
                     purchaseUrl: buildPurchaseUrl(row.title),
                   })
           }
@@ -348,7 +349,7 @@ function RankingShelf({
             const owned = !!onAddWishlist && isOwnedSeriesTitle(row.title, ownedSeriesKeys);
             const canAddWishlist = !!onAddWishlist && !owned;
             return (
-              <RankingCard
+              <RankingCard personal={category === 'personal'}
                 key={key}
                 added={addedTitles.has(normalizeRankingTitle(row.title))}
                 disabledAddLabel={owned ? '所持済み' : undefined}

@@ -7,7 +7,7 @@ type DeleteAccountResponse = {
 
 export async function deleteCurrentAccount() {
   if (!supabase) {
-    throw new Error('Supabaseが設定されていません。');
+    throw new Error('現在アカウントの操作を利用できません。');
   }
 
   const { data: sessionData, error: sessionError } = await supabase.auth.getSession();

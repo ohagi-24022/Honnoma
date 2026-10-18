@@ -1,4 +1,5 @@
 export type ReadingStatus = 'unread' | 'reading' | 'read';
+export type BookFormat = 'comic' | 'novel' | 'unknown';
 export type BookVolumeKind = 'main' | 'extra';
 
 export type Book = {
@@ -8,9 +9,11 @@ export type Book = {
   title: string;
   titleReading?: string | null;
   seriesTitle: string;
+  seriesAliases?: string[];
   seriesReading?: string | null;
   volumeNumber?: number;
   volumeKind?: BookVolumeKind;
+  bookFormat?: BookFormat;
   author?: string;
   publisher?: string;
   publishedDate?: string | null;

@@ -1,3 +1,6 @@
+import { matchesBookFormat, BookFormatFilter } from '../../src/lib/bookFormat';
+import { buildSeriesGroups } from '../../src/lib/seriesSelectors';
+import { verifiedSeriesPublication } from '../../src/lib/verifiedSeriesPublication';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useScrollToTop } from 'expo-router/react-navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -50,6 +53,7 @@ import { Book, ReadingStatus } from '../../src/types';
 
 type HomeFilter =
   | ReadingStatus
+  | 'format:comic' | 'format:novel' | 'format:unknown'
   | 'all'
   | 'missing'
   | 'complete'
@@ -88,6 +92,9 @@ const filterOptions: Array<{ label: string; value: HomeFilter }> = [
   { label: 'お気に入り', value: 'favorite' },
   { label: '完結済み', value: 'completed' },
   { label: '未完結', value: 'ongoing' },
+  { label: 'コミック', value: 'format:comic' },
+  { label: '小説', value: 'format:novel' },
+  { label: '未分類', value: 'format:unknown' },
 ];
 const filterCategoryOptions = [
   ...filterOptions,
@@ -241,7 +248,9 @@ function getSelectedMetadataFilters(filters: HomeFilter[]) {
 function toggleFilterValue(filters: HomeFilter[], value: HomeFilter) {
   if (value === 'all') return ['all'] satisfies HomeFilter[];
   const activeFilters = getActiveFilters(filters);
-  const exclusiveFilters: HomeFilter[] = value === 'missing' ? ['complete'] : value === 'complete' ? ['missing'] : [];
+  const exclusiveFilters: HomeFilter[] = value.startsWith('format:')
+    ? (['format:comic', 'format:novel', 'format:unknown'] as HomeFilter[]).filter(filter => filter !== value)
+    : value === 'missing' ? ['complete'] : value === 'complete' ? ['missing'] : [];
   const baseFilters = activeFilters.filter((filter) => !exclusiveFilters.includes(filter));
   const next = baseFilters.includes(value)
     ? baseFilters.filter((filter) => filter !== value)
@@ -331,6 +340,9 @@ export default function HomeScreen() {
   const { user } = useAuth();
   const { books, error, loading, refreshLibrary, repairBookMetadata, requiresAuth, seriesGroups } = useLibrary();
   const [filters, setFilters] = useState<HomeFilter[]>(['all']);
+  const formatFilter = (filters.find(filter => filter.startsWith('format:'))?.slice(7) ?? 'all') as BookFormatFilter;
+  const formatBooks = useMemo(() => formatFilter === 'all' ? books : books.filter(book => matchesBookFormat(book, formatFilter)), [books, formatFilter]);
+  const formatGroups = useMemo(() => formatFilter === 'all' ? seriesGroups : buildSeriesGroups(formatBooks), [formatBooks, formatFilter, seriesGroups]);
   const [viewMode, setViewMode] = useState<'series' | 'books'>('series');
   const [seriesDisplayMode, setSeriesDisplayMode] = useState<SeriesDisplayMode>('detail');
   const [seriesSort, setSeriesSort] = useState<SeriesSort>('title');
@@ -473,6 +485,10 @@ export default function HomeScreen() {
 
   const effectivePublicationCache = useMemo(() => {
     const merged: SeriesPublicationCache = { ...publicationCache };
+    Object.keys(merged).forEach(key => {
+      const verified = verifiedSeriesPublication(key);
+      if (verified) merged[key] = verified;
+    });
     Object.entries(seriesMetadataCache).forEach(([seriesKey, override]) => {
       const publicationInfo = mergeSeriesPublicationInfo(merged[seriesKey], override);
       if (publicationInfo) merged[seriesKey] = publicationInfo;
@@ -633,7 +649,7 @@ export default function HomeScreen() {
 
   const seriesStats = useMemo(() => {
     const bySeries = new Map<string, Book[]>();
-    books.forEach((book) => {
+    formatBooks.forEach((book) => {
       const seriesKey = normalizeSeriesKey(book.seriesTitle);
       const group = bySeries.get(seriesKey) ?? [];
       group.push(book);
@@ -663,7 +679,7 @@ export default function HomeScreen() {
         return [seriesKey, { completionRate, internalMissingVolumes, missingVolumes, trailingUnownedVolumes }] as const;
       }),
     );
-  }, [books, effectivePublicationCache]);
+  }, [formatBooks, effectivePublicationCache]);
 
   const visibleGroups = useMemo(() => {
     const activeFilters = getActiveFilters(filters);
@@ -673,7 +689,7 @@ export default function HomeScreen() {
     );
     const keyword = normalizeText(query);
 
-    const filtered = seriesGroups.filter((group) => {
+    const filtered = formatGroups.filter((group) => {
       const seriesKey = normalizeSeriesKey(group.title);
       const stats = seriesStats.get(seriesKey);
       const publicationInfo = effectivePublicationCache[seriesKey];
@@ -733,7 +749,7 @@ export default function HomeScreen() {
       }
       return applySortDirection(comparison, seriesSortDirection) || compareText(left.title, right.title);
     });
-  }, [books, effectivePublicationCache, favoriteSeriesKeySet, filters, query, readingCorrections, seriesGroups, seriesSort, seriesSortDirection, seriesStats]);
+  }, [books, effectivePublicationCache, favoriteSeriesKeySet, filters, query, readingCorrections, seriesGroups, formatGroups, seriesSort, seriesSortDirection, seriesStats]);
 
   const visibleBooks = useMemo(() => {
     const activeFilters = getActiveFilters(filters);
@@ -742,7 +758,7 @@ export default function HomeScreen() {
       readingFilters.includes(filter as ReadingStatus),
     );
     const keyword = normalizeText(query);
-    const filtered = books.filter((book) => {
+    const filtered = formatBooks.filter((book) => {
       const seriesKey = normalizeSeriesKey(book.seriesTitle);
       const publicationInfo = effectivePublicationCache[seriesKey];
       const matchesFilter =
@@ -786,7 +802,7 @@ export default function HomeScreen() {
       }
       return applySortDirection(comparison, bookSortDirection) || compareText(left.title, right.title, left.titleReading, right.titleReading);
     });
-  }, [bookSort, bookSortDirection, books, effectivePublicationCache, favoriteSeriesKeySet, filters, query, seriesStats]);
+  }, [bookSort, bookSortDirection, books, formatBooks, effectivePublicationCache, favoriteSeriesKeySet, filters, query, seriesStats]);
 
   const selectedMetadataFilters = getSelectedMetadataFilters(filters);
   const selectedFilterLabel = useMemo(() => {
@@ -913,7 +929,7 @@ export default function HomeScreen() {
       await refreshRepresentativeCover;
       if (!result) {
         if (effectivePublicationCache[cacheKey]) return;
-        Alert.alert('\u520a\u884c\u5dfb\u6570\u3092\u53d6\u5f97\u3067\u304d\u307e\u305b\u3093\u3067\u3057\u305f', '\u5916\u90e8API\u304b\u3089\u540c\u3058\u30b7\u30ea\u30fc\u30ba\u306e\u5dfb\u6570\u60c5\u5831\u3092\u78ba\u8a8d\u3067\u304d\u307e\u305b\u3093\u3067\u3057\u305f\u3002\u5c11\u3057\u6642\u9593\u3092\u304a\u3044\u3066\u518d\u5ea6\u304a\u8a66\u3057\u304f\u3060\u3055\u3044\u3002');
+        Alert.alert('\u520a\u884c\u5dfb\u6570\u3092\u53d6\u5f97\u3067\u304d\u307e\u305b\u3093\u3067\u3057\u305f', 'このシリーズの刊行巻数が見つかりませんでした。少し時間をおいて再度お試しください。');
         return;
       }
       const safeResult = { ...result, latestVolume: Math.max(result.latestVolume, ownedLatestVolume ?? 0) };
@@ -1069,7 +1085,7 @@ export default function HomeScreen() {
                   onPress={() => router.navigate(`/series/${encodeURIComponent(item.title)}`)}
                   style={[styles.coverTile, { width: coverTileWidth }]}
                 >
-                  <BookCover
+                  <BookCover displayContext="personal"
                     thumbnailUrl={item.representative.thumbnailUrl}
                     isbn={item.representative.isbn}
                     style={styles.coverTileImage}

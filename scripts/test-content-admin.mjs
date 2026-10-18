@@ -3,7 +3,7 @@ import { registerContentAdmin } from './shushuka-content-admin.mjs';
 
 const writes = [];
 const db = { from: (table) => ({
-  select: () => ({ order: () => ({ limit: async () => ({ data: [], error: null }) }) }),
+  select: () => ({ order: () => ({ limit: async () => ({ data: [], error: null }) }), eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }),
   upsert: async (row) => { writes.push({ table, row }); return { error: null }; },
 }) };
 const handlers = new Map();

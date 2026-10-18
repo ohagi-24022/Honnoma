@@ -85,7 +85,7 @@ export default function ReadingSuggestionsScreen() {
   const loadGlobalTargets = async () => {
     if (!supabase) {
       setGlobalTargets([]);
-      setGlobalError('Supabaseが未設定のため、みんなの候補を取得できません。');
+      setGlobalError('現在みんなの候補を取得できません。しばらくしてからもう一度お試しください。');
       return;
     }
     setGlobalLoading(true);

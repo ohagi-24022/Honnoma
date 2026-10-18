@@ -2,12 +2,12 @@ import assert from 'node:assert/strict';
 import { validIsbn,safeCoverUrl,fetchBook,fetchCover,assessContent,decideContent,createReviewService,registerReviewPublic } from './shushuka-content-review.mjs';
 const good={safe:true,uncertain:false,categories:[]};
 const held={safe:false,uncertain:false,categories:['sexual']};
-const assessment={title:good,cover:good,description:good,reason:'表示可'};
+const assessment={audience:'general',title:good,cover:good,description:good,reason:'表示可'};
 const book={title:'書籍',description:'紹介文',cover_url:'https://cover.openbd.jp/9784088914763.jpg',source_url:'https://api.openbd.jp/v1/get?isbn=9784088914763'};
 assert(validIsbn('9784088914763'));assert(!validIsbn('9784088914764'));assert(!validIsbn('1929979006006'));
 for(const url of ['http://cover.openbd.jp/a','https://cover.openbd.jp.attacker.test/a','https://127.0.0.1/a','https://cover.openbd.jp:444/a','https://user@cover.openbd.jp/a'])assert(!safeCoverUrl(url));
 assert(safeCoverUrl(book.cover_url));
-assert.deepEqual(decideContent(book,{},assessment),{cover_status:'approved',description_status:'approved',status:'approved'});
+assert.deepEqual(decideContent(book,{},assessment),{adult_only:false,cover_status:'approved',description_status:'approved',status:'approved'});
 assert.equal(decideContent(book,{}, {...assessment,cover:held}).description_status,'approved');
 assert.equal(decideContent(book,{}, {...assessment,cover:held}).status,'pending_review');
 assert.equal(decideContent(book,null,assessment).cover_status,'held');
@@ -51,3 +51,21 @@ console.log('Automatic content review: source matching, independent gates, fail-
 const confirmedEdition=await fetchBook({from(table){assert.equal(table,'confirmed_book_metadata');const q={select(){return q},eq(){return q},async maybeSingle(){return {data:{metadata:{normalized_isbn:'9784089082386',title:'Confirmed DVD edition',thumbnail_url:book.cover_url}},error:null};}};return q;},functions:{invoke(){throw new Error('Must not replace confirmed data');}}},'9784089082386');
 assert.equal(confirmedEdition.title,'Confirmed DVD edition');assert.equal(confirmedEdition.provider,'administrator');
 console.log('Content review uses exact-ISBN administrator metadata before providers: OK');
+
+assert(safeCoverUrl('https://www.akitashoten.co.jp/comics/4253211046/cover'));
+for(const url of ['https://www.akitashoten.co.jp/other','https://www.akitashoten.co.jp/comics/4253211046/cover?redirect=x','https://www.akitashoten.co.jp.attacker.test/comics/4253211046/cover'])assert(!safeCoverUrl(url));
+
+assert(safeCoverUrl('https://cdn.kdkw.jp/cover_1000/201011/201011000437.webp'));
+for(const url of ['https://cdn.kdkw.jp/other','https://cdn.kdkw.jp.attacker.test/cover_1000/201011/201011000437.webp','https://cdn.kdkw.jp/cover_1000/201011/201012000437.webp','https://cdn.kdkw.jp/cover_1000/201011/201011000437.webp?next=x'])assert(!safeCoverUrl(url));
+
+assert(safeCoverUrl('https://www.hakusensha.co.jp/wp_hakusensha/postimage/2016/lists/9784592186175.jpg'));
+for(const url of ['https://www.hakusensha.co.jp/other','https://www.hakusensha.co.jp.attacker.test/wp_hakusensha/postimage/2016/lists/9784592186175.jpg','https://www.hakusensha.co.jp/wp_hakusensha/postimage/2016/lists/9784592186175.jpg?redirect=x'])assert(!safeCoverUrl(url));
+
+assert(safeCoverUrl('https://dvs-cover.kodansha.co.jp/0000047917/tR86b66YJo0rFgvrQahpN1wdbDpfJ6fw3cyIx7pQ.jpg'));
+for(const url of ['https://dvs-cover.kodansha.co.jp/other','https://dvs-cover.kodansha.co.jp.attacker.test/0000047917/tR86b66YJo0rFgvrQahpN1wdbDpfJ6fw3cyIx7pQ.jpg','https://dvs-cover.kodansha.co.jp/0000047917/tR86b66YJo0rFgvrQahpN1wdbDpfJ6fw3cyIx7pQ.jpg?next=x'])assert(!safeCoverUrl(url));
+
+assert.equal(decideContent(book,image,{...assessment,audience:'adult'}).adult_only,true);
+assert.equal(decideContent(book,image,{...assessment,audience:'adult'}).cover_status,'held');
+assert.equal(decideContent(book,image,{...assessment,audience:'unknown'}).status,'pending_review');
+assert.equal(decideContent(book,image,{...assessment,audience:'unknown'}).adult_only,null);
+assert.throws(()=>decideContent(book,image,{...assessment,audience:'invalid'}));

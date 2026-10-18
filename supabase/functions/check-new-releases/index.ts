@@ -36,6 +36,7 @@ type RakutenBooksResponse = {
   Items?: Array<{
     Item?: {
       title?: string;
+      salesDate?: string;
     };
   }>;
 };
@@ -73,10 +74,14 @@ Deno.serve(async (request) => {
     return new Response('ok', { headers: corsHeaders });
   }
 
+  let operationMode: FunctionMode | undefined;
+  let operationStage = 'authorization';
+  const runId = crypto.randomUUID();
   try {
     const startedAt = Date.now();
     const body = await safeJson(request);
     const mode = normalizeMode(body.mode);
+    operationMode = mode;
     const limit = Number.isFinite(body.limit)
       ? Math.min(Math.max(Number(body.limit), 1), 100)
       : DEFAULT_CHECK_LIMIT;
@@ -124,12 +129,21 @@ Deno.serve(async (request) => {
       return jsonResponse({ ok: true, mode, enabledSubscriptions: count });
     }
 
+    if (mode === 'check' || mode === 'all') {
+      await writeOperationLog({ operation: 'check-new-releases', status: 'ok',
+        metadata: { mode, runId, phase: 'started', stage: 'subscriptions' } });
+    }
+
+    operationStage = 'maintenance';
     await pruneOldNotificationLogs();
     await pruneOldOperationLogs();
 
-    const checked = mode === 'all' || mode === 'check' ? await checkSeries(limit) : [];
+    operationStage = 'subscriptions';
+    const checked = mode === 'all' || mode === 'check' ? await checkSeries(limit, runId) : [];
+    operationStage = 'delivery';
     const delivered = mode === 'all' || mode === 'deliver' || mode === 'retry'
       ? await deliverDailyNotifications(userLimit, mode === 'retry') : [];
+    operationStage = mode === 'receipts' ? 'receipts' : 'delivery';
     const receipts = mode === 'receipts' ? await checkPushReceipts(userLimit) : [];
     const hasErrors = checked.some(row => row.error) || delivered.some(row => row.sent === 0)
       || receipts.some(row => row.error);
@@ -138,7 +152,13 @@ Deno.serve(async (request) => {
     await writeOperationLog({
       durationMs: Date.now() - startedAt,
       metadata: {
+        runId,
+        phase: 'completed',
         checkedCount: checked.length,
+        newReleaseCount: checked.filter(row => row.queued > 0).length,
+        checkResults: checked.map(row => ({ seriesTitle: row.seriesTitle, failed: !!row.error, stage: row.stage, reason: row.reason })),
+        deliveryFailureCount: delivered.filter(row => row.sent === 0).length,
+        receiptFailureCount: receipts.filter(row => row.error).length,
         receiptCount: receipts.length,
         deliveredUserCount: delivered.length,
         limit,
@@ -154,7 +174,7 @@ Deno.serve(async (request) => {
     return jsonResponse({ checked, delivered, receipts, mode, ok: !hasErrors }, hasErrors ? 502 : 200);
   } catch (error) {
     await writeOperationLog({
-      metadata: { error: describeError(error) },
+      metadata: { mode: operationMode, runId, phase: 'completed', stage: operationStage, reason: notificationFailureReason(error), error: describeError(error) },
       operation: 'check-new-releases',
       provider: 'supabase-edge-function',
       requestCount: 1,
@@ -167,7 +187,7 @@ Deno.serve(async (request) => {
   }
 });
 
-async function checkSeries(limit: number) {
+async function checkSeries(limit: number, runId: string) {
   const { data: subscriptions, error } = await supabase
     .from('series_subscriptions')
     .select('id,user_id,series_key,series_title,latest_known_volume')
@@ -184,26 +204,37 @@ async function checkSeries(limit: number) {
     seriesByKey.set(subscription.series_key, rows);
   }
 
+  const pacedLookup = createPacedPublicationLookup();
   const checked: Array<{
     latestVolume: number | null;
     queued: number;
     seriesTitle: string;
     source?: string | null;
+    stage?: string;
+    reason?: string;
     cached?: boolean;
     error?: string;
   }> = [];
 
   for (const subscriptionsForSeries of [...seriesByKey.values()].slice(0, limit)) {
     const firstSubscription = subscriptionsForSeries[0];
+    let currentStage = 'cache';
+    const progress = async (stage: string) => {
+      currentStage = stage;
+      await writeOperationLog({ operation: 'check-new-releases', status: 'ok', metadata: {
+        mode: 'check', runId, phase: 'progress', stage, seriesTitle: firstSubscription.series_title,
+      } });
+    };
     try {
-      const publication = await getLatestPublication(firstSubscription.series_key, firstSubscription.series_title);
+      const publication = await getLatestPublication(firstSubscription.series_key, firstSubscription.series_title, progress, pacedLookup);
       const latestVolume = publication.latestVolume;
       let queued = 0;
 
+      await progress('queue');
       if (latestVolume) {
         for (const subscription of subscriptionsForSeries) {
           if (latestVolume <= (subscription.latest_known_volume ?? 0)) continue;
-          const inserted = await insertNotificationLog(subscription, latestVolume);
+          const inserted = await insertNotificationLog(subscription, latestVolume, publication.publishedDate);
           if (inserted) queued += 1;
 
           const { error: updateError } = await supabase
@@ -217,6 +248,7 @@ async function checkSeries(limit: number) {
         }
       }
 
+      await progress('subscription_update');
       // Rotate checked series even when there is no new volume.
       const { error: rotationError } = await supabase.from('series_subscriptions')
         .update({ updated_at: new Date().toISOString() })
@@ -232,6 +264,8 @@ async function checkSeries(limit: number) {
       });
     } catch (subscriptionError) {
       checked.push({
+        stage: currentStage,
+        reason: notificationFailureReason(subscriptionError),
         error: describeError(subscriptionError),
         latestVolume: null,
         queued: 0,
@@ -243,22 +277,27 @@ async function checkSeries(limit: number) {
   return checked;
 }
 
-async function getLatestPublication(seriesKey: string, seriesTitle: string) {
+async function getLatestPublication(seriesKey: string, seriesTitle: string, progress = async (_stage: string) => {}, lookup = lookupLatestSeriesPublication) {
+  await progress('cache');
   const cached = await getRecentPublicationCheck(seriesKey);
   if (cached) {
     return {
       cached: true,
       latestVolume: cached.latest_volume,
+      publishedDate: typeof cached.raw?.publishedDate === 'string' ? cached.raw.publishedDate : null,
       source: cached.source,
     };
   }
 
-  const latestVolume = await lookupLatestSeriesVolume(seriesTitle);
+  await progress('provider');
+  const { latestVolume, publishedDate } = await lookup(seriesTitle, progress);
+  await progress('publication_save');
   const { error: checkError } = await supabase.from('publication_checks').insert({
     latest_volume: latestVolume,
     raw: {
       cacheHours: CHECK_CACHE_HOURS,
       checkedBy: 'check-new-releases',
+      publishedDate,
     },
     series_key: seriesKey,
     series_title: seriesTitle,
@@ -269,6 +308,7 @@ async function getLatestPublication(seriesKey: string, seriesTitle: string) {
   return {
     cached: false,
     latestVolume,
+    publishedDate,
     source: latestVolume ? 'Rakuten Books' : null,
   };
 }
@@ -533,7 +573,39 @@ function jsonResponse(body: unknown, status = 200) {
   });
 }
 
-async function lookupLatestSeriesVolume(seriesTitle: string) {
+// Bound each run so remaining work can be resumed by the next scheduled check.
+function createPacedPublicationLookup({
+  lookup = lookupLatestSeriesPublication,
+  wait = (milliseconds: number) => new Promise(resolve => setTimeout(resolve, milliseconds)),
+  now = () => Date.now(),
+  budgetMs = 85_000,
+} = {}) {
+  const deadline = now() + budgetMs;
+  let nextAllowedAt = 0;
+  let rateLimited = false;
+  return async (seriesTitle: string, progress = async (_stage: string) => {}) => {
+    if (rateLimited) throw new Error('Rakuten Books HTTP 429: remaining lookups postponed');
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const delay = Math.max(0, nextAllowedAt - now());
+      if (now() + delay + 15_000 > deadline) throw new Error('DEFERRED_CHECK');
+      if (delay) await wait(delay);
+      await progress('provider');
+      try {
+        return await lookup(seriesTitle);
+      } catch (error) {
+        if (notificationFailureReason(error) !== 'rate_limit') throw error;
+        if (attempt === 1) { rateLimited = true; throw error; }
+        await progress('retry_wait');
+        nextAllowedAt = now() + 5_000;
+      } finally {
+        nextAllowedAt = Math.max(nextAllowedAt, now() + 2_000);
+      }
+    }
+    throw new Error('DEFERRED_CHECK');
+  };
+}
+
+async function lookupLatestSeriesPublication(seriesTitle: string) {
   const startedAt = Date.now();
   const params = {
     hits: '30',
@@ -543,6 +615,7 @@ async function lookupLatestSeriesVolume(seriesTitle: string) {
     title: seriesTitle,
   };
   const response = await fetch(`${SUPABASE_URL}/functions/v1/rakuten-books`, {
+    signal: AbortSignal.timeout(15_000),
     body: JSON.stringify({
       params,
       path: 'BooksBook/Search/20170404',
@@ -583,12 +656,37 @@ async function lookupLatestSeriesVolume(seriesTitle: string) {
   if (!payload.ok) throw new Error(`Rakuten Books HTTP ${payload.status}`);
   if (!isRakutenBooksResponse(payload.body)) throw new Error('Invalid Rakuten Books response');
 
-  const volumes = payload.body.Items
-    ?.map((entry) => entry.Item?.title)
-    .map((title) => (title ? parseVolumeNumber(title) : null))
-    .filter((volume): volume is number => !!volume && volume > 0 && volume <= 500);
+  return latestPublicationFromItems(payload.body.Items ?? []);
+}
 
-  return volumes && volumes.length > 0 ? Math.max(...volumes) : null;
+function latestPublicationFromItems(items: NonNullable<RakutenBooksResponse['Items']>) {
+  let latestVolume: number | null = null;
+  let publishedDate: string | null = null;
+  for (const entry of items) {
+    const volume = entry.Item?.title ? parseVolumeNumber(entry.Item.title) : null;
+    if (!volume || volume <= 0 || volume > 500) continue;
+    const date = typeof entry.Item?.salesDate === 'string' && entry.Item.salesDate.trim()
+      ? entry.Item.salesDate.trim() : null;
+    if (latestVolume === null || volume > latestVolume) {
+      latestVolume = volume;
+      publishedDate = date;
+    } else if (volume === latestVolume && !publishedDate && date) {
+      publishedDate = date;
+    }
+  }
+  return { latestVolume, publishedDate };
+}
+
+function notificationFailureReason(error: unknown) {
+  const message = describeError(error);
+  if (/DEFERRED_CHECK/.test(message)) return 'deferred';
+  if (/429|rate.?limit|too many/i.test(message)) return 'rate_limit';
+  if (/timeout|timed out|aborted/i.test(message)) return 'timeout';
+  if (/fetch failed|network|hostname|dns|connection/i.test(message)) return 'network';
+  if (/HTTP 5\d\d/i.test(message)) return 'service_unavailable';
+  if (/HTTP 4\d\d/i.test(message)) return 'request_rejected';
+  if (/Invalid Rakuten/i.test(message)) return 'invalid_response';
+  return 'unknown';
 }
 
 async function writeOperationLog(input: {
@@ -634,6 +732,7 @@ function parseVolumeNumber(title: string) {
 async function insertNotificationLog(
   subscription: SubscriptionRow,
   latestVolume: number,
+  publishedDate: string | null = null,
 ) {
   const { error } = await supabase.from('notification_logs').insert({
     series_key: subscription.series_key,
@@ -641,6 +740,7 @@ async function insertNotificationLog(
     status: 'pending',
     user_id: subscription.user_id,
     volume_number: latestVolume,
+    published_date: publishedDate,
   });
 
   if (!error) return true;
