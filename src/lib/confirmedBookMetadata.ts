@@ -9,6 +9,8 @@ export type ConfirmedBookMetadata = {
   subtitle?: string | null;
   series_title?: string | null;
   volume_number?: number | null;
+  book_format?: 'comic' | 'novel' | 'unknown' | null;
+  volume_kind?: 'main' | 'extra' | null;
   author?: string | null;
   publisher?: string | null;
   description?: string | null;

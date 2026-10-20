@@ -1,3 +1,4 @@
+import {registerSeriesVolumeCovers} from './shushuka-series-volumes.mjs';
 import { createHash, timingSafeEqual } from 'node:crypto';
 
 const POLICY = 'honnoma-content-v2-audience';
@@ -28,43 +29,103 @@ async function rpc(db, name, args) {
   if (error) throw new Error(`Database operation failed: ${name}`);
   return data;
 }
-export async function fetchBook(db, isbn, fetcher = fetch) {
+export async function fetchBook(db, isbn, fetcher = fetch, ignoredCovers = new Set()) {
+  let primary = null;
+  const choose = book => {
+    if (ignoredCovers.has(book.cover_url)) book={...book,cover_url:null};
+    primary = primary ? {...book,...primary,cover_url:primary.cover_url||book.cover_url} : book;
+    return primary;
+  };
   // Administrator-confirmed exact-ISBN records precede providers; client-editable cache rows never do.
   if (typeof db.from === 'function') {
     const { data, error } = await db.from('confirmed_book_metadata').select('metadata').eq('normalized_isbn', isbn).eq('enabled', true).maybeSingle();
     if (error) throw new Error('Confirmed metadata unavailable');
     const info = data?.metadata;
-    if (info?.normalized_isbn === isbn && info.title) return {
+    if (info?.normalized_isbn === isbn && info.title) {
+      primary = {
       title: String(info.title).slice(0, 1000), publisher: info.publisher || '', imprint: '',
-      description: String(info.description ?? '').slice(0, 20000), cover_url: info.thumbnail_url || null,
+      description: String(info.description ?? '').slice(0, 20000), cover_url: ignoredCovers.has(info.thumbnail_url) ? null : info.thumbnail_url || null,
       source_url: info.source_url || '', provider: 'administrator',
     };
+      if(primary.cover_url) return primary;
+    }
   }
-  const result = await db.functions.invoke('rakuten-books', { body: {
+  const result = await db.functions.invoke('rakuten-books', { signal: AbortSignal.timeout(8000), body: {
     path: 'BooksBook/Search/20170404', params: { isbn, hits: '1', format: 'json' },
   }}).catch(() => ({ error: true }));
   const body = result.data?.body;
   const rakuten = body?.Items?.map(item => item.Item ?? item).find(item => item.isbn === isbn);
-  if (!result.error && rakuten?.title) return {
+  if (!result.error && rakuten?.title) {
+    choose({
     title: String(rakuten.title).slice(0, 1000), publisher: rakuten.publisherName || '', imprint: rakuten.seriesName || '', description: String(rakuten.itemCaption ?? '').slice(0, 20000),
     cover_url: rakuten.largeImageUrl || rakuten.mediumImageUrl || null,
     source_url: `https://books.rakuten.co.jp/search?sitem=${isbn}`, provider: 'rakuten',
-  };
+    });
+    if(primary.cover_url)return primary;
+  }
   try {
     const [item] = await checked(await fetcher(`https://api.openbd.jp/v1/get?isbn=${isbn}`, { signal: AbortSignal.timeout(15000), redirect: 'error' }));
     if (item?.summary?.isbn === isbn && item.summary.title) {
       const text = (item.onix?.CollateralDetail?.TextContent ?? []).map(x => typeof x.Text === 'string' ? x.Text : '').join('\n');
-      return { title: String(item.summary.title).slice(0, 1000), publisher: item.summary.publisher || '', imprint: item.summary.series || '', description: text.slice(0, 20000),
-        cover_url: item.summary.cover || null, source_url: `https://api.openbd.jp/v1/get?isbn=${isbn}`, provider: 'openbd' };
+      choose({ title: String(item.summary.title).slice(0, 1000), publisher: item.summary.publisher || '', imprint: item.summary.series || '', description: text.slice(0, 20000),
+        cover_url: item.summary.cover || null, source_url: `https://api.openbd.jp/v1/get?isbn=${isbn}`, provider: 'openbd' });
+      if(primary.cover_url)return primary;
     }
   } catch { /* Try another provider without publishing an incomplete result. */ }
-  const google = await checked(await fetcher(`https://www.googleapis.com/books/v1/volumes?q=isbn:${isbn}&maxResults=5`, { signal: AbortSignal.timeout(15000), redirect: 'error' }));
+  let google;
+  try { google = await checked(await fetcher(`https://www.googleapis.com/books/v1/volumes?q=isbn:${isbn}&maxResults=5`, { signal: AbortSignal.timeout(15000), redirect: 'error' })); } catch(error) { if(primary)return primary; throw error; }
   const book = google.items?.find(x => x.volumeInfo?.industryIdentifiers?.some(id => id.identifier === isbn));
-  if (!book?.volumeInfo?.title) throw new Error('No exact ISBN match');
+  if (!book?.volumeInfo?.title) { if(primary)return primary; throw new Error('No exact ISBN match'); }
   const info = book.volumeInfo;
-  return { title: String(info.title).slice(0, 1000), publisher: info.publisher || '', imprint: '', description: String(info.description ?? '').slice(0, 20000),
+  return choose({ title: String(info.title).slice(0, 1000), publisher: info.publisher || '', imprint: '', description: String(info.description ?? '').slice(0, 20000),
     cover_url: (info.imageLinks?.thumbnail ?? '').replace(/^http:/, 'https:') || null,
-    source_url: `https://books.google.com/books?id=${encodeURIComponent(book.id)}`, provider: 'google' };
+    source_url: `https://books.google.com/books?id=${encodeURIComponent(book.id)}`, provider: 'google' });
+}
+const htmlText=value=>String(value??'').replace(/&amp;/g,'&').replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/&#(\d+);/g,(_,n)=>String.fromCodePoint(Number(n)));
+export async function searchBookPages(query,fetcher=fetch) {
+  const response=await fetcher(`https://books.rakuten.co.jp/search?sitem=${encodeURIComponent(query)}&g=001`,{redirect:'error',signal:AbortSignal.timeout(15000)});
+  if(!response.ok)return [];
+  const html=await response.text();
+  const ids=[...new Set([...html.matchAll(/(?:https:\/\/books\.rakuten\.co\.jp)?\/rb\/(\d+)\//g)].map(x=>x[1]))].slice(0,3);
+  const items=[];
+  for(const id of ids){
+    try{
+      const source=`https://books.rakuten.co.jp/rb/${id}/`;
+      const result=await fetcher(source,{redirect:'error',signal:AbortSignal.timeout(15000)});if(!result.ok)continue;
+      const page=await result.text();
+      const meta=name=>{for(const tag of page.match(/<meta\b[^>]*>/gi)??[]){if(!tag.includes(`"${name}"`))continue;const match=tag.match(/content="([^"]*)"/i);if(match)return htmlText(match[1]);}return '';};
+      const image=meta('og:image');const parsed=new URL(image);
+      if(parsed.hostname!=='tshop.r10s.jp'||!/^\/book\/cabinet\/\d{4}\/(?:978|979)\d{10}[^/]*\.(?:jpg|png|webp)$/.test(parsed.pathname))continue;
+      const isbn=parsed.pathname.match(/(?:978|979)\d{10}/)?.[0];if(!validIsbn(isbn))continue;
+      const title=meta('og:title').replace(/\s+[（(][^()（）]*[)）]\s*$/,'').trim();if(!title)continue;
+      items.push({isbn,title,cover_url:`https://thumbnail.image.rakuten.co.jp/@0_mall${parsed.pathname}?_ex=600x600`,source_url:source});
+    }catch{/* Product page unavailable or not an exact ISBN image. */}
+  }
+  return items;
+}
+export async function fetchBookWithCover(db, isbn, fetcher = fetch) {
+  const ignored = new Set();
+  let book = null;
+  for (let attempt=0; attempt<3; attempt++) {
+    try{book = await fetchBook(db, isbn, fetcher, ignored);}catch{break;}
+    // Shueisha's official image path is keyed by the verified ISBN, never a title guess.
+    if (!book.cover_url && isbn.startsWith('978408')) {
+      const official=`https://dosbg3xlm0x1t.cloudfront.net/images/items/${isbn}/500/${isbn}.jpg`;
+      if (!ignored.has(official)) book={...book,cover_url:official};
+    }
+    if (!book.cover_url) break;
+    try { return {book,image:await fetchCover(book.cover_url,fetcher)}; }
+    catch { ignored.add(book.cover_url); }
+  }
+  try {
+    const item=(await searchBookPages(isbn,fetcher)).find(item=>item.isbn===isbn);
+    if(item&&!ignored.has(item.cover_url)){
+      const image=await fetchCover(item.cover_url,fetcher);
+      return {book:{...(book??{title:item.title,publisher:'',imprint:'',description:'',provider:'rakuten-page'}),cover_url:item.cover_url,source_url:item.source_url},image};
+    }
+  }catch{/* Keep metadata editable; a missing source is never a public approval. */}
+  if(!book)throw new Error('No exact ISBN match');
+  return {book:{...book,cover_url:null},image:null};
 }
 export async function fetchCover(url, fetcher = fetch) {
   if (!safeCoverUrl(url)) throw new Error('Unapproved image host');
@@ -199,15 +260,31 @@ export function createReviewService(db, env = process.env, deps = {}) {
     const valid = [...new Set(isbns)].filter(validIsbn).slice(0,20);
     if (valid.length) await rpc(db, 'enqueue_book_content_reviews', { p_isbns: valid });
   }
+  let preparationRunning = false;
+  async function preparePending() {
+    if(preparationRunning)return {prepared:[],skipped:[],failed:[]};
+    preparationRunning=true;
+    try {
+    if (!db) return {prepared:[],skipped:[],failed:[]};
+    const {data:jobs,error}=await db.from('book_content_review_jobs').select('isbn13')
+      .in('status',['queued','retry']).is('adult_only',null).is('candidate->>title',null)
+      .lte('available_at',new Date().toISOString()).order('created_at',{ascending:true}).limit(3);
+    if(error)throw error;
+    const result=await prepare((jobs??[]).map(job=>job.isbn13));
+    for(const isbn of result.failed) await db.from('book_content_review_jobs')
+      .update({available_at:new Date(Date.now()+3600000).toISOString(),reason:'書誌・表紙の取得に失敗しました。1時間後に再試行します。'})
+      .eq('isbn13',isbn).in('status',['queued','retry']).is('candidate->>title',null);
+    return result;
+    } finally { preparationRunning=false; }
+  }
   async function prepare(isbns) {
     const result={prepared:[],skipped:[],failed:[]};
     for(const isbn of [...new Set(isbns)]) {
       try {
         const {data:job,error}=await db.from('book_content_review_jobs').select('status,candidate,classification_source,adult_only').eq('isbn13',isbn).maybeSingle();
         if(error)throw error;
-        if(!job||job.candidate?.title||job.classification_source||job.adult_only!==null||!['queued','retry'].includes(job.status)){result.skipped.push(isbn);continue;}
-        const book=await fetchBook(db,isbn,fetcher);
-        const image=book.cover_url?await fetchCover(book.cover_url,fetcher):null;
+        if(!job||(job.candidate?.title&&job.candidate?.cover_hash)||job.classification_source||job.adult_only!==null||!['queued','retry','pending_review'].includes(job.status)){result.skipped.push(isbn);continue;}
+        const {book,image}=await fetchBookWithCover(db,isbn,fetcher);
         const candidate={...book,cover_hash:image?.hash??null,review_origin:'registration'};
         const hash=sha(JSON.stringify(candidate));
         const saved=await rpc(db,'prepare_book_content_review',{p_isbn:isbn,p_hash:hash,p_candidate:candidate});
@@ -216,7 +293,7 @@ export function createReviewService(db, env = process.env, deps = {}) {
     }
     return result;
   }
-  return { ready, mailReady, run, enqueue, prepare };
+  return { ready, mailReady, run, enqueue, prepare, preparePending };
 }
 export function registerReviewPublic(app, db, service) {
   const intake = new Map();
@@ -228,6 +305,7 @@ export function registerReviewPublic(app, db, service) {
     const bucket = intake.get(key) ?? { count: 0, until: now + 60000 };
     intake.set(key,bucket); return ++bucket.count <= 60;
   }
+  registerSeriesVolumeCovers(app,db,allowed);
   app.options('/api/book-content-review', (_req, res) => res.set('Access-Control-Allow-Origin','*').set('Access-Control-Allow-Headers','Content-Type').sendStatus(204));
   app.post('/api/book-content-review', async (req, res) => {
     res.set('Access-Control-Allow-Origin','*');
@@ -246,11 +324,23 @@ export function registerReviewPublic(app, db, service) {
       const expected = Buffer.from(`Bearer ${data.worker_token}`);
       if (provided.length !== expected.length || !timingSafeEqual(provided, expected)) return res.sendStatus(401);
       if (req.body?.action === 'status') return res.json({ enabled: data.enabled, apiReady: service.ready(), mailReady: service.mailReady() });
+      if (req.body?.action === 'repair-missing-covers') {
+        const ids=req.body.book_ids;
+        if(!Array.isArray(ids)||!ids.length||ids.length>5||!ids.every(id=>typeof id==='string'&&/^[0-9a-f-]{36}$/i.test(id)))return res.status(400).json({error:'Up to 5 book IDs only'});
+        const {retrieveMissingBookCover}=await import('./shushuka-missing-covers.mjs');
+        const outcomes=[];
+        for(const id of [...new Set(ids)]){
+          try{outcomes.push({id,result:await retrieveMissingBookCover(db,id)});}catch(error){outcomes.push({id,result:'failed',stage:['read-book','fetch-cover','save-cover'].includes(error.stage)?error.stage:'search',code:/^[A-Z0-9]{2,12}$/.test(error.code??'')?error.code:undefined});}
+        }
+        return res.json({outcomes});
+      }
       if (req.body?.action === 'prepare') {
         const isbns=req.body.isbns;
         if(!Array.isArray(isbns)||!isbns.length||isbns.length>3||!isbns.every(validIsbn))return res.status(400).json({error:'Up to 3 valid ISBNs only'});
         return res.json(await service.prepare(isbns));
       }
+      const preparation=await service.preparePending?.();
+      if (req.body?.action === 'prepare-pending') return res.json(preparation??{});
       if (!data.enabled || !service.ready()) return res.status(200).json({ enabled: false });
       await service.run(); res.json({ ok: true });
     } catch { res.status(503).json({ error: 'Worker unavailable' }); }

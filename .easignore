@@ -1,9 +1,56 @@
-.env
-.env*.local
+# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
+
+# dependencies
+node_modules/
+
+# Expo
 .expo/
 dist/
-node_modules/
+web-build/
+expo-env.d.ts
+
+# Native
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro
+.metro-health-check*
+
+# debug
 npm-debug.*
 yarn-debug.*
 yarn-error.*
+
+# macOS
+.DS_Store
+*.pem
+
+# local env files
+.env
+.env.*
+.env*.local
+!.env.example
+
+# Supabase local project metadata
+supabase/.temp/
+
+# typescript
 *.tsbuildinfo
+
+# generated native folders
+/ios
+/android
+
+# EAS/icon inspection artifacts
+eas-inspect/
+latest-ios-build.ipa
+latest-ios-build-unpacked/
+icon-debug-sheet.png
+icon-ipa-compare.png
+
+eas-build-*.txt

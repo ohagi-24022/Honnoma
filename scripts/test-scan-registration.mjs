@@ -100,7 +100,7 @@ const bulkContext = {
   bulkFillMissingTargets: [5, 6, 7].map((n) => ({ ...item, volumeNumber: n, title: `化物語 ${n}` })),
   setBulkFillRunning() {}, setBulkFillProgress() {}, setBulkFillOpen() {}, setBulkFillTargetVolume() {}, refreshLibrary() {},
   Alert: { alert: (...args) => alerts.push(args) }, addMissingVolume,
-  lookupBookByTitle: async (title) => { providerCalls.push(title); const n = Number(title.match(/(\d+)巻/)[1]); return { ...metadata, title: `化物語（${n}）`, volumeNumber: n, isbn: `isbn-${n}` }; },
+  lookupMissingMetadata: async (title) => { providerCalls.push(title); const n = Number(title.match(/(\d+)巻/)[1]); return { ...metadata, title: `化物語（${n}）`, volumeNumber: n, isbn: `isbn-${n}` }; },
   addBook: async (input) => { if (input.volumeNumber === 5 && failFive) throw new DuplicateBookError('ISBN conflict', 'isbn'); const book = { ...input, id: input.isbn, userId: 'local-user', createdAt: '' }; bulkBooks.push(book); return book; },
   wait: async () => {}, MISSING_VOLUME_QUEUE_INTERVAL_MS: 6500,
 };
@@ -171,6 +171,8 @@ tourFocus=null;tree=render();
 assert.equal(find(tree, (n) => n.type === 'ScrollView').props.keyboardShouldPersistTaps, 'handled');
 find(tree, (n) => n.type === 'Pressable' && content(n) === 'スキャン停止').props.onPress();
 tree = render(); assert.ok(!find(tree, (n) => n.type === 'CameraView'));
+assert.match(content(tree),/スキャン停止中/);
+assert.ok(find(tree,n=>n.type==='View'&&n.props?.style?.aspectRatio===0.74),'Stopped preview keeps the same camera aspect ratio.');
 find(tree, (n) => n.type === 'Pressable' && content(n) === 'スキャン再開').props.onPress();
 tree = render(); assert.ok(find(tree, (n) => n.type === 'CameraView'));
 find(tree, (n) => n.type === 'Switch').props.onValueChange(true);
@@ -234,6 +236,8 @@ assert.equal(nodes(tree).filter(n=>n.props?.placeholder==='作品名・巻数で
 // Series registration starts from the scanner, preserving manual title search separately.
 find(tree,n=>n.type==='Pressable' && content(n)==='修正する').props.onPress();
 tree=render();
+const row=find(tree,n=>n.type==='View' && ['通常','連続登録','シリーズ登録'].every(label => [n.props?.children].flat(Infinity).some(child => content(child)===label)));
+assert.ok(row,'All registration modes share one horizontal row.');
 find(tree,n=>n.props?.accessibilityLabel==='スキャンからシリーズ登録を始める').props.onPress();
 tree=render();
 assert.ok(find(tree,n=>n.type==='CameraView'),'Series registration activates the camera.');
@@ -278,3 +282,30 @@ resolveBeforeTour(metadata);await scanBeforeTour;
 tree=render();assert.equal(find(tree,n=>n.type==='Pressable'&&content(n)==='修正する'),undefined);
 assert.equal(registrationAdds.length,1,'The tour does not register a late lookup result.');
 console.log('Scan and registration: keyboard taps, inline search progress, loading animation, double taps, validation, failure recovery, camera stop/manual/background, exact 化物語5 ISBN, safe duplicate handling, title candidates/progress/errors/selection, bulk registration entry and editable route panel: OK');
+
+// A fresh continuous session must not carry rejected barcode notices into review.
+states.length=0;refs.length=0;tourFocus=null;focused=true;tree=render();for(const effect of effects)effect();
+find(tree,n=>n.type==='Pressable'&&content(n)==='連続登録').props.onPress();tree=render();
+lookupImpl=async()=>({...metadata,bookFormat:'novel'});
+await find(tree,n=>n.type==='CameraView').props.onBarcodeScanned({data:metadata.isbn});
+await new Promise(resolve=>setTimeout(resolve,0));
+await new Promise(resolve=>setTimeout(resolve,750));
+tree=render();await find(tree,n=>n.type==='CameraView').props.onBarcodeScanned({data:'1929979006006'});
+tree=render();assert.match(content(tree),/分類・価格コード/);
+find(tree,n=>n.type==='Pressable'&&content(n)==='スキャン停止').props.onPress();tree=render();
+assert(!content(tree).includes('分類・価格コード'),'Rejected barcode notice is cleared on entering queue review.');
+assert.match(content(tree),/登録する本の内容を確認/);
+const beforeQueuedAdd=registrationAdds.length;
+find(tree,n=>n.type==='Pressable'&&content(n)==='まとめて追加').props.onPress();
+await new Promise(resolve=>setTimeout(resolve,0));
+assert.equal(registrationAdds.length,beforeQueuedAdd+1);
+assert.equal(registrationAdds.at(-1).bookFormat,'novel','Continuous registration retains the lookup format.');
+console.log('Scanner regressions: stable paused preview, no stale invalid-code notice in queue review, novel format survives continuous registration: OK');
+
+// A catalog cover has an exact ISBN, which also survives adding into a renamed series.
+const catalogMissing={...item,seriesTitle:'自分の化物語',title:'自分の化物語 5',isbn:metadata.isbn,thumbnailUrl:'https://example.test/correct.jpg'};
+const catalogInput=missingVolumeInput(catalogMissing,metadata);
+assert.equal(catalogInput.isbn,metadata.isbn);assert.equal(catalogInput.seriesTitle,catalogMissing.seriesTitle);
+assert.equal(missingVolumeInput(catalogMissing,{...metadata,isbn:'9784065171219'}).isbn,undefined);
+let passedIsbn;await addMissingVolume(catalogMissing,[],async(_title,isbn)=>{passedIsbn=isbn;return metadata;},add);assert.equal(passedIsbn,metadata.isbn);
+console.log('Missing catalog registration: selected ISBN forwarded, user series name preserved, other ISBN rejected: OK');

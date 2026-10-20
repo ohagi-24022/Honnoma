@@ -22,7 +22,7 @@ let calls=0;
 const matched=await fetchBook({functions:{invoke:async()=>({data:{body:{Items:[{Item:{isbn:'9784088914764',title:'Wrong'}}]}}})}},'9784088914763',async(url)=>{
   calls++;return new Response(JSON.stringify(url.includes('openbd')?[{summary:{isbn:'9784088914763',title:'Correct',cover:''}}]:{}));
 });
-assert.equal(matched.title,'Correct');assert.equal(calls,1);
+assert.equal(matched.title,'Correct');assert.equal(calls,2); // Missing cover continues to an exact-ISBN provider.
 let request;
 const result=await assessContent(book,image,{OPENAI_API_KEY:'fake'},async(url,options)=>{
   request=JSON.parse(options.body);return new Response(JSON.stringify({status:'completed',output:[{content:[{type:'output_text',text:JSON.stringify(assessment)}]}]}));

@@ -1,4 +1,5 @@
-import { isNisekoiUrabanaTitle, knownCompanionByIsbn } from './knownCompanionBooks';
+import { verifiedStandardBooks } from './verifiedStandardBooks';
+import { isNisekoiUrabanaTitle, knownCompanionByIsbn, knownCompanionByTitle } from './knownCompanionBooks';
 import { verifiedBakemonogatariBooks } from './verifiedBakemonogatari';
 import type { BookFormat } from '../types';
 
@@ -10,14 +11,16 @@ type FormatHints = { title?: string; seriesTitle?: string; isbn?: string; labels
 
 /** Use explicit bibliographic labels, never assume that a paperback is a novel. */
 export function inferBookFormat(input: FormatHints): BookFormat {
-  if (knownCompanionByIsbn(input.isbn) || isNisekoiUrabanaTitle(input.title) || isNisekoiUrabanaTitle(input.seriesTitle)) return 'novel';
-  if (input.isbn && verifiedBakemonogatariBooks.some(book => book.isbn === input.isbn)) return 'comic';
+  if (input.isbn === '9784797386769') return 'novel'; // GA文庫「りゅうおうのおしごと！2」
+  if (knownCompanionByIsbn(input.isbn) || knownCompanionByTitle(input.title) || isNisekoiUrabanaTitle(input.title) || isNisekoiUrabanaTitle(input.seriesTitle)) return 'novel';
+  if (input.isbn && [...verifiedBakemonogatariBooks, ...verifiedStandardBooks].some(book => book.isbn === input.isbn)) return 'comic';
   if (input.isbn === '9784832273146') return 'comic'; // 芳文社公式「がっこうぐらし！～おたより～」
   const labels = (input.labels ?? []).join(' ').normalize('NFKC');
   const title = [input.title, input.seriesTitle].filter(Boolean).join(' ').normalize('NFKC');
+  if (/JUMP\s*j\s*BOOKS|ジャンプ\s*ジェイ\s*ブックス/i.test(labels)) return 'novel';
   const evidence = `${labels} ${title} ${input.size ?? ''}`;
   if (String(input.size) === '9' || /コミック|コミックス|漫画|マンガ|まんが|comics|graphic novels|manga/i.test(evidence)) return 'comic';
-  if (/小説(?!家)|ライトノベル|ノベライズ|\bnovels?\b|\blight novels?\b|電撃文庫|GA文庫|MF文庫J|富士見ファンタジア文庫|角川スニーカー文庫|ガガガ文庫|講談社ラノベ文庫/i.test(evidence)) return 'novel';
+  if (/小説(?!家)|ライトノベル|ノベライズ|\bnovels?\b|\blight novels?\b|電撃文庫|GA文庫|MF文庫J|富士見ファンタジア文庫|角川スニーカー文庫|ガガガ文庫|講談社ラノベ文庫|JUMP\s*j\s*BOOKS|ジャンプ\s*ジェイ\s*ブックス/i.test(evidence)) return 'novel';
   return 'unknown';
 }
 export function resolveBookFormat(input: FormatHints & { bookFormat?: BookFormat | null }): BookFormat {

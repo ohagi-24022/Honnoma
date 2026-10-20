@@ -328,11 +328,11 @@ export default function BookDetailsScreen() {
         </Pressable>
       </View>
 
-      {reviewedContent?.description ? (
-        <Text style={[styles.description, { color: colors.text }]}>{reviewedContent.description}</Text>
+      {showBookContent && (reviewedContent?.description || details?.description) ? (
+        <Text style={[styles.description, { color: colors.text }]}>{reviewedContent?.description || details?.description}</Text>
       ) : (
         <Text style={[styles.descriptionEmpty, { color: colors.muted }]}>
-          {!showBookContent ? '紹介文の表示は設定でOFFになっています。' : '確認済みの紹介文はまだありません。書名・巻数・読書記録は引き続き利用できます。'}
+          {!showBookContent ? '紹介文の表示は設定でOFFになっています。' : loading ? '紹介文を確認しています…' : error ? '紹介文を読み込めませんでした。右上の更新ボタンから再試行できます。' : 'この巻の紹介文はまだ見つかりませんでした。'}
         </Text>
       )}
 

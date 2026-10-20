@@ -21,10 +21,12 @@ export function ownsMissingVolume(books: Book[], item: MissingBook) {
 
 export function missingVolumeInput(item: MissingBook, metadata: BookInput | null): BookInput {
   const parsed = metadata ? parseSeriesTitle(metadata.title) : null;
+  const sameIdentity = !!item.isbn && metadata?.isbn === item.isbn;
   const matches = metadata && metadata.volumeNumber === item.volumeNumber
-    && parsed?.volumeNumber === item.volumeNumber
-    && normalizeSeriesKey(metadata.seriesTitle) === normalizeSeriesKey(item.seriesTitle)
-    && normalizeSeriesKey(parsed.seriesTitle) === normalizeSeriesKey(item.seriesTitle)
+    && (sameIdentity || parsed?.volumeNumber === item.volumeNumber)
+    && (!item.isbn || metadata.isbn === item.isbn)
+    && ((item.isbn && metadata.isbn === item.isbn) || (normalizeSeriesKey(metadata.seriesTitle) === normalizeSeriesKey(item.seriesTitle)
+      && normalizeSeriesKey(parsed?.seriesTitle ?? '') === normalizeSeriesKey(item.seriesTitle)))
     && normalizeVolumeKind(metadata.volumeKind, metadata.title) === 'main'
     && !/特装版|限定版|完全版|文庫版|新装版|愛蔵版/.test(metadata.title);
   return {
@@ -55,11 +57,11 @@ export function missingRegistrationTargets(seriesTitle: string, books: Book[], t
 export async function addMissingVolume(
   item: MissingBook,
   books: Book[],
-  lookup: (title: string) => Promise<BookInput | null>,
+  lookup: (title: string, isbn?: string) => Promise<BookInput | null>,
   add: (input: BookInput) => Promise<Book>,
 ): Promise<Book | null> {
   if (ownsMissingVolume(books, item)) return null;
-  const input = missingVolumeInput(item, await lookup(`${item.seriesTitle} ${item.volumeNumber}巻`));
+  const input = missingVolumeInput(item, await lookup(`${item.seriesTitle} ${item.volumeNumber}巻`, item.isbn));
   const normalizeIsbn = (value?: string) => value?.replace(/[^0-9X]/gi, '').toUpperCase();
   const conflict = input.isbn && books.find((book) => normalizeIsbn(book.isbn) === normalizeIsbn(input.isbn));
   if (conflict) {
@@ -73,4 +75,17 @@ export async function addMissingVolume(
     if (isDuplicateBookError(error) && error.reason === 'volume') return null;
     throw error;
   }
+}
+
+/** Fill legacy bulk placeholders only after title, volume and ISBN agree. */
+export function canFillMissingBookIdentity(book: Book, metadata: BookInput | null, books: Book[]) {
+  const isbn = metadata?.isbn?.replace(/[^0-9]/g, '');
+  if (book.isbn || !metadata || !isbn || !/^(978|979)[0-9]{10}$/.test(isbn)
+    || [...isbn].reduce((sum, digit, index) => sum + Number(digit) * (index % 2 ? 3 : 1), 0) % 10 !== 0) return false;
+  if (metadata.volumeNumber !== book.volumeNumber
+    || normalizeSeriesKey(parseSeriesTitle(metadata.title).seriesTitle) !== normalizeSeriesKey(parseSeriesTitle(book.title).seriesTitle)
+    || /特装版|限定版|完全版|文庫版|新装版|愛蔵版/.test(metadata.title)) return false;
+  const publisher = (s?: string) => s?.normalize('NFKC').replace(/\s/g, '');
+  if (book.publisher && metadata.publisher && publisher(book.publisher) !== publisher(metadata.publisher)) return false;
+  return !books.some(other => other.id !== book.id && other.isbn === isbn);
 }

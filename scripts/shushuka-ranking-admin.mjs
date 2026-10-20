@@ -21,7 +21,26 @@ export async function rankingCandidates(db){
   ]);
   const approved=new Map(covers.filter(x=>x.enabled).map(x=>[x.isbn13,x]));
   const aliases=new Map(aliasRows.map(row=>[row.alias_key,row.ranking_key]));
-  const resolveKey=title=>aliases.get(rankingKey(title))??rankingKey(title);
+  const parseTitle=title=>String(title??'').normalize('NFKC').match(/^(.*?)\s*(?:[.．]?\s*(?:volume|vol\.?)[ \t]*|第\s*|\(\s*)?(\d+)\s*(?:巻|\))?$/i);
+  // Only collapse a subtitle/punctuation variant when the plain series is also present.
+  // Keep Japanese subtitles (including spin-offs) and explicit operator aliases intact.
+  const knownNames=new Map();
+  const remember=title=>{if(title)knownNames.set(rankingKey(title),title);};
+  for(const row of catalog)remember(row.title);
+  for(const job of jobs){
+    remember(job.candidate?.series_title);
+    const title=String(job.candidate?.title??job.title??'').normalize('NFKC').trim();
+    const parsed=parseTitle(title);
+    if(parsed&&/(?:\s+\d+|\(\s*\d+\s*\)|\d+巻|(?:volume|vol\.?)\s*\d+)$/i.test(title))remember(parsed[1].trim());
+  }
+  const canonicalTitle=title=>{
+    const text=String(title).normalize('NFKC').trim();
+    if(aliases.has(rankingKey(text)))return text;
+    const translated=text.match(/^(.+?[\u3040-\u30ff\u3400-\u9fff].*?)\s*=\s*[A-Za-z\u00c0-\u024f]/)?.[1]?.trim();
+    const plain=translated??text.replace(/[.]$/, '').trim();
+    return knownNames.get(rankingKey(plain))??text;
+  };
+  const resolveKey=title=>{const key=rankingKey(canonicalTitle(title));return aliases.get(key)??key;};
   const rows=new Map(catalog.filter(row=>!aliases.has(row.ranking_key)).map(row=>[row.ranking_key,{...row,cover_url:row.cover_url??approved.get(row.isbn)?.cover_url??null,registered:true}]));
   const comparable=title=>rankingKey(title).replace(/[!！?？・･ー―〜～「」『』【】]/g,'');
   const series=new Map();
@@ -31,13 +50,14 @@ export async function rankingCandidates(db){
   for(const job of jobs){
     const info=job.candidate;
     if(!info || !/^\d{13}$/.test(job.isbn13))continue;
-    const parsed=String(info.title??job.title??'').normalize('NFKC').match(/^(.*?)\s*(?:[.．]?\s*(?:volume|vol\.?)[ \t]*|第\s*|\(\s*)?(\d+)\s*(?:巻|\))?$/i);
+    const parsed=parseTitle(info.title??job.title);
     const parsedName=parsed?.[1]?.trim();
     const inferred=parsedName&&series.has(comparable(parsedName))?series.get(comparable(parsedName))
       : parsedName&&(/(?:\s+\d+|\(\s*\d+\s*\)|\d+巻|(?:volume|vol\.?)\s*\d+)$/i.test(String(info.title??job.title??'').normalize('NFKC').trim())
         || (Number(info.volume_number)>0&&Number(info.volume_number)===Number(parsed?.[2])))?parsedName:null;
-    const seriesTitle=info.series_title??inferred;
-    if(!seriesTitle)continue;
+    const rawSeriesTitle=info.series_title??inferred;
+    if(!rawSeriesTitle)continue;
+    const seriesTitle=canonicalTitle(rawSeriesTitle);
     const key=resolveKey(seriesTitle);
     if(!key || rows.has(key))continue;
     const prev=selected.get(key);

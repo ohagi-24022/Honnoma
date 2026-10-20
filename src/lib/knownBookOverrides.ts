@@ -3,6 +3,8 @@ const GIFT_KUBO_COVER_URL = 'https://dosbg3xlm0x1t.cloudfront.net/images/items/9
 const GIFT_KUBO_SOURCE_URL = 'https://www.s-manga.net/items/contents.html?isbn=9784088927343';
 
 export type KnownBookMetadataOverride = {
+  bookFormat?: 'comic' | 'novel' | 'unknown';
+  volumeKind?: 'main' | 'extra';
   author?: string;
   description?: string;
   isbn?: string;

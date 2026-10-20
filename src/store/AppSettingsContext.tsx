@@ -49,7 +49,6 @@ type AppSettingsContextValue = AppSettings & {
   setFavoriteSeries: (seriesTitle: string, favorite: boolean) => void;
   setNewReleaseNotifications: (value: boolean) => void;
   setOpenExternalPurchaseLinks: (value: boolean) => void;
-  setShowBookContent: (value: boolean) => void;
   setTrackPurchasePrices: (value: boolean) => void;
   toggleFavoriteSeries: (seriesTitle: string) => void;
 };
@@ -188,7 +187,7 @@ export function AppSettingsProvider({ children }: PropsWithChildren) {
         });
         const { newReleaseNotifications: _legacyNewReleaseNotifications, ...cleanDeviceSettings } = parsedDeviceSettings as Partial<DeviceSettings> & { newReleaseNotifications?: boolean };
         setDeviceSettings({
-          showBookContent: typeof cleanDeviceSettings.showBookContent === 'boolean' ? cleanDeviceSettings.showBookContent : true,
+          showBookContent: true,
           openExternalPurchaseLinks: cleanDeviceSettings.openExternalPurchaseLinks ?? false,
           trackPurchasePrices: cleanDeviceSettings.trackPurchasePrices ?? defaultDeviceSettings.trackPurchasePrices,
         });
@@ -284,8 +283,6 @@ export function AppSettingsProvider({ children }: PropsWithChildren) {
       },
       setOpenExternalPurchaseLinks: (openExternalPurchaseLinks: boolean) =>
         setDeviceSettings((current) => ({ ...current, openExternalPurchaseLinks })),
-      setShowBookContent: (showBookContent: boolean) =>
-        setDeviceSettings((current) => ({ ...current, showBookContent })),
       setTrackPurchasePrices: (trackPurchasePrices: boolean) =>
         setDeviceSettings((current) => ({ ...current, trackPurchasePrices })),
       toggleFavoriteSeries: (seriesTitle: string) => {

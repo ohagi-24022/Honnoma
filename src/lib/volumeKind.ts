@@ -1,4 +1,4 @@
-import { isNisekoiUrabanaTitle } from './knownCompanionBooks';
+import { isNisekoiUrabanaTitle, knownCompanionByTitle } from './knownCompanionBooks';
 import { BookInput, BookVolumeKind } from '../types';
 
 const EXTRA_VOLUME_KEYWORDS = [
@@ -24,12 +24,12 @@ const EXTRA_VOLUME_KEYWORDS = [
   '\u7279\u5225\u7de8',
 ];
 
-const EXTRA_VOLUME_PATTERNS = [/after\s*story/i, /side\s*story/i, /anthology/i, /fan\s*book/i, /guide\s*book/i];
+const EXTRA_VOLUME_PATTERNS = [/オフィシャルデータブック|公式データブック/, /after\s*story/i, /side\s*story/i, /anthology/i, /fan\s*book/i, /guide\s*book/i];
 
 export function inferVolumeKindFromText(value: string | undefined | null): BookVolumeKind {
   const text = value?.normalize('NFKC').trim() ?? '';
   if (!text) return 'main';
-  if (isNisekoiUrabanaTitle(text)) return 'extra';
+  if (isNisekoiUrabanaTitle(text) || knownCompanionByTitle(text)) return 'extra';
   // 芳文社公式: https://www.dokidokivisual.com/comics/5370/
   const knownTitle = text.replace(/[\s!！:：~〜～ー\-()（）]/g, '');
   if (/^がっこうぐらしおたより(?:[0-9]+巻?)?$/.test(knownTitle)) return 'extra';

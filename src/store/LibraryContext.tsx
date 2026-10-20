@@ -1,3 +1,4 @@
+import { planAutomaticLibraryOrganization } from '../lib/libraryOrganization';
 import { resolveBookFormat } from '../lib/bookFormat';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppState } from 'react-native';
@@ -16,7 +17,7 @@ import { getStorageItemWithLegacy, removeStorageItemWithLegacy } from '../lib/as
 import { lookupBookByIsbn, lookupBookByTitle } from '../lib/bookApis';
 import { getBookMetadataOverrideDetails } from '../lib/bookMetadataOverrides';
 import { normalizeAuthor } from '../lib/bookMetadata';
-import { DuplicateBookError } from '../lib/bookRegistration';
+import { canFillMissingBookIdentity, DuplicateBookError } from '../lib/bookRegistration';
 import { createDemoBooks, repairDemoBook } from '../lib/demoLibrary';
 import {
   findDuplicateBook as findDuplicate,
@@ -215,6 +216,8 @@ function metadataDetailsToBookPatch(metadata: Awaited<ReturnType<typeof getBookM
   if (!metadata) return null;
   const patch: Partial<BookInput> = {};
   if (metadata.title) patch.title = metadata.title;
+  if (metadata.bookFormat) patch.bookFormat = metadata.bookFormat;
+  if (metadata.volumeKind) patch.volumeKind = metadata.volumeKind;
   if (typeof metadata.volumeNumber === 'number') patch.volumeNumber = metadata.volumeNumber;
   if (metadata.seriesTitle) patch.seriesTitle = metadata.seriesTitle;
   if (metadata.author) patch.author = metadata.author;
@@ -250,7 +253,7 @@ function bookToBookInput(book: Book): BookInput {
 
 async function lookupBookMetadataWithOverride(book: Book, context?: { source: string; title?: string; reasons?: string[] }) {
   const overridePatch = metadataDetailsToBookPatch(await getBookMetadataOverrideDetails(book));
-  const apiInput = book.isbn ? await safeLookupBookByIsbn(book.isbn, context) : null;
+  const apiInput = book.isbn ? await safeLookupBookByIsbn(book.isbn, context) : await lookupBookByTitle(buildMetadataLookupTitle(book));
   if (!overridePatch) return apiInput;
   return {
     ...(apiInput ?? bookToBookInput(book)),
@@ -474,6 +477,8 @@ export function LibraryProvider({ children }: PropsWithChildren) {
   const [reloadNonce, setReloadNonce] = useState(0);
   const [metadataEnrichmentCacheLoaded, setMetadataEnrichmentCacheLoaded] = useState(false);
   const enrichedIsbnsRef = useRef(new Set<string>());
+  const enrichmentRunning = useRef(false);
+  const [enrichmentPass, setEnrichmentPass] = useState(0);
   const metadataEnrichmentCacheRef = useRef<MetadataEnrichmentCache>({});
   const appStateRefreshAtRef = useRef(0);
   const requiresAuth = false;
@@ -636,18 +641,19 @@ export function LibraryProvider({ children }: PropsWithChildren) {
   }, [configured, initializing, pendingLocalBooks, reloadNonce, user]);
 
   useEffect(() => {
-    if (!configured || !user || !supabase || !metadataEnrichmentCacheLoaded) return;
+    if (!configured || !user || !supabase || !metadataEnrichmentCacheLoaded || enrichmentRunning.current) return;
     const client = supabase;
     const userId = user.id;
     const nowMs = Date.now();
 
     const metadataTargets: MetadataEnrichmentTarget[] = books
       .flatMap((book) => {
-        if (!book.isbn || enrichedIsbnsRef.current.has(book.isbn)) return [];
+        const identity = book.isbn || `title:${book.id}`;
+        if (enrichedIsbnsRef.current.has(identity)) return [];
         const reasons = describeMetadataNeeds(book);
         if (reasons.length === 0) return [];
 
-        const cacheKey = normalizeMetadataCacheKey(book.isbn);
+        const cacheKey = book.isbn ? normalizeMetadataCacheKey(book.isbn) : `title:${book.id}`;
         if (!cacheKey) return [];
         const needsSignature = buildMetadataNeedsSignature(reasons);
         if (shouldSkipMetadataEnrichment(metadataEnrichmentCacheRef.current[cacheKey], needsSignature, nowMs)) {
@@ -659,10 +665,11 @@ export function LibraryProvider({ children }: PropsWithChildren) {
       .slice(0, 10);
 
     if (metadataTargets.length === 0) return;
+    enrichmentRunning.current = true;
 
 
     metadataTargets.forEach(({ book }) => {
-      if (book.isbn) enrichedIsbnsRef.current.add(book.isbn);
+      enrichedIsbnsRef.current.add(book.isbn || `title:${book.id}`);
     });
 
     async function saveMetadataEnrichmentAttempt(target: MetadataEnrichmentTarget, status: MetadataEnrichmentStatus) {
@@ -681,20 +688,20 @@ export function LibraryProvider({ children }: PropsWithChildren) {
     async function enrichBooks() {
       for (const target of metadataTargets) {
         const { book, reasons } = target;
-        if (!book.isbn) continue;
-
         try {
           const lookupTitle = buildMetadataLookupTitle(book);
           const metadata =
             (await lookupBookMetadataWithOverride(book, { source: 'library-auto-enrichment', title: book.title, reasons })) ??
             (await lookupBookByTitle(lookupTitle, book.isbn)) ??
             (lookupTitle === book.title ? null : await lookupBookByTitle(book.title, book.isbn));
-          if (!metadata) {
+          const exactMissingIdentity = canFillMissingBookIdentity(book, metadata, books);
+          if (!metadata || (!book.isbn && !exactMissingIdentity)) {
             await saveMetadataEnrichmentAttempt(target, 'miss');
             continue;
           }
 
           const updates: Partial<BookInput> = {
+            ...(!book.isbn && metadata.isbn ? { isbn: metadata.isbn } : {}),
             thumbnailUrl: metadata.thumbnailUrl ?? (isKnownUnavailableCoverUrl(book.thumbnailUrl) ? '' : book.thumbnailUrl),
             bookFormat: resolveBookFormat(book) === 'unknown' ? metadata.bookFormat ?? book.bookFormat : book.bookFormat,
             listPrice: metadata.listPrice ?? book.listPrice,
@@ -738,8 +745,8 @@ export function LibraryProvider({ children }: PropsWithChildren) {
       }
     }
 
-    enrichBooks();
-  }, [books, configured, metadataEnrichmentCacheLoaded, user]);
+    void enrichBooks().finally(() => { enrichmentRunning.current = false; setEnrichmentPass(value => value + 1); });
+  }, [books, configured, metadataEnrichmentCacheLoaded, user, enrichmentPass]);
 
   const findDuplicateBook = useCallback(
     (bookInput: BookInput) => findDuplicate(books, bookInput),
@@ -1013,6 +1020,8 @@ export function LibraryProvider({ children }: PropsWithChildren) {
       options.updatePurchasePrice && typeof book.purchasePrice !== 'number' && nextListPrice !== null;
     const shouldUpdateListPrice = metadataListPrice !== null && metadataListPrice !== (book.listPrice ?? null);
     const updates: Partial<BookInput> = {
+      ...(canFillMissingBookIdentity(book, metadata, books)
+        ? {isbn:metadata.isbn} : {}),
       seriesTitle: options.preserveIdentity || hasUserSeriesName(book) ? book.seriesTitle : resolveUserSeriesName(books, metadata).seriesTitle,
       bookFormat: resolveBookFormat(book) === 'unknown' ? metadata.bookFormat ?? book.bookFormat : book.bookFormat,
       volumeNumber: options.preserveIdentity ? book.volumeNumber : metadata.volumeNumber,
@@ -1079,6 +1088,28 @@ export function LibraryProvider({ children }: PropsWithChildren) {
       );
     }
   }, [configured, user]);
+
+  const organizationAttempts = useRef(new Set<string>());
+  useEffect(() => {
+    if (!hydrated || loading || initializing) return;
+    const owner = user?.id ?? 'local';
+    const plan = planAutomaticLibraryOrganization(books).filter(item =>
+      !organizationAttempts.current.has(`${owner}:${item.id}:${JSON.stringify(item.patch)}`));
+    if (!plan.length) return;
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      for (const item of plan) {
+        if (cancelled) break;
+        const key = `${owner}:${item.id}:${JSON.stringify(item.patch)}`;
+        if (organizationAttempts.current.has(key)) continue;
+        organizationAttempts.current.add(key);
+        if (organizationAttempts.current.size > 1000) organizationAttempts.current.delete(organizationAttempts.current.values().next().value!);
+        try { await updateBook(item.id, item.patch); }
+        catch { /* Leave the existing book intact; retry on a later session. */ }
+      }
+    }, 300);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [books, hydrated, initializing, loading, updateBook, user?.id]);
 
   const seriesGroups = useMemo(() => buildSeriesGroups(books), [books]);
 

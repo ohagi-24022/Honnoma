@@ -70,7 +70,10 @@ export function overrideValues(body) {
     if (mentioned.some(other => other !== isbn)) throw new Error('URLに含まれるISBNが登録する本と異なります。通常版・限定版の取り違えがないか確認してください。');
   }
   const series=text(body.series_title);const price=number(body.list_price,'価格');
-  return {isbn,normalized_isbn:isbn,title:text(body.title),subtitle:text(body.subtitle),series_title:series,
+  const format=text(body.book_format),kind=text(body.volume_kind);
+  if(format&&!['comic','novel','unknown'].includes(format))throw new Error('本の種類を選択してください。');
+  if(kind&&!['main','extra'].includes(kind))throw new Error('巻の区分を選択してください。');
+  return {isbn,normalized_isbn:isbn,book_format:format,volume_kind:kind,title:text(body.title),subtitle:text(body.subtitle),series_title:series,
     series_key:text(body.series_key) ?? series?.normalize('NFKC').replace(/[\s・･:：\-–—_'"()[\]{}「」『』【】〈〉《》!?！？。.．]/g,'') ?? null,
     volume_number:number(body.volume_number,'巻数'),author:text(body.author),publisher:text(body.publisher),
     thumbnail_url:url(body.thumbnail_url,'表紙URL'),source_url:url(body.source_url,'巻情報URL'),description:text(body.description),
@@ -88,12 +91,14 @@ export function registerOverrideAdmin(app,db,page,e) {
     </style>`;
   const field=(label,name,value,extra='')=>`<label ${extra}>${label}<input name="${name}" value="${e(value??'')}" ${name.includes('url')?'type="url" placeholder="https://…"':name==='isbn'?'required inputmode="numeric" placeholder="978…"':''}></label>`;
   const book=(row,href)=>`<a class="override-book" href="${e(href)}">${previewUrl(row.preview_url)?`<img loading="lazy" src="${e(previewUrl(row.preview_url))}" alt="表紙">`:'<span class="emptyCover cover"></span>'}<span><strong>${e(row.title??'タイトル未取得')}</strong><small>${e(row.publisher??'')} ${row.volume_number?e(row.volume_number)+'巻':''}</small><small>${e(row.isbn??'')} ／ ${e(row.label??'')}</small></span></a>`;
+  const choices=(label,name,value,options)=>`<label>${label}<select name="${name}">${options.map(([v,t])=>`<option value="${v}" ${v===(value??'')?'selected':''}>${t}</option>`).join('')}</select></label>`;
   const editor=(draft={},action='/overrides',error='')=>`<section class="panel"><h2>補正URLを編集</h2><p class="muted">保存した情報を、このISBNの確定データとして反映します。自動取得では上書きされません。通常版・限定版は別のISBNで登録してください。</p>${error?`<p class="override-error" role="alert">${e(error)}</p>`:''}${draft.title?`<div class="override-selected">${book(draft,draft.source==='review'?'/reviews/'+draft.isbn:'#')} ${draft.archived?'<p>このデータは確認対象から除外されています。ISBNと書誌情報を確認してください。</p>':''}</div>`:''}
     <form method="post" action="${e(action)}">${token}<div class="override-fields">
     ${field('ISBN','isbn',draft.isbn??draft.normalized_isbn)}${field('タイトル','title',draft.title)}${field('版・付属品（任意）','subtitle',draft.subtitle,'class="override-full"')}
     ${field('巻情報URL','source_url',draft.source_url,'class="override-full"')}<small class="override-full">出版社などの、そのISBN・版の情報が掲載されているページのURL。表示のたびにページから情報を取り直すことはありません。</small>
     ${field('表紙URL','thumbnail_url',draft.thumbnail_url,'class="override-full"')}<small class="override-full">画像そのもののURLを入力します。表紙の表示確認は「表紙・タイトルの確認」で行います。</small>
-    <details class="override-full" ${error?'open':''}><summary>シリーズ・作者・価格などを編集</summary><div class="override-fields">
+    <details class="override-full" ${error?'open':''}><summary>本の種類・関連巻・シリーズなどを編集</summary><div class="override-fields">
+    ${choices('本の種類','book_format',draft.book_format,[['','自動判定'],['comic','コミック'],['novel','小説'],['unknown','未分類']])}${choices('巻の区分','volume_kind',draft.volume_kind,[['','自動判定'],['main','本編'],['extra','関連巻']])}<small class="override-full">本の種類・関連巻はISBNごとに管理します。アプリでは自動で設定されます。関連巻は親作品をシリーズ名に指定してください。</small>
     ${field('シリーズ名','series_title',draft.series_title)}${field('巻数','volume_number',draft.volume_number)}${field('作者','author',draft.author)}${field('出版社','publisher',draft.publisher)}${field('新品参考価格（円）','list_price',draft.list_price)}${field('シリーズキー（空欄なら自動）','series_key',draft.series_key)}
     <label class="override-full">説明文の直接補正<textarea name="description" rows="5">${e(draft.description??'')}</textarea><small>確定して保存する説明文を入力してください。公開する説明文の確認は別途必要です。</small></label></div></details></div>
     <div class="override-save"><a href="/">入力をリセット</a><button type="submit">書誌情報を確定して保存</button></div></form></section>`;

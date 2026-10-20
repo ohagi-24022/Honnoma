@@ -10,7 +10,7 @@ function load(file){
   if(cache.has(file))return cache.get(file);
   const exports={};cache.set(file,exports);
   let source=fs.readFileSync(file,'utf8');
-  if(file.endsWith('/bookApis.ts')) source+='\nexport { findLatestVolumeFromTitles, mergeBookMetadata };';
+  if(file.endsWith('/bookApis.ts')) source+='\nexport { findLatestVolumeFromTitles, mergeBookMetadata, selectRakutenItem };';
   vm.runInNewContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText,{
     exports,console,URL,URLSearchParams,AbortController,setTimeout,clearTimeout,
     require:name=>{
@@ -53,8 +53,9 @@ const verified=load('src/lib/verifiedSeriesPublication.ts').verifiedSeriesPublic
 assert.equal(verified('今日からヒットマン'),undefined);
 providerItems=[{Item:{title:'双星の陰陽師 1',isbn:'9784088800158'}},{Item:{title:'双星の陰陽師 2',isbn:'9784088800998'}}];
 const candidates=await api.searchBookCandidates('双星の陰陽師');
-assert.equal(candidates.length,2,'Two providers deduplicate identical ISBNs, while keeping separate volumes.');
-assert.equal(candidates[0].volumeNumber,1);assert.equal(candidates[1].volumeNumber,2);
+const mainCandidates=candidates.filter(book=>book.volumeKind!=='extra');
+assert.equal(mainCandidates.length,2,'Two providers deduplicate identical ISBNs, while keeping separate volumes.');
+assert.equal(mainCandidates[0].volumeNumber,1);assert.equal(mainCandidates[1].volumeNumber,2);
 console.log('Related volumes: personal names, classification, publisher, ambiguity and refresh protection; publication: exact title and publisher correction; manual search: volumes and ISBN deduplication: OK');
 
 const companions=load('src/lib/knownCompanionBooks.ts');
@@ -86,3 +87,18 @@ assert.equal(api.mergeBookMetadata(sparse,{title:'ニセコイ 13',isbn:'9784086
 assert.equal(api.mergeBookMetadata(sparse,{...sparse,volumeNumber:1}).volumeNumber,1);
 assert.equal(api.mergeBookMetadata(sparse,{title:'ニセコイ 13',volumeNumber:13}).volumeNumber,undefined);
 console.log('Urabana: exact original ISBNs, separate paperback editions, novel/extra classification, personal grouping, and mismatched metadata rejection: OK');
+
+for(const [isbn,subtitle] of [['9784087034028','天縁若虎'],['9784087034158','士牙繭闢'],['9784087034677','三天破邪']]) {
+ const book=await api.lookupBookByIsbn(isbn);
+ assert.equal(book.bookFormat,'novel');assert.equal(book.volumeKind,'extra');assert.equal(book.seriesTitle,'双星の陰陽師');
+ assert(book.title.includes(subtitle));assert.equal(book.volumeNumber,undefined,'Standalone subtitles must not inherit comic volume numbers.');
+ assert.equal((await api.lookupBookByTitle(book.title)).isbn,isbn);
+}
+assert.equal((await api.lookupBookByTitle('ニセコイ 13')).isbn,'9784088801520');
+assert.equal((await api.lookupBookByIsbn('9784065130872')).publisher,'講談社');
+assert.notEqual((await api.lookupBookByTitle('ニセコイ 13 文庫版'))?.isbn,'9784088801520');
+const editionItems=[{Item:{title:'ニセコイ 2',isbn:'paperback',seriesName:'集英社文庫 コミック版',largeImageUrl:'https://cover/paper'}},{Item:{title:'ニセコイ 2',isbn:'regular',seriesName:'ジャンプコミックス',largeImageUrl:'https://cover/normal'}}];
+assert.equal(api.selectRakutenItem(editionItems,{seriesTitle:'ニセコイ',volumeNumber:2,edition:'standard'}).isbn,'regular');
+assert.equal(api.selectRakutenItem(editionItems,{isbn:'missing-exact'}),undefined);
+assert.equal(api.selectRakutenItem(editionItems.slice(0,1),{seriesTitle:'ニセコイ',volumeNumber:2,edition:'standard'}),undefined);
+console.log('Publisher novels preserve subtitles/parent/format; standard edition searches reject paperback substitutions and mismatched ISBNs: OK');

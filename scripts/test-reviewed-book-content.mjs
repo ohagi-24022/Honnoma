@@ -22,10 +22,10 @@ assert.equal(policy.contentLookupKey(undefined, 'javascript:alert(1)'), '');
 let content = null;
 let lookupState = 'ready';
 let enabled = true;
-let failedUrl = null;
+let failedUrls = [];
 const jsx = (type, props) => ({ type, props });
 const { BookCover } = compile('../src/components/BookCover.tsx', (name) => {
-  if (name === 'react') return { useState: () => [failedUrl, (value) => { failedUrl = value; }] };
+  if (name === 'react') return { useState: () => [failedUrls, (value) => { failedUrls = typeof value === 'function' ? value(failedUrls) : value; }] };
   if (name === 'react/jsx-runtime') return { jsx, jsxs: jsx };
   if (name === 'react-native') return { Image: 'Image', View: 'View', Text: 'Text', StyleSheet: { create: (value) => value } };
   if (name.endsWith('reviewedBookContent')) return policy;
@@ -41,7 +41,7 @@ assert.equal(pendingCover.props.source.uri,policy.PENDING_BOOK_COVER_URL);
 assert.notEqual(pendingCover.props.source.uri,input.thumbnailUrl);
 pendingCover.props.onError();
 assert.equal(BookCover(input).type,'View'); // Placeholder failure uses local text.
-failedUrl=null;
+failedUrls=[];
 content = approved;
 const rendered = BookCover(input);
 assert.equal(rendered.type, 'Image');
@@ -54,8 +54,9 @@ assert.equal(BookCover(input).type, 'View');
 console.log('Reviewed rendering: hosted pending placeholder, offline fallback, OFF, approved covers, no unreviewed provider media: OK');
 
 // Personal wishlist is explicitly opted in; public screens still fail closed.
-enabled=true; content=null; failedUrl=null; lookupState='loading';
+enabled=true; content=null; failedUrls=[]; lookupState='loading';
 const personalInput={...input,displayContext:'personal'};
+assert.equal(BookCover({...personalInput,thumbnailUrl:undefined}).props.children.props.children,'表紙確認中','Private missing covers use the requested neutral placeholder.');
 assert.equal(BookCover(personalInput).props.source.uri,input.thumbnailUrl);
 lookupState='error';
 assert.equal(BookCover(personalInput).props.source.uri,input.thumbnailUrl);
@@ -66,13 +67,13 @@ assert.equal(BookCover(personalInput).props.source.uri,input.thumbnailUrl);
 content=null; lookupState='ready';
 BookCover(personalInput).props.onError();
 assert.equal(BookCover(personalInput).type,'View');
-assert.equal(BookCover(personalInput).props.children.props.children,'表紙を取得できません');
-failedUrl=null;
+assert.equal(BookCover(personalInput).props.children.props.children,'表紙確認中');
+failedUrls=[];
 assert.notEqual(BookCover({...personalInput,thumbnailUrl:'file:///private/image.jpg'}).props.source?.uri,'file:///private/image.jpg');
 enabled=false;
 assert.equal(BookCover(personalInput).type,'View');
 assert.equal(BookCover(personalInput).props.children.props.children,'非表示');
-enabled=true; content=null; failedUrl=null; lookupState='ready';
+enabled=true; content=null; failedUrls=[]; lookupState='ready';
 assert.equal(BookCover(input).props.source.uri,policy.PENDING_BOOK_COVER_URL);
 console.log('Personal wishlist/search: source cover before review, approved priority, OFF, failure fallback, public isolation: OK');
 
@@ -152,9 +153,16 @@ assert.equal(policy.contentLookupKey(approved.isbn13,oldRakutenUrl),'isbn:'+appr
 assert.equal(policy.contentLookupKey(undefined,'https://cover.openbd.jp/'+worldTrigger+'.jpg'),'isbn:'+worldTrigger);
 assert.equal(policy.contentLookupKey(undefined,'https://dosbg3xlm0x1t.cloudfront.net/images/items/'+worldTrigger+'/1200/'+worldTrigger+'.jpg'),'isbn:'+worldTrigger);
 for(const url of [oldRakutenUrl.replace('rakuten.co.jp','rakuten.co.jp.attacker.test'),oldRakutenUrl.replace('8096.jpg','8097.jpg'),'https://example.test/'+worldTrigger+'.jpg']) assert.ok(policy.contentLookupKey(undefined,url).startsWith('url:'),'Do not infer ISBN from an unknown host or invalid checksum.');
-content=null;enabled=true;failedUrl=null;lookupState='error';
+content=null;enabled=true;failedUrls=[];lookupState='error';
 let fallback=BookCover(input);assert.equal(fallback.type,'View');assert.equal(fallback.props.children.props.children,'表紙を取得できません');
 lookupState='loading';fallback=BookCover(input);assert.equal(fallback.type,'View');assert.equal(fallback.props.children.props.children,'表紙を取得中');
 lookupState='ready';assert.equal(BookCover(input).props.source.uri,policy.PENDING_BOOK_COVER_URL);
 content={...approved,cover_url:null};fallback=BookCover(input);assert.equal(fallback.props.children.props.children,'No Cover');
 console.log('Missing ISBN: validated publisher URL maps to approved ISBN; loading/offline never labelled unreviewed: OK');
+
+content=approved;enabled=true;failedUrls=[];lookupState='ready';
+let cover=BookCover({...input,displayContext:'personal'});cover.props.onError();
+cover=BookCover({...input,displayContext:'personal'});assert.equal(cover.props.source.uri,input.thumbnailUrl);cover.props.onError();
+for(let i=0;i<3;i++){cover=BookCover({...input,displayContext:'personal'});assert.equal(cover.type,'View');assert.equal(cover.props.children.props.children,'表紙確認中');}
+assert.equal(BookCover({...input,displayContext:'personal',thumbnailUrl:'https://example.test/new.jpg'}).props.source.uri,'https://example.test/new.jpg');
+console.log('Private cover fallback: failed approved source tries personal source once, no retry loop, corrected URL retried: OK');

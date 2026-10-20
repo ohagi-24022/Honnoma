@@ -9,7 +9,7 @@ const app={get:(p,fn)=>handlers.set('GET '+p,fn),post:(p,fn)=>handlers.set('POST
 function query(table){const filters=[];let fields,options={},start=0,end=999;
  const q={select(f,o={}){fields=f;options=o;return q},eq(k,v){filters.push([k,v]);return q},is(k,v){filters.push([k,v]);return q},not(k){filters.push([k,'not-null']);return q},ilike(k,v){filters.push([k,v]);return q},order(){return q},in(){return q},limit(){return q},range(a,b){start=a;end=b;return q},single:async()=>({data:table==='book_content_review_config'?{enabled:false,daily_limit:50}:jobs.find(x=>x.isbn13===filters.find(x=>x[0]==='isbn13')?.[1])}),then(resolve){
   let data=table==='book_content_review_jobs'?jobs:table==='reviewed_book_content'?published:[];
-  for(const [k,v]of filters){if(k==='enabled')data=data.filter(x=>x.enabled===v);if(k==='cover_url')data=data.filter(x=>!!x.cover_url);if(k==='adult_only')data=data.filter(x=>x.adult_only===v);if(k==='candidate->>title')data=data.filter(x=>v==='not-null'?!!x.candidate?.title:!x.candidate?.title);if(k==='candidate->>publisher')data=data.filter(x=>x.candidate?.publisher===v);if(k==='title'||k==='isbn13'){const needle=v.replaceAll('%','');data=data.filter(x=>String(x[k]).includes(needle));}}
+  for(const [k,v]of filters){if(k==='enabled')data=data.filter(x=>x.enabled===v);if(k==='cover_url')data=data.filter(x=>!!x.cover_url);if(k==='adult_only')data=data.filter(x=>x.adult_only===v);if(k==='candidate->>title')data=data.filter(x=>v==='not-null'?!!x.candidate?.title:!x.candidate?.title);if(k==='candidate->>cover_hash')data=data.filter(x=>v==='not-null'?!!x.candidate?.cover_hash:!x.candidate?.cover_hash);if(k==='candidate->>publisher')data=data.filter(x=>x.candidate?.publisher===v);if(k==='title'||k==='isbn13'){const needle=v.replaceAll('%','');data=data.filter(x=>String(x[k]).includes(needle));}}
   const count=data.length;data=data.slice(start,end+1);
   if(fields==='candidate->>publisher')data=data.map(x=>({publisher:x.candidate.publisher}));
   resolve({data:options.head?null:data,count});}};return q;}
@@ -128,3 +128,9 @@ fetchFails=true;
 await handlers.get('POST /reviews/prepare')({method:'POST',body:{csrf:prepareCsrf,prepare_isbn:waiting.isbn13}},res);
 assert(redirect.includes('prepare_failed=1'));
 console.log('Per-ISBN preparation: server bibliographic fetch only, no AI, exact target, retained filters/size, honest success/failure counts: OK');
+
+await handlers.get('GET /reviews')({query:{view:'all',source:'missing',size:'10'}},res);
+assert(html.includes('表紙の取得状況'));assert(html.includes('/missing-covers'));assert(!html.includes(`data-isbn="${original[0].isbn13}"`));assert(html.includes('source=missing'));
+await handlers.get('GET /reviews')({query:{view:'all',source:'ready',size:'10'}},res);
+assert(html.includes(`data-isbn="${original[0].isbn13}"`));assert(!html.includes(`data-isbn="${waiting.isbn13}"`));
+console.log('Source acquisition filter: missing/ready independent from public permission, applied before pagination and retained in URLs: OK');

@@ -9,7 +9,7 @@ import { getDemoBookDetails } from './demoLibrary';
 import { supabase } from './supabase';
 
 const LEGACY_CACHE_PREFIX = 'booknest.book-details.v3';
-const CACHE_PREFIX = 'honnoma.book-details.v3';
+const CACHE_PREFIX = 'honnoma.book-details.v4';
 const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const DB_CACHE_TTL_DAYS = 30;
 
@@ -211,8 +211,27 @@ export async function getBookVolumeDetails(
   const legacyKey = legacyCacheKey(book);
   const overrideDetails = await getBookMetadataOverrideDetails(book);
   if (overrideDetails?.title) {
-    // Confirmed metadata is complete and must survive force-refresh without provider merging.
-    return overrideDetails;
+    // Fill only a missing synopsis; confirmed identity, edition and cover stay authoritative.
+    if (overrideDetails.description?.trim() || !book.isbn) return overrideDetails;
+    const synopsisKey = `${key}:synopsis-v1`;
+    if (!options.forceRefresh) {
+      try {
+        const cached = JSON.parse((await AsyncStorage.getItem(synopsisKey)) ?? 'null') as CacheEntry | null;
+        const ttl = cached?.details?.description ? CACHE_TTL_MS : 24 * 60 * 60 * 1000;
+        if (cached && Date.now() - cached.fetchedAt < ttl) {
+          return { ...overrideDetails, description: cached.details?.description };
+        }
+      } catch { /* A failed local cache must not prevent a synopsis lookup. */ }
+    }
+    try {
+      const supplement = await lookupBookVolumeDetails(book, { exactIsbnOnly: true });
+      try {
+        await AsyncStorage.setItem(synopsisKey, JSON.stringify({ fetchedAt: Date.now(), details: supplement }));
+      } catch { /* The fetched synopsis remains usable when local storage is full. */ }
+      return { ...overrideDetails, description: supplement?.description };
+    } catch {
+      return overrideDetails;
+    }
   }
 
   if (!options.forceRefresh) {
@@ -220,7 +239,7 @@ export async function getBookVolumeDetails(
       const cached = await getStorageItemWithLegacy(key, legacyKey);
       if (cached) {
         const entry = JSON.parse(cached) as CacheEntry;
-        if (entry.details?.source !== 'Developer Override' && Date.now() - entry.fetchedAt < CACHE_TTL_MS) {
+        if (entry.details?.source !== 'Developer Override' && Date.now() - entry.fetchedAt < (entry.details?.description ? CACHE_TTL_MS : 24 * 60 * 60 * 1000)) {
           return mergeOverrideDetails(book, entry.details, overrideDetails);
         }
       }
@@ -231,7 +250,7 @@ export async function getBookVolumeDetails(
 
   if (!options.forceRefresh) {
     const dbCached = await readSupabaseCache(book);
-    if (dbCached) {
+    if (dbCached?.description) {
       const mergedDetails = mergeOverrideDetails(book, dbCached, overrideDetails);
       const entry: CacheEntry = { fetchedAt: Date.now(), details: mergedDetails };
       try {

@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';
+import {selectSeriesVolumeCovers,registerSeriesVolumeCovers,parseCatalogVolume} from './shushuka-series-volumes.mjs';
+const comic='9784757549920',novel='9784797386769';
+const rows=[{normalized_isbn:comic,metadata:{title:'りゅうおうのおしごと！ 2',publisher:'スクウェア・エニックス',book_format:'comic'}},{isbn13:novel,candidate:{title:'りゅうおうのおしごと！ 2',publisher:'SBクリエイティブ',book_format:'novel'}}];
+const covers=[{isbn13:comic,enabled:true,cover_url:'https://example.test/comic.jpg'},{isbn13:novel,enabled:true,cover_url:'https://example.test/novel.jpg'}];
+const request={seriesTitles:['りゅうおうのおしごと!'],volumes:[2],publisher:'Square Enix',format:'comic'};
+assert.deepEqual(selectSeriesVolumeCovers(rows,covers,request),[{volumeNumber:2,isbn:comic,thumbnailUrl:covers[0].cover_url}]);
+assert.equal(selectSeriesVolumeCovers(rows,covers,{...request,publisher:'SBクリエイティブ',format:'novel'})[0].isbn,novel);
+assert.equal(selectSeriesVolumeCovers(rows,covers,{...request,publisher:'',format:'unknown'}).length,0,'Ambiguous versions are held.');
+assert.equal(selectSeriesVolumeCovers(rows,[{...covers[0],enabled:false}],request).length,0,'No unreviewed source URL leaks into the public catalog.');
+assert.equal(selectSeriesVolumeCovers(rows,covers,{...request,seriesTitles:['他の作品']}).length,0);assert.equal(selectSeriesVolumeCovers(rows,covers,{...request,volumes:[3]}).length,0);
+assert.equal(parseCatalogVolume({title:'ワールドトリガー vol. 2'}).volume,2);assert.equal(parseCatalogVolume({title:'かぐや様は告らせたい 2 〜天才たちの恋愛頭脳戦〜'}).volume,2);assert.equal(parseCatalogVolume({title:'ニセコイ 2 文庫版'}),null);
+const handlers=new Map();registerSeriesVolumeCovers({options(){},post:(p,f)=>handlers.set(p,f)}, {},()=>true);let status=200,data;
+const res={set(){return this},status(n){status=n;return this},json(v){data=v;return this}};
+await handlers.get('/api/series-volume-covers')({body:{...request,volumes:Array.from({length:11},(_,i)=>i+1)}},res);assert.equal(status,400);
+console.log('Missing volume catalog: exact series/volume, publisher and format separation, ambiguous editions held, approved images only, no special editions, bounded request: OK');

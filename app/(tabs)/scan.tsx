@@ -140,6 +140,7 @@ export default function ScanScreen() {
   const applyLookupResult = (bookInput: BookInput | null) => {
     if (!bookInput) return;
     bookInput = resolveUserSeriesName(books, bookInput);
+    setNotice({ tone: 'neutral', message: '登録する本の内容を確認してください。' });
 
     volumeKindEdited.current = false;
     bookFormatEdited.current = false;
@@ -337,6 +338,7 @@ export default function ScanScreen() {
 
   const openQueueReview = () => {
     if (scanQueue.length === 0) return;
+    setNotice({ tone: 'neutral', message: '登録する本の内容を確認してください。' });
     setShowQueueReview(true);
     setShowConfirmation(false);
     setShowManualForm(false);
@@ -372,6 +374,7 @@ export default function ScanScreen() {
       seriesTitle: item.seriesTitle,
       volumeNumber: item.volumeNumber,
       volumeKind: item.volumeKind,
+      bookFormat: item.bookFormat,
       thumbnailUrl: item.thumbnailUrl,
       purchasePrice,
       listPrice: item.listPrice,
@@ -718,33 +721,16 @@ export default function ScanScreen() {
       style={[styles.screen, { backgroundColor: colors.background }]}
     >
       <ScrollView ref={scrollRef} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        {!showConfirmation && !showQueueReview && scanQueue.length === 0 && (
-          <Pressable accessibilityRole="button" accessibilityLabel="スキャンからシリーズ登録を始める"
-            disabled={isSubmitting}
-            accessibilityState={{ selected: bulkRegistrationMode, disabled: isSubmitting }}
-            onPress={() => {
-              setBulkRegistrationMode(true);
-              setScanMode('confirm');
-              setShowManualForm(false);
-              setIsScanning(true);
-              setManualCandidates([]);
-              setManualLookupNotice(null);
-              setNotice({ tone: 'neutral', message: '登録するシリーズのISBNバーコードを読み取ってください。確認後に、何巻まで持っているかを指定できます。' });
-              scrollRef.current?.scrollTo({ y: 0, animated: true });
-            }}
-            style={[styles.bulkEntry, { backgroundColor: tour.focus === 'series' ? colors.elevated : colors.input, borderColor: colors.primary, borderWidth: tour.focus === 'series' ? 3 : 1 }]}>
-            <View style={styles.bulkEntryBody}>
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>シリーズ登録</Text>
-              <Text style={[styles.purchaseHint, { color: colors.muted }]}>スキャン → 本を確認 → 持っている巻数を指定</Text>
-            </View>
-            <Text style={[styles.bulkEntryAction, { color: colors.primary }]}>{bulkRegistrationMode ? '選択中' : 'はじめる ›'}</Text>
-          </Pressable>
-        )}
-        {(cameraVisible || tour.focus === 'scan') && <View style={styles.cameraShell}>
+        {!showConfirmation && !showQueueReview && (!tourActive || tour.focus === 'scan') && <View style={styles.cameraShell}>
           {tourActive ? (
             <View style={styles.tourCameraPreview}>
               <Text style={[styles.tourBarcode, { color: colors.primary }]}>▌▏▌▌▏▌▏▌▌▏▌</Text>
               <Text style={[styles.purchaseHint, { color: colors.muted }]}>ここでISBNバーコードを読み取ります</Text>
+            </View>
+          ) : !cameraVisible ? (
+            <View style={styles.permissionBox}>
+              <Text style={styles.permissionText}>{isSubmitting ? '書籍情報を取得中' : showManualForm ? '手動登録中' : 'スキャン停止中'}</Text>
+              {isSubmitting && <ActivityIndicator color="#ffffff" />}
             </View>
           ) : permission?.granted ? (
             <>
@@ -787,7 +773,24 @@ export default function ScanScreen() {
                 </Text>
               </Pressable>
             ))}
+            <Pressable accessibilityRole="button" accessibilityLabel="スキャンからシリーズ登録を始める"
+              disabled={isSubmitting || scanQueue.length > 0}
+              accessibilityState={{ selected: bulkRegistrationMode, disabled: isSubmitting || scanQueue.length > 0 }}
+              onPress={() => {
+              setBulkRegistrationMode(true);
+              setScanMode('confirm');
+              setShowManualForm(false);
+              setIsScanning(true);
+              setManualCandidates([]);
+              setManualLookupNotice(null);
+              setNotice({ tone: 'neutral', message: '登録するシリーズのISBNバーコードを読み取ってください。確認後に、何巻まで持っているかを指定できます。' });
+              scrollRef.current?.scrollTo({ y: 0, animated: true });
+            }}
+              style={[styles.modeButton, bulkRegistrationMode && { backgroundColor: colors.text }, tour.focus === 'series' && { borderColor: colors.primary, borderWidth: 2 }]}>
+              <Text style={[styles.modeText, { color: bulkRegistrationMode ? colors.background : colors.muted }]}>シリーズ登録</Text>
+            </Pressable>
           </View>
+          {bulkRegistrationMode && <Text style={[styles.purchaseHint, { color: colors.muted }]}>スキャン → 本を確認 → 持っている巻数を指定</Text>}
           <Pressable
             disabled={isSubmitting}
             onPress={handleScanToggle}

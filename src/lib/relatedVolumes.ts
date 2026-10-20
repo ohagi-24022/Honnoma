@@ -8,7 +8,7 @@ export function resolveRelatedVolume(books: Book[], input: BookInput): BookInput
     || normalizeVolumeKind(undefined, input.title) !== 'extra') return input;
   const titleKey = normalizeSeriesKey(input.title);
   const publisher = input.publisher?.normalize('NFKC').replace(/\s/g, '');
-  const matches = books.filter(book => normalizeVolumeKind(book.volumeKind, book.title) === 'main')
+  const matches = books.filter(book => normalizeVolumeKind(book.volumeKind, book.title) === 'main' && normalizeVolumeKind(undefined, book.title) === 'main')
     .flatMap(book => {
       if (publisher && book.publisher && publisher !== book.publisher.normalize('NFKC').replace(/\s/g, '')) return [];
       const names = [book.seriesTitle, ...(book.seriesAliases ?? []), parseSeriesTitle(book.title).seriesTitle];

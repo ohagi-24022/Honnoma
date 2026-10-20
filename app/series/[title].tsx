@@ -1,3 +1,5 @@
+import { loadMissingVolumeCovers, MissingVolumeCover } from '../../src/lib/missingVolumeCovers';
+import { resolveBookFormat } from '../../src/lib/bookFormat';
 import { verifiedSeriesPublication } from '../../src/lib/verifiedSeriesPublication';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -10,6 +12,7 @@ import {
   FlatList,
   Linking,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -19,9 +22,9 @@ import {
 import { BookCover } from '../../src/components/BookCover';
 import { addMissingVolume, missingRegistrationTargets } from '../../src/lib/bookRegistration';
 import { getStorageItemWithLegacy } from '../../src/lib/asyncStorageCompat';
-import { buildPurchaseUrl, lookupBookByTitle, SeriesPublicationInfo } from '../../src/lib/bookApis';
+import { buildPurchaseUrl, lookupBookByIsbn, lookupBookByTitle, SeriesPublicationInfo } from '../../src/lib/bookApis';
 import { migrateNewReleaseSeriesSubscription } from '../../src/lib/newReleaseNotifications';
-import { normalizeSeriesKey } from '../../src/lib/series';
+import { normalizeSeriesKey, parseSeriesTitle } from '../../src/lib/series';
 import {
   loadSeriesMetadata,
   mergeSeriesPublicationInfo,
@@ -50,6 +53,10 @@ function isOwnedBook(item: ShelfItem): item is Book {
   return !item.isMissing;
 }
 
+function lookupMissingMetadata(title: string, isbn?: string) {
+  return isbn ? lookupBookByIsbn(isbn) : lookupBookByTitle(title);
+}
+
 function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -76,6 +83,7 @@ export default function SeriesScreen() {
   const { colors } = useAppTheme();
   const listRef = useRef<FlatList<ShelfItem>>(null);
   const shouldKeepBottomRef = useRef(false);
+  const [missingCovers, setMissingCovers] = useState<{scope:string;items:Record<number,MissingVolumeCover>}>({scope:'',items:{}});
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [refreshingId, setRefreshingId] = useState<string | null>(null);
@@ -87,6 +95,18 @@ export default function SeriesScreen() {
   const [bulkPurchasePrice, setBulkPurchasePrice] = useState('');
   const [renameOpen, setRenameOpen] = useState(false);
   const [draftSeriesTitle, setDraftSeriesTitle] = useState(seriesTitle);
+  const [mergeSearch, setMergeSearch] = useState('');
+  const [renaming, setRenaming] = useState(false);
+  const renameRunning = useRef(false);
+  const mergeTargets = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const book of books) {
+      if (book.seriesTitle === seriesTitle) continue;
+      counts.set(book.seriesTitle, (counts.get(book.seriesTitle) ?? 0) + 1);
+    }
+    return [...counts].filter(([title]) => title.toLocaleLowerCase().includes(mergeSearch.trim().toLocaleLowerCase()))
+      .sort(([a], [b]) => a.localeCompare(b, 'ja'));
+  }, [books, seriesTitle, mergeSearch]);
   const [publicationInfo, setPublicationInfo] = useState<SeriesPublicationInfo | null>(null);
   const [seriesMetadata, setSeriesMetadata] = useState<SeriesMetadataOverride | null>(null);
   const [bulkFillOpen, setBulkFillOpen] = useState(false);
@@ -133,7 +153,30 @@ export default function SeriesScreen() {
     return [...baseItems, ...trailingMissing].sort(compareSeriesItems);
   }, [baseItems, effectivePublicationInfo, seriesTitle, user?.id]);
   const pageCount = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
-  const pageItems = useMemo(() => items.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE), [items, page]);
+  const visibleItems = useMemo(() => items.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE), [items, page]);
+  const coverScope = JSON.stringify({series:seriesTitle,owned:books.filter(book=>book.seriesTitle===seriesTitle)
+    .map(book=>({title:book.title,aliases:book.seriesAliases,publisher:book.publisher,format:book.bookFormat,kind:book.volumeKind}))});
+  const pageItems = useMemo(() => visibleItems.map(item => item.isMissing && missingCovers.scope === coverScope && missingCovers.items[item.volumeNumber]
+    ? { ...item, ...missingCovers.items[item.volumeNumber] } : item), [visibleItems, missingCovers, coverScope]);
+  const missingCoverVolumes = visibleItems.filter(item=>item.isMissing).map(item=>item.volumeNumber).join(',');
+  useEffect(() => {
+    setMissingCovers({scope:coverScope,items:{}});
+  }, [coverScope]);
+  useEffect(() => {
+    if (!missingCoverVolumes) return;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      const owned = books.filter(book=>book.seriesTitle===seriesTitle && book.volumeKind!=='extra');
+      const formats = [...new Set(owned.map(resolveBookFormat).filter(format=>format!=='unknown'))];
+      const publishers = [...new Set(owned.map(book=>book.publisher).filter((p):p is string=>!!p))];
+      const seriesTitles = [seriesTitle,...owned.flatMap(book=>[...(book.seriesAliases??[]),parseSeriesTitle(book.title).seriesTitle])];
+      void loadMissingVolumeCovers({seriesTitles,volumes:missingCoverVolumes.split(',').map(Number),
+        publisher:publishers.length===1?publishers[0]:undefined,format:formats.length===1?formats[0]:'unknown'})
+        .then(found=>{if(!cancelled)setMissingCovers(current=>({scope:coverScope,items:{...(current.scope===coverScope?current.items:{}),...Object.fromEntries(found.map(item=>[item.volumeNumber,item]))}}));})
+        .catch(()=>{ /* Retain the normal pending cover when the catalog is unavailable. */ });
+    }, 250);
+    return () => { cancelled=true; clearTimeout(timer); };
+  }, [coverScope, missingCoverVolumes]);
   const ownedItems = useMemo(() => items.filter(isOwnedBook), [items]);
   const missingItems = useMemo(() => items.filter((item) => item.isMissing), [items]);
   const readCount = ownedItems.filter((item) => item.status === 'read').length;
@@ -318,7 +361,7 @@ export default function SeriesScreen() {
     if (isOwnedBook(item) || refreshingId) return;
     setRefreshingId(item.id);
     try {
-      await addMissingVolume(item, books, lookupBookByTitle, addBook);
+      await addMissingVolume(item, books, lookupMissingMetadata, addBook);
     } catch (error) {
       Alert.alert('追加できませんでした', error instanceof Error ? error.message : 'もう一度お試しください。');
     } finally {
@@ -354,7 +397,7 @@ export default function SeriesScreen() {
         updateRegistration(registrationId, { completed: index, currentTitle: item.title, added: addedCount, skipped: skippedCount });
         if (!item.isMissing) continue;
         try {
-          const added = await addMissingVolume(item, registeredBooks, lookupBookByTitle, addBook);
+          const added = await addMissingVolume(item, registeredBooks, lookupMissingMetadata, addBook);
           if (added) {
             registeredBooks.push(added);
             addedCount += 1;
@@ -446,6 +489,9 @@ export default function SeriesScreen() {
   };
 
   const submitSeriesRename = async () => {
+    if (renameRunning.current || !draftSeriesTitle.trim() || draftSeriesTitle.trim() === seriesTitle) return;
+    renameRunning.current = true;
+    setRenaming(true);
     try {
       const nextTitle = draftSeriesTitle.trim();
       const updatedCount = await renameSeries(seriesTitle, nextTitle);
@@ -470,6 +516,9 @@ export default function SeriesScreen() {
       router.replace(`/series/${encodeURIComponent(nextTitle)}`);
     } catch (error) {
       Alert.alert('本の間', error instanceof Error ? error.message : 'シリーズ名の更新に失敗しました。');
+    } finally {
+      renameRunning.current = false;
+      setRenaming(false);
     }
   };
 
@@ -528,6 +577,7 @@ export default function SeriesScreen() {
           accessibilityLabel="シリーズ名を変更"
           onPress={() => {
             setDraftSeriesTitle(seriesTitle);
+            setMergeSearch('');
             setRenameOpen((current) => !current);
           }}
           style={[styles.iconActionButton, { borderColor: colors.border }]}
@@ -613,9 +663,9 @@ export default function SeriesScreen() {
 
       {renameOpen && (
         <View style={[styles.renameBox, { borderBottomColor: colors.border }]}>
-          <Text style={[styles.rowTitle, { color: colors.text }]}>シリーズ名の一括変更</Text>
+          <Text style={[styles.rowTitle, { color: colors.text }]}>シリーズ名の変更・統合</Text>
           <Text style={[styles.renameCopy, { color: colors.muted }]}>
-            既存のシリーズ名を入力すると、そのシリーズへ統合します。
+            統合先を下の本棚一覧から選べます。新しい名前に変更する場合は入力してください。
           </Text>
           <View style={styles.renameRow}>
             <TextInput
@@ -627,12 +677,32 @@ export default function SeriesScreen() {
             />
             <Pressable
               accessibilityLabel="シリーズ名の変更を反映"
+              disabled={renaming || !draftSeriesTitle.trim() || draftSeriesTitle.trim() === seriesTitle}
               onPress={() => void submitSeriesRename()}
               style={[styles.saveIconButton, { backgroundColor: colors.text }]}
             >
               <Ionicons color={colors.background} name="checkmark" size={20} />
             </Pressable>
           </View>
+          <Text style={[styles.renameCopy, { color: colors.text }]}>本棚から統合先を選ぶ</Text>
+          <TextInput accessibilityLabel="統合先のシリーズを検索" value={mergeSearch} onChangeText={setMergeSearch}
+            placeholder="シリーズを検索" placeholderTextColor={colors.muted}
+            style={[styles.renameInput, { backgroundColor: colors.input, color: colors.text }]} />
+          <ScrollView style={{ maxHeight: 220 }} nestedScrollEnabled keyboardShouldPersistTaps="handled">
+            {mergeTargets.map(([title, count]) => (
+              <Pressable key={title} accessibilityRole="radio" accessibilityState={{ checked: draftSeriesTitle === title }}
+                accessibilityLabel={`統合先に「${title}」を選択`} disabled={renaming} onPress={() => setDraftSeriesTitle(title)}
+                style={{ paddingVertical: 12, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <Ionicons name={draftSeriesTitle === title ? 'radio-button-on' : 'radio-button-off'} color={colors.text} size={20} />
+                <Text style={{ color: colors.text, flex: 1 }}>{title}</Text>
+                <Text style={{ color: colors.muted }}>{count}冊</Text>
+              </Pressable>
+            ))}
+            {!mergeTargets.length && <Text style={[styles.renameCopy, { color: colors.muted }]}>統合できるシリーズがありません。</Text>}
+          </ScrollView>
+          {draftSeriesTitle !== seriesTitle && mergeTargets.some(([title]) => title === draftSeriesTitle) && (
+            <Text style={[styles.renameCopy, { color: colors.text }]}>「{draftSeriesTitle}」へ統合します。上のチェックで確定してください。</Text>
+          )}
         </View>
       )}
 
@@ -766,7 +836,7 @@ export default function SeriesScreen() {
 
               <BookCover displayContext="personal"
                 thumbnailUrl={item.thumbnailUrl}
-                isbn={isOwnedBook(item) ? item.isbn : undefined}
+                isbn={item.isbn}
                 style={styles.cover}
                 missing={missing}
                 placeholderText={`No.${item.volumeNumber ?? '-'}`}

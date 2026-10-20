@@ -30,16 +30,16 @@ export function BookCover({
   const { showBookContent } = useAppSettings();
   const reviewed = useReviewedBookContent(isbn, thumbnailUrl);
   const lookupState = useBookContentLookupState();
-  const [failedUrl, setFailedUrl] = useState<string | null>(null);
-  const approvedImageUri = reviewed?.cover_url && reviewed.cover_url !== failedUrl ? reviewed.cover_url : undefined;
+  const [failedUrls, setFailedUrls] = useState<string[]>([]);
+  const approvedImageUri = showBookContent && reviewed?.cover_url && !failedUrls.includes(reviewed.cover_url) ? reviewed.cover_url : undefined;
   // Public screens retain the reviewed-only default. A user's private screens
   // may show the source cover, without granting public approval.
   const personalCoverUrl = displayContext === 'personal' && showBookContent
     && /^https:\/\//i.test(thumbnailUrl?.trim() ?? '') ? thumbnailUrl!.trim() : undefined;
-  const personalImageUri = !reviewed?.cover_url && personalCoverUrl !== failedUrl ? personalCoverUrl : undefined;
-  const pending = showBookContent && !reviewed && !personalCoverUrl && lookupState === 'ready';
+  const personalImageUri = !approvedImageUri && personalCoverUrl && !failedUrls.includes(personalCoverUrl) ? personalCoverUrl : undefined;
+  const pending = displayContext === 'reviewed' && showBookContent && !reviewed && !personalCoverUrl && lookupState === 'ready';
   const imageUri = approvedImageUri ?? personalImageUri
-    ?? (pending && failedUrl !== PENDING_BOOK_COVER_URL ? PENDING_BOOK_COVER_URL : undefined);
+    ?? (pending && !failedUrls.includes(PENDING_BOOK_COVER_URL) ? PENDING_BOOK_COVER_URL : undefined);
   const coverStyle = [
     styles.cover,
     { backgroundColor: colors.elevated },
@@ -55,7 +55,7 @@ export function BookCover({
         style={coverStyle}
         resizeMode="cover"
         accessibilityLabel={pending ? '表紙を確認中' : '本の表紙'}
-        onError={() => setFailedUrl(imageUri)}
+        onError={() => setFailedUrls(previous => previous.includes(imageUri) ? previous : [...previous, imageUri])}
       />
     );
   }
@@ -64,7 +64,8 @@ export function BookCover({
     <View style={[coverStyle, styles.coverFallback]}>
       <Text style={[styles.coverFallbackText, { color: colors.muted }]} numberOfLines={2}>
         {!showBookContent ? '非表示'
-          : lookupState === 'error' || (!!failedUrl && (failedUrl === reviewed?.cover_url || failedUrl === personalCoverUrl || failedUrl === PENDING_BOOK_COVER_URL)) ? '表紙を取得できません'
+          : displayContext === 'personal' ? '表紙確認中'
+          : lookupState === 'error' || failedUrls.some(url => url === reviewed?.cover_url || url === personalCoverUrl || url === PENDING_BOOK_COVER_URL) ? '表紙を取得できません'
           : !reviewed && lookupState === 'loading' ? '表紙を取得中'
           : reviewed ? placeholderText : '未確認'}
       </Text>
@@ -76,7 +77,7 @@ const styles = StyleSheet.create({
   cover: {
     overflow: 'hidden',
   },
-  missingCover: { opacity: 0.35 },
+  missingCover: { opacity: 0.65 },
   coverFallback: { alignItems: 'center', justifyContent: 'center' },
   coverFallbackText: {
     fontSize: 11,

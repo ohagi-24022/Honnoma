@@ -89,3 +89,27 @@ assert(!updated.some(row=>row.ranking_key==='東京'));
 console.log('Ranking candidates: every volume missing provider series_title, first-volume approved cover, no auto-listing, numeric work-title safeguard: OK');
 assert.equal(updated.find(row=>row.ranking_key==='名探偵コナン').cover_url,'https://example.test/conan1.jpg');
 console.log('Merged ranking aliases stay hidden and do not reappear as candidates; approved English-volume first cover is selected: OK');
+
+// A translated subtitle or bibliographic full stop may differ by volume.
+for(const [base,variant,first,second] of [
+ ['可愛いだけじゃない式守さん','可愛いだけじゃない式守さん = MISS SHIKIMORI IS NOT JUST CUTE.','9784065220320','9784065162231'],
+ ['彼女、人見知ります','彼女、人見知ります.','9784065206027','9784065220696'],
+ ['別の作品','別の作品 = Another Story','9780000008001','9780000008002'],
+]){
+ tables.book_content_review_jobs.push(
+  {isbn13:first,adult_only:false,candidate:{title:variant+' vol.1',cover_hash:'first',source_url:'https://example.test/first'}},
+  {isbn13:second,adult_only:false,candidate:{title:base+'（2）',cover_hash:'second',source_url:'https://example.test/second'}});
+ tables.reviewed_book_content.push({isbn13:first,enabled:true,cover_url:'https://example.test/first.jpg'});
+ updated=await rankingCandidates(db);
+ assert.equal(updated.filter(row=>row.title.startsWith(base)).length,1);
+ const row=updated.find(row=>row.ranking_key===rankingKey(base));assert.equal(row.isbn,first);assert.equal(row.cover_url,'https://example.test/first.jpg');assert.equal(row.enabled,false);
+}
+tables.book_content_review_jobs.push(
+ {isbn13:'9780000008003',adult_only:false,candidate:{title:'別の作品 外伝（1）'}},
+ {isbn13:'9780000008004',adult_only:false,candidate:{title:'単独シリーズ = An English Subtitle vol.1'}},
+ {isbn13:'9780000008005',adult_only:false,candidate:{title:'別の作品 = 日本語の別作品 vol.1'}});
+updated=await rankingCandidates(db);
+assert(updated.some(row=>row.title==='別の作品 外伝'));
+assert(updated.some(row=>row.title==='単独シリーズ = An English Subtitle'));
+assert(updated.some(row=>row.title==='別の作品 = 日本語の別作品'));
+console.log('Future split prevention: exact existing Japanese series + English subtitle/full stop, either order, approved representative; spin-offs/Japanese subtitles/unknown bases stay separate: OK');

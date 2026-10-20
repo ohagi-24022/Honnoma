@@ -28,6 +28,7 @@ export type Book = {
 };
 
 export type MissingBook = {
+  isbn?: string;
   id: string;
   userId: string;
   title: string;

@@ -1,6 +1,7 @@
+import { registerMissingCoverAdmin } from './shushuka-missing-covers.mjs';
 import { randomBytes, createHash } from 'node:crypto';
 import { automaticReviewPanel, saveAutomaticReviewSettings } from './shushuka-automatic-review-settings.mjs';
-import { fetchBook, fetchCover, snapshotCover, validIsbn } from './shushuka-content-review.mjs';
+import { fetchBook, fetchBookWithCover, fetchCover, snapshotCover, validIsbn } from './shushuka-content-review.mjs';
 
 export const bulkGeneralSelectionScript = `
 (() => {
@@ -65,6 +66,7 @@ export function reviewPageSize(querySize,cookie='') {
 }
 
 export function registerReviewAdmin(app, db, service, page, escapeHtml, coverOps = { fetchCover, snapshotCover }) {
+  registerMissingCoverAdmin(app, db, service, page, escapeHtml);
   const csrf = randomBytes(32).toString('hex'); const e = escapeHtml;
   const returnLink=req=>`<a href="${e(reviewReturnTo(req))}">一覧へ戻る</a>`;
   const token = `<input type="hidden" name="csrf" value="${csrf}">`;
@@ -76,6 +78,7 @@ export function registerReviewAdmin(app, db, service, page, escapeHtml, coverOps
   app.get('/reviews', guarded(async (req,res) => {
     const view = ['unclassified','general','adult','all'].includes(req.query.view) ? req.query.view : 'unclassified';
     const coverView=['all','show','hide','unreviewed'].includes(req.query.cover)?req.query.cover:'all';
+    const sourceView=['all','missing','ready'].includes(req.query.source)?req.query.source:'all';
     const sizes=[10,30,50,100];
     const size=reviewPageSize(req.query.size,req.headers?.cookie);
     if(sizes.includes(Number(req.query.size)))res.setHeader?.('Set-Cookie',`honnoma_review_size=${size}; Path=/reviews; Max-Age=31536000; HttpOnly; SameSite=Lax${req.secure?'; Secure':''}`);
@@ -85,6 +88,8 @@ export function registerReviewAdmin(app, db, service, page, escapeHtml, coverOps
       let query=db.from('book_content_review_jobs').select('isbn13,title,status,reason,cover_status,description_status,updated_at,candidate,content_hash,adult_only',{count:'exact'});
       if(view==='unclassified')query=query.is('adult_only',null);
       if(view==='general'||view==='adult')query=query.eq('adult_only',view==='adult');
+      if(sourceView==='missing')query=query.is('candidate->>cover_hash',null);
+      if(sourceView==='ready')query=query.not('candidate->>cover_hash','is',null);
       if(publisher)query=query.eq('candidate->>publisher',publisher);
       if(search)query=query.ilike(/^\d+$/.test(search)?'isbn13':'title',`%${search.replace(/[\\%_]/g,'\\$&')}%`);
       return query.order('updated_at',{ascending:view==='unclassified'}).order('isbn13',{ascending:true});
@@ -131,7 +136,7 @@ export function registerReviewAdmin(app, db, service, page, escapeHtml, coverOps
     const displayRows=filtered.length?await db.from('reviewed_book_content').select('isbn13,cover_url,enabled').in('isbn13',filtered.map(job=>job.isbn13)):{data:[]};
     if(displayRows.error)throw displayRows.error;
     const visibleCovers=new Set((displayRows.data??[]).filter(row=>row.enabled&&row.cover_url).map(row=>row.isbn13));
-    const pageUrl=number=>`/reviews?${new URLSearchParams({view,cover:coverView,publisher,q:search,size:String(size),page:String(number)})}`;
+    const pageUrl=number=>`/reviews?${new URLSearchParams({view,cover:coverView,source:sourceView,publisher,q:search,size:String(size),page:String(number)})}`;
     const returnTo=pageUrl(currentPage);
     const pager=`<nav class="review-pagination" aria-label="確認一覧のページ"><span>全${total}件 ／ ${currentPage} / ${pages}ページ</span>${currentPage>1?`<a href="${e(pageUrl(1))}">最初</a><a href="${e(pageUrl(currentPage-1))}">前へ</a>`:''}${currentPage<pages?`<a href="${e(pageUrl(currentPage+1))}">次へ</a><a href="${e(pageUrl(pages))}">最後</a>`:''}</nav>`;
     const controls=(job,index)=>!job.candidate?.title||!job.content_hash
@@ -142,8 +147,8 @@ export function registerReviewAdmin(app, db, service, page, escapeHtml, coverOps
       <div class="review-cover-actions"><fieldset class="choices"><legend class="sr-only">${e(job.title)}の表紙表示</legend><label><input type="radio" name="cover_${index}" value="show" ${visibleCovers.has(job.isbn13)?'checked':''}>表紙を表示可</label><label><input type="radio" name="cover_${index}" value="hide" ${!visibleCovers.has(job.isbn13)&&job.cover_status==='held'?'checked':''}>表紙を非表示</label></fieldset><button class="secondary" type="submit" formaction="/reviews/cover" name="cover_row" value="${index}">表紙設定を保存</button></div>`;
     const cards=filtered.map((job,index)=>`<article class="review-row" data-isbn="${e(job.isbn13)}" data-cover-eligible="${job.adult_only===false&&!!job.candidate?.cover_hash}">
       <div class="review-image">${job.candidate?.cover_hash?`<a href="/reviews/${e(job.isbn13)}/cover" target="_blank" rel="noopener"><img loading="lazy" src="/reviews/${e(job.isbn13)}/cover" alt="${e(job.title)}の表紙"></a>`:'<span>表紙未取得</span>'}</div>
-      <div class="review-title"><strong>${e(job.title||`ISBN ${job.isbn13}`)}</strong>${!job.candidate?.title?'<small>書誌情報の取得待ち（AI判別前）</small>':''}<small>${e(job.candidate?.publisher||'出版社未取得')}${job.candidate?.imprint?` ／ ${e(job.candidate.imprint)}`:''}</small><small>${e(job.isbn13)} ／ ${job.adult_only===null?'未分類':job.adult_only?'成人向け':'一般向け'} ／ 表紙：${visibleCovers.has(job.isbn13)?'表示可':job.cover_status==='held'?'非表示':'未確認'}</small></div>
-      <div class="review-actions">${controls(job,index)}</div></article>`).join('');
+      <div class="review-title"><strong>${e(job.title||`ISBN ${job.isbn13}`)}</strong>${!job.candidate?.title?'<small>書誌情報の取得待ち（AI判別前）</small>':''}<small>${e(job.candidate?.publisher||'出版社未取得')}${job.candidate?.imprint?` ／ ${e(job.candidate.imprint)}`:''}</small><small>画像：${job.candidate?.cover_hash?'取得済み':job.candidate?.cover_url?'取得失敗':'取得先未設定'}</small><small>${e(job.isbn13)} ／ ${job.adult_only===null?'未分類':job.adult_only?'成人向け':'一般向け'} ／ 表紙：${visibleCovers.has(job.isbn13)?'表示可':job.cover_status==='held'?'非表示':'未確認'}</small></div>
+      <div class="review-actions">${controls(job,index)}<a href="/content?isbn=${e(job.isbn13)}">表紙・紹介文を編集</a>${job.candidate?.title&&job.adult_only===null&&['queued','retry','pending_review'].includes(job.status)?`<button type="submit" formaction="/reviews/prepare" name="prepare_isbn" value="${e(job.isbn13)}">書誌・表紙を再取得</button>`:''}</div></article>`).join('');
     const prepareCount=Math.max(0,Math.min(5,Number(req.query.prepared)||0));
     const prepareFailed=Math.max(0,Math.min(5,Number(req.query.prepare_failed)||0));
     const preparationNotice=req.query.prepared!==undefined?`<p role="status">書誌情報を${prepareCount}件取得しました。${prepareFailed?`${prepareFailed}件は取得できませんでした。時間を置いて再試行してください。`:''}</p>`:'';
@@ -157,9 +162,9 @@ export function registerReviewAdmin(app, db, service, page, escapeHtml, coverOps
       .review-footer label{margin:0;display:flex;align-items:center;gap:8px}.review-footer input{width:auto}
       .review-bulk{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:14px 0}.review-bulk p{margin:0;color:var(--muted)}.review-bulk button:disabled{opacity:.45;cursor:default}
       @media(max-width:850px){.review-row{grid-template-columns:64px minmax(0,1fr);gap:12px}.review-actions{grid-column:2;flex-wrap:wrap}.review-image,.review-image img{width:64px;height:90px}.review-title strong{font-size:15px}}
-    </style>${automaticReviewPanel({config,service,token,escapeHtml:e,failed:failed??0})}<section class="panel"><h2>表紙・タイトルの確認</h2><p>表紙とタイトルを見て「一般向け／成人向け」を選び、保存してください。出版社ごとに絞り込めます。未選択の本は変更されません。</p>
+    </style>${automaticReviewPanel({config,service,token,escapeHtml:e,failed:failed??0})}<section class="panel"><h2>表紙・タイトルの確認</h2><p><a href="/missing-covers">本棚の表紙未取得を管理（ISBN未設定を含む）</a></p><p>表紙とタイトルを見て「一般向け／成人向け」を選び、保存してください。出版社ごとに絞り込めます。未選択の本は変更されません。</p>
       <form class="review-filter" method="get"><label>分類<select name="view">${[['unclassified','未分類'],['general','一般向け'],['adult','成人向け'],['all','すべて']].map(([v,t])=>`<option value="${v}" ${view===v?'selected':''}>${t}</option>`).join('')}</select></label>
-      <label>表紙<select name="cover">${[['all','すべて'],['show','表示可'],['hide','非表示'],['unreviewed','未確認']].map(([v,t])=>`<option value="${v}" ${coverView===v?'selected':''}>${t}</option>`).join('')}</select></label><label>出版社<select name="publisher"><option value="">すべての出版社</option>${publishers.map(x=>`<option ${x===publisher?'selected':''}>${e(x)}</option>`).join('')}</select></label><label>タイトル・ISBN<input name="q" value="${e(search)}"></label><label>表示件数<select name="size">${sizes.map(n=>`<option value="${n}" ${size===n?'selected':''}>${n}件</option>`).join('')}</select></label><button>絞り込む</button></form>${pager}
+      <label>表紙の公開設定<select name="cover">${[['all','すべて'],['show','表示可'],['hide','非表示'],['unreviewed','未確認']].map(([v,t])=>`<option value="${v}" ${coverView===v?'selected':''}>${t}</option>`).join('')}</select></label><label>表紙の取得状況<select name="source">${[['all','すべて'],['missing','未取得・取得失敗'],['ready','取得済み']].map(([v,t])=>`<option value="${v}" ${sourceView===v?'selected':''}>${t}</option>`).join('')}</select></label><label>出版社<select name="publisher"><option value="">すべての出版社</option>${publishers.map(x=>`<option ${x===publisher?'selected':''}>${e(x)}</option>`).join('')}</select></label><label>タイトル・ISBN<input name="q" value="${e(search)}"></label><label>表示件数<select name="size">${sizes.map(n=>`<option value="${n}" ${size===n?'selected':''}>${n}件</option>`).join('')}</select></label><button>絞り込む</button></form>${pager}
       <form method="post" action="/reviews/classify" data-review-classify>${token}<input type="hidden" name="return_to" value="${e(returnTo)}">
       <div class="review-bulk"><button type="button" data-select-general ${filtered.length?'':'disabled'}>表示中をすべて一般向けに選択</button><button type="button" class="ghost" data-undo-general disabled>一括選択を戻す</button><p data-selection-status role="status" aria-live="polite">対象はこのページの本です。選択後に確認し、下の「選択した分類をまとめて保存」で保存してください。</p></div>
       <div class="review-bulk"><button type="button" data-select-cover ${filtered.some(job=>job.adult_only===false&&job.candidate.cover_hash)?'':'disabled'}>表示中の表紙をすべて表示可に選択</button><button type="button" class="ghost" data-undo-cover disabled>表紙の一括選択を戻す</button><p data-cover-selection-status role="status" aria-live="polite">一般向けとして保存済みで、表紙を取得できた本が対象です。選択後に表紙設定を保存してください。</p></div>
@@ -204,7 +209,8 @@ export function registerReviewAdmin(app, db, service, page, escapeHtml, coverOps
   app.post('/reviews/prepare',guarded(async(req,res)=>{
     const requested=String(req.body?.prepare_isbn??'');
     if(requested&&!validIsbn(requested))throw new Error('Invalid ISBN');
-    let query=db.from('book_content_review_jobs').select('isbn13,candidate,adult_only,status').in('status',['queued','retry']).is('adult_only',null).is('candidate->>title',null);
+    let query=db.from('book_content_review_jobs').select('isbn13,candidate,adult_only,status').in('status',requested?['queued','retry','pending_review']:['queued','retry']).is('adult_only',null);
+    if(!requested)query=query.is('candidate->>title',null);
     if(requested)query=query.eq('isbn13',requested);
     const {data:jobs,error}=await query.order('created_at',{ascending:true}).limit(requested?1:5);
     if(error)throw error;
@@ -214,8 +220,9 @@ export function registerReviewAdmin(app, db, service, page, escapeHtml, coverOps
       if(Date.now()-startedAt>20000)break;
       if(!validIsbn(job.isbn13))continue;
       try{
-        const book=await (coverOps.fetchBook??fetchBook)(db,job.isbn13);let image=null;
-        if(book.cover_url){try{image=await fetchCover(book.cover_url);}catch{}}
+        let book,image;
+        if(coverOps.fetchBook){book=await coverOps.fetchBook(db,job.isbn13);image=null;if(book.cover_url){try{image=await (coverOps.fetchCover??fetchCover)(book.cover_url);}catch{}}}
+        else ({book,image}=await fetchBookWithCover(db,job.isbn13));
         const candidate={...book,cover_hash:image?.hash??null,review_origin:'registration'};
         const hash=createHash('sha256').update(JSON.stringify(candidate)).digest('hex');
         const {data:saved,error:saveError}=await db.rpc('prepare_book_content_review',{p_isbn:job.isbn13,p_hash:hash,p_candidate:candidate});
@@ -259,14 +266,16 @@ export function registerReviewAdmin(app, db, service, page, escapeHtml, coverOps
     const {data: job,error}=await db.from('book_content_review_jobs').select('*').eq('isbn13',req.params.isbn).single();
     if(error||!job.candidate)throw new Error('Updated');
     const book=job.candidate??{};
-    res.send(page('内容を確認',`<section class="panel"><h2>${e(job.title||job.isbn13)}</h2><p>${e(job.reason)}</p><p>ISBN：${e(job.isbn13)}</p>
+    const editable=['pending_review','approved','rejected'].includes(job.status);
+    const canApprove=editable&&job.adult_only!==true&&(job.status==='pending_review'||job.adult_only===false);
+    res.send(page('内容を確認',`<section class="panel">${req.query?.saved==='1'?'<p role="status">表紙・紹介文の表示設定を保存しました。</p>':''}<h2>${e(job.title||job.isbn13)}</h2><p>${e(job.reason)}</p><p>ISBN：${e(job.isbn13)}</p><p><a href="/reviews?view=all&q=${e(job.isbn13)}">分類・表紙の設定に戻る</a></p>${job.status!=='pending_review'?'<p>確認済みの内容も、チェックを変更して保存できます。</p>':''}${!canApprove?'<p>表示可に変更するには、一般向けとして分類を保存してください。確認処理中の場合は完了後に開き直してください。</p>':''}
       ${book.cover_url?`<p><a href="${e(book.source_url)}" target="_blank" rel="noopener">確認元のページ</a></p><p>表紙候補：<img class="cover" src="/reviews/${e(job.isbn13)}/cover" alt="表紙候補"></p>`:''}
       <h3>紹介文候補</h3><pre style="white-space:pre-wrap">${e(book.description||'取得できていません')}</pre>
       <form method="post">${token}<input type="hidden" name="hash" value="${e(job.content_hash)}">
       <label><input type="checkbox" name="cover" ${job.cover_status==='approved'?'checked':''} ${!book.cover_hash?'disabled':''}>この表紙を表示してよい</label>
       <label><input type="checkbox" name="description" ${job.description_status==='approved'?'checked':''} ${!book.description?'disabled':''}>この紹介文を表示してよい</label>
       <p>表示するものだけにチェックしてください。掲載できない内容は承認しないでください。</p>
-      <button ${job.status!=='pending_review'?'disabled':''} name="decision" value="approve">選択した内容を承認</button><button ${job.status!=='pending_review'?'disabled':''} name="decision" value="reject">すべて非表示にする</button></form>
+      <button ${!canApprove?'disabled':''} name="decision" value="approve">選択した内容を保存</button><button ${!editable?'disabled':''} name="decision" value="reject">すべて非表示にする</button></form>
       <p><a href="/content?isbn=${e(job.isbn13)}">保存済みの表紙・紹介文を編集</a></p>${!book.source_url?`<p>データを取得できていません。<a href="/content?isbn=${e(job.isbn13)}">手動で確認内容を登録</a>できます。</p>`:''}</section>`));
   }));
   app.get('/reviews/:isbn/cover',guarded(async(req,res)=>{
@@ -278,19 +287,21 @@ export function registerReviewAdmin(app, db, service, page, escapeHtml, coverOps
   }));
   app.post('/reviews/:isbn',guarded(async(req,res)=>{
     const {data:job,error}=await db.from('book_content_review_jobs').select('*').eq('isbn13',req.params.isbn).single();
-    if(error||job.status!=='pending_review'||job.content_hash!==req.body.hash)throw new Error('Updated');
+    if(error||!['pending_review','approved','rejected'].includes(job.status)||job.content_hash!==req.body.hash)throw new Error('Updated');
+    if(!['approve','reject'].includes(req.body.decision))throw new Error('Invalid decision');
+    if(req.body.decision==='approve'&&(job.adult_only===true||(job.status!=='pending_review'&&job.adult_only!==false)))throw new Error('Classify as general first');
     const book=job.candidate??{}; const approved=req.body.decision==='approve';
     let cover=null; let description=null;
     if(approved&&req.body.cover==='on'){
-      const image=await fetchCover(book.cover_url);
+      const image=await (coverOps.fetchCover??fetchCover)(book.cover_url);
       if(image.hash!==book.cover_hash)throw new Error('Changed image');
-      cover=await snapshotCover(db,image);
+      cover=await (coverOps.snapshotCover??snapshotCover)(db,image);
     }
     if(approved&&req.body.description==='on')description=book.description||null;
     if(approved&&!cover&&!description)throw new Error('Select content');
     const {data,error:saveError}=await db.rpc('resolve_book_content_review',{p_isbn:job.isbn13,p_hash:job.content_hash,p_approved:approved,
       p_display:{cover_url:cover,description,source_url:book.source_url||`https://books.rakuten.co.jp/search?sitem=${job.isbn13}`}});
     if(saveError||!data)throw new Error('Updated');
-    res.redirect(303,'/reviews');
+    res.redirect(303,`/reviews/${job.isbn13}?saved=1`);
   }));
 }

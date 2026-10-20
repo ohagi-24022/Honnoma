@@ -38,3 +38,9 @@ assert.throws(()=>overrideValues({isbn:'9784089082386',source_url:'https://www.s
 assert.throws(()=>overrideValues({isbn:'9784089082386',thumbnail_url:'https://example.org/9784088803166.jpg'}),/ISBN/);
 assert.equal(overrideValues({isbn:'9784089082386',subtitle:'DVDアニメ同梱版'}).subtitle,'DVDアニメ同梱版');
 console.log('Edition label and source/cover ISBN mismatch rejection: OK');
+
+const organization=overrideValues({isbn,title:'ONE PIECE 48',book_format:'comic',volume_kind:'main'});
+assert.equal(organization.book_format,'comic');assert.equal(organization.volume_kind,'main');
+assert.throws(()=>overrideValues({isbn,book_format:'other'}),/種類/);assert.throws(()=>overrideValues({isbn,volume_kind:'other'}),/区分/);
+assert.equal(overrideValues({isbn}).book_format,null,'Automatic classification is represented by an unset override.');
+console.log('Admin organization: per-ISBN comic/novel and main/extra corrections, automatic fallback, invalid choices rejected: OK');

@@ -7,6 +7,8 @@ import { getConfirmedBookMetadata } from './confirmedBookMetadata';
 
 type RemoteBookMetadataOverrideResponse = {
   override?: {
+    book_format?: 'comic' | 'novel' | 'unknown' | null;
+    volume_kind?: 'main' | 'extra' | null;
     author?: string | null;
     description?: string | null;
     isbn?: string | null;
@@ -51,6 +53,8 @@ async function getRemoteBookMetadataOverride(book: Book): Promise<KnownBookMetad
     if (requestedIsbn && normalizeKnownIsbn(override.normalized_isbn ?? override.isbn) !== requestedIsbn) return null;
 
     return {
+      bookFormat: override.book_format ?? undefined,
+      volumeKind: override.volume_kind ?? undefined,
       author: override.author ?? undefined,
       description: override.description ?? undefined,
       isbn: override.normalized_isbn ?? override.isbn ?? undefined,
@@ -76,6 +80,8 @@ export async function getBookMetadataOverrideDetails(book: Book): Promise<BookVo
   if (confirmed) {
     return {
       title: confirmed.title,
+      bookFormat: confirmed.book_format ?? undefined,
+      volumeKind: confirmed.volume_kind ?? undefined,
       volumeNumber: confirmed.volume_number ?? undefined,
       subtitle: confirmed.subtitle ?? undefined,
       seriesTitle: confirmed.series_title ?? undefined,
@@ -98,6 +104,8 @@ export async function getBookMetadataOverrideDetails(book: Book): Promise<BookVo
 
   return {
     title: override.title,
+    bookFormat: override.bookFormat,
+    volumeKind: override.volumeKind,
     seriesTitle: override.seriesTitle,
     author: override.author,
     publisher: override.publisher,

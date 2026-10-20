@@ -1,0 +1,9 @@
+-- Exact publisher ISBN; no public cover approval is granted.
+begin;
+insert into public.book_metadata_overrides(isbn,normalized_isbn,title,series_title,series_key,volume_number,author,publisher,thumbnail_url,source_url)
+values ('9784065130872','9784065130872','ヒットマン 1','ヒットマン','ヒットマン',1,'瀬尾公治','講談社','https://dvs-cover.kodansha.co.jp/0000313787/nWUPeN72u173jrcy0xaqyScUYLvfq4u7A5hBUBdo.jpg','https://www.kodansha.co.jp/comic/products/0000313787')
+on conflict(normalized_isbn) where normalized_isbn is not null do nothing;
+update public.books set thumbnail_url='https://dvs-cover.kodansha.co.jp/0000313787/nWUPeN72u173jrcy0xaqyScUYLvfq4u7A5hBUBdo.jpg' where user_id='__TARGET_USER_ID__'::uuid and isbn='9784065130872'
+and thumbnail_url='https://thumbnail.image.rakuten.co.jp/@0_mall/book/cabinet/9813/9784253239813.jpg?_ex=200x200';
+select public.prepare_book_content_review('9784065130872',encode(sha256(convert_to($candidate${"title": "ヒットマン 1", "cover_url": "https://dvs-cover.kodansha.co.jp/0000313787/nWUPeN72u173jrcy0xaqyScUYLvfq4u7A5hBUBdo.jpg", "cover_hash": "72c6bdf9cad2814c8e92d9ddd54896427a54529a0dba932dc1856bc13ca32849", "source_url": "https://www.kodansha.co.jp/comic/products/0000313787", "publisher": "講談社", "author": "瀬尾公治", "volume_number": 1, "series_title": "ヒットマン", "review_origin": "repair", "provider": "publisher", "description": ""}$candidate$::jsonb::text,'UTF8')),'hex'),$candidate${"title": "ヒットマン 1", "cover_url": "https://dvs-cover.kodansha.co.jp/0000313787/nWUPeN72u173jrcy0xaqyScUYLvfq4u7A5hBUBdo.jpg", "cover_hash": "72c6bdf9cad2814c8e92d9ddd54896427a54529a0dba932dc1856bc13ca32849", "source_url": "https://www.kodansha.co.jp/comic/products/0000313787", "publisher": "講談社", "author": "瀬尾公治", "volume_number": 1, "series_title": "ヒットマン", "review_origin": "repair", "provider": "publisher", "description": ""}$candidate$::jsonb);
+commit;

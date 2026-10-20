@@ -1,4 +1,5 @@
-import { isNisekoiUrabanaTitle, knownCompanionByIsbn, searchKnownCompanionBooks } from './knownCompanionBooks';
+import { verifiedStandardBooks } from './verifiedStandardBooks';
+import { isNisekoiUrabanaTitle, knownCompanionByIsbn, knownCompanionByTitle, searchKnownCompanionBooks } from './knownCompanionBooks';
 import { inferBookFormat } from './bookFormat';
 import { verifiedSeriesPublication } from './verifiedSeriesPublication';
 import { Book, BookInput } from '../types';
@@ -103,6 +104,7 @@ type RakutenItem = NonNullable<NonNullable<RakutenBooksResponse['Items']>[number
 
 type ExpectedBook = Partial<Pick<BookInput, 'seriesTitle' | 'volumeNumber'>> & {
   isbn?: string;
+  edition?: string;
 };
 
 const RAKUTEN_APP_REFERER = 'https://github.com/ohagi-24022/Honnoma';
@@ -133,6 +135,8 @@ export type SeriesPublicationInfo = {
 };
 
 export type BookVolumeDetails = {
+  bookFormat?: Book['bookFormat'];
+  volumeKind?: Book['volumeKind'];
   volumeNumber?: number;
   title?: string;
   subtitle?: string;
@@ -178,6 +182,7 @@ const SERIES_SEARCH_ALIASES: Record<string, string[]> = {
 
 const KNOWN_BOOK_FALLBACKS: BookInput[] = [
   ...verifiedBakemonogatariBooks,
+  ...verifiedStandardBooks,
   {
     isbn: '9784088927343',
     title: 'GIFT 久保さんは僕(モブ)を許さない 完結記念公式ファンブック',
@@ -487,7 +492,7 @@ function keepThumbnailOnlyForSafeMatch(
 
 function hasExpectedVolumeAndSeries(book: Pick<BookInput, 'seriesTitle' | 'volumeNumber'>, expected?: ExpectedBook) {
   if (!expected?.volumeNumber || !expected.seriesTitle) return false;
-  return book.volumeNumber === expected.volumeNumber && isSameSeriesTitle(book.seriesTitle, expected.seriesTitle);
+  return book.volumeNumber === expected.volumeNumber && normalizeSeriesKey(book.seriesTitle) === normalizeSeriesKey(expected.seriesTitle);
 }
 
 function rakutenItemHasCover(item?: RakutenItem) {
@@ -505,15 +510,19 @@ function selectRakutenItem(items: RakutenBooksResponse['Items'], expected?: Expe
     items
       ?.map((entry) => entry.Item)
       .filter((item): item is RakutenItem => !!item?.title && !isNonBookRakutenItem(item)) ?? [];
-  if (candidates.length === 0) return undefined;
+  const edition = (item: RakutenItem) => [item.title,item.seriesName,item.subTitle].join(' ').match(/文庫|新装|完全|愛蔵|特装|限定/)?.[0] ?? 'standard';
+  const matching = expected?.isbn ? candidates.filter(item => isSameIsbn(item.isbn,expected.isbn))
+    : expected?.volumeNumber && expected.seriesTitle ? candidates.filter(item => rakutenItemMatchesExpected(item,expected)) : candidates;
+  const eligible = expected?.edition && !expected.isbn ? matching.filter(item => edition(item)===expected.edition) : matching;
+  if (eligible.length === 0) return undefined;
 
   return (
-    candidates.find((item) => rakutenItemHasCover(item) && expected?.isbn && isSameIsbn(item.isbn, expected.isbn)) ??
-    candidates.find((item) => rakutenItemHasCover(item) && rakutenItemMatchesExpected(item, expected)) ??
-    candidates.find((item) => expected?.isbn && isSameIsbn(item.isbn, expected.isbn)) ??
-    candidates.find((item) => rakutenItemMatchesExpected(item, expected)) ??
-    candidates.find(rakutenItemHasCover) ??
-    candidates[0]
+    eligible.find((item) => rakutenItemHasCover(item) && expected?.isbn && isSameIsbn(item.isbn, expected.isbn)) ??
+    eligible.find((item) => rakutenItemHasCover(item) && rakutenItemMatchesExpected(item, expected)) ??
+    eligible.find((item) => expected?.isbn && isSameIsbn(item.isbn, expected.isbn)) ??
+    eligible.find((item) => rakutenItemMatchesExpected(item, expected)) ??
+    eligible.find(rakutenItemHasCover) ??
+    eligible[0]
   );
 }
 
@@ -701,7 +710,7 @@ async function lookupNdlByIsbn(isbn: string): Promise<BookInput | null> {
     seriesTitle,
     volumeNumber,
     volumeKind: normalizeVolumeKind(undefined, title),
-    bookFormat: inferBookFormat({ title, isbn }),
+    bookFormat: inferBookFormat({ title, isbn, labels: [...xmlTagValues(item, 'dcndl:seriesTitle'), ...xmlTagValues(item, 'dc:subject')] }),
     author: normalizeAuthor(firstXmlTag(item, 'dc:creator', 'author')),
     publisher: firstXmlTag(item, 'dc:publisher', 'publisher'),
     publishedDate: firstXmlTag(item, 'dc:date', 'pubDate'),
@@ -790,6 +799,8 @@ export async function searchBookCandidates(query: string): Promise<BookInput[]> 
   if (!title) return [];
   // Known companions must never fall through to a similarly named main comic.
   if (isNisekoiUrabanaTitle(title)) return searchKnownCompanionBooks(title);
+  const knownNovel=knownCompanionByTitle(title);
+  if(knownNovel)return [knownNovel];
   const results = await Promise.allSettled([
     searchRakutenBookInputs({ path: 'BooksBook/Search/20170404', queryParamName: 'title', query: title }),
     searchRakutenBookInputs({ path: 'BooksTotal/Search/20170404', queryParamName: 'keyword', query: title }),
@@ -1344,7 +1355,9 @@ async function lookupGoogleBookVolumeDetails(
       isSameSeriesTitle(parsed.seriesTitle, book.seriesTitle)
     );
   });
-  const selectedItem = isbnMatch ?? volumeMatch ?? bookItems[0];
+  const titleMatch = bookItems.find(item => item.volumeInfo?.title
+    && normalizeSeriesKey(item.volumeInfo.title) === normalizeSeriesKey(book.title));
+  const selectedItem = normalizedIsbn ? isbnMatch : volumeMatch ?? titleMatch;
   const volume = selectedItem?.volumeInfo;
   if (!volume?.title) return null;
 
@@ -1381,7 +1394,7 @@ async function lookupOpenBdVolumeDetails(
   if (!response.ok) return null;
 
   const item = ((await response.json()) as OpenBdResponse)[0];
-  if (!item?.summary?.title) return null;
+  if (!item?.summary?.title || !isSameIsbn(item.summary.isbn, book.isbn)) return null;
   const textContents = item.onix?.CollateralDetail?.TextContent ?? [];
   const preferredText =
     textContents.find((entry) => entry.TextType === '03' && entry.Text?.trim()) ??
@@ -1445,6 +1458,7 @@ async function lookupRakutenBookVolumeDetails(
 
 export async function lookupBookVolumeDetails(
   book: Pick<Book, 'isbn' | 'title' | 'seriesTitle' | 'volumeNumber'>,
+  options: { exactIsbnOnly?: boolean } = {},
 ): Promise<BookVolumeDetails | null> {
   let details: BookVolumeDetails | null = null;
 
@@ -1467,7 +1481,7 @@ export async function lookupBookVolumeDetails(
   } catch {
     // A missing synopsis is a valid result; metadata already found above remains usable.
   }
-  if (details?.description || !book.isbn) return applyKnownDetailsCover(book, details);
+  if (details?.description || !book.isbn || options.exactIsbnOnly) return applyKnownDetailsCover(book, details);
 
   try {
     details = mergeVolumeDetails(
@@ -1495,15 +1509,20 @@ export async function lookupBookVolumeDetails(
 export async function lookupBookByTitle(title: string, fallbackIsbn?: string): Promise<BookInput | null> {
   const trimmedTitle = title.trim();
   if (!trimmedTitle) return null;
+  const knownNovel=knownCompanionByTitle(trimmedTitle);
+  if(knownNovel)return !fallbackIsbn||isSameIsbn(knownNovel.isbn,fallbackIsbn)?knownNovel:null;
   if (isNisekoiUrabanaTitle(trimmedTitle)) {
     const candidates = searchKnownCompanionBooks(trimmedTitle);
     return (fallbackIsbn ? candidates.find(book => isSameIsbn(book.isbn, fallbackIsbn)) : candidates[0]) ?? null;
   }
   let firstResult: BookInput | null = null;
-  const expected = parseSeriesTitle(trimmedTitle);
+  const expected = { ...parseSeriesTitle(trimmedTitle), edition: trimmedTitle.match(/文庫|新装|完全|愛蔵|特装|限定/)?.[0] ?? 'standard' };
   const fallbackCandidate = lookupKnownBookFallbackByTitle(trimmedTitle);
   const knownFallback = !fallbackIsbn || isSameIsbn(fallbackCandidate?.isbn, fallbackIsbn)
     ? fallbackCandidate : null;
+  if(knownFallback && verifiedStandardBooks.some(book=>book.isbn===knownFallback.isbn)
+    && normalizeSeriesKey(expected.seriesTitle)===normalizeSeriesKey(knownFallback.seriesTitle)
+    && expected.volumeNumber===knownFallback.volumeNumber)return knownFallback;
   // Use the verified regular edition for this reported mismatch before a search
   // provider can substitute another volume or special edition's ISBN.
   if (knownFallback && verifiedBakemonogatariBooks.some((book) => book.isbn === knownFallback.isbn)
@@ -1559,8 +1578,8 @@ export async function lookupBookByIsbn(isbn: string): Promise<BookInput | null> 
       title: confirmed.title,
       seriesTitle: confirmed.series_title ?? parsed.seriesTitle,
       volumeNumber: confirmed.volume_number ?? parsed.volumeNumber,
-      volumeKind: normalizeVolumeKind(undefined, confirmed.title),
-      bookFormat: inferBookFormat({ title: confirmed.title, isbn: normalizedIsbn }),
+      volumeKind: normalizeVolumeKind(confirmed.volume_kind ?? undefined, confirmed.title),
+      bookFormat: confirmed.book_format ?? inferBookFormat({ title: confirmed.title, isbn: normalizedIsbn }),
       author: confirmed.author ?? undefined,
       publisher: confirmed.publisher ?? undefined,
       thumbnailUrl: confirmed.thumbnail_url ?? undefined,
@@ -1570,6 +1589,8 @@ export async function lookupBookByIsbn(isbn: string): Promise<BookInput | null> 
       status: 'unread',
     };
   }
+  const standard=verifiedStandardBooks.find(book=>book.isbn===normalizedIsbn);
+  if(standard)return {...standard};
   const knownFallback = lookupKnownBookFallbackByIsbn(normalizedIsbn);
   const ndlResult = await tryLookup('NDL Search', () => lookupNdlByIsbn(normalizedIsbn));
   const openBdResult = await tryLookup('OpenBD', () => lookupOpenBd(normalizedIsbn));

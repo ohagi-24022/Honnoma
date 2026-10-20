@@ -87,3 +87,23 @@ const controls=nodes(tree).filter(node=>node.type==='Pressable');assert.equal(co
 const novel=controls.find(node=>node.props.accessibilityLabel==='本の種類：小説');novel.props.onPress();assert.equal(selected,'novel');
 assert.equal(controls.find(node=>node.props.accessibilityLabel==='本の種類：コミック').props.accessibilityState.checked,true);
 console.log('Book formats: provider hints, unknown safety, manual priority, ISBN/companion recognition, cross-format duplicates, home series/book filters, filter combinations, accessible controls: OK');
+
+const {planLibraryOrganization}=load('src/lib/libraryOrganization.ts');
+const savedNovel={...main,id:'n',title:'ニセコイ ウラバナ 1',seriesTitle:'ニセコイ',bookFormat:'novel',volumeKind:'extra'};
+const unknown={...main,id:'u',title:'種類不明の本',seriesTitle:'種類不明',bookFormat:'unknown'};
+assert.equal(planLibraryOrganization([savedNovel,unknown],false).find(x=>x.id==='u'),undefined);
+assert.equal(planLibraryOrganization([savedNovel,unknown],true).find(x=>x.id==='u').patch.bookFormat,'comic');
+assert(!planLibraryOrganization([savedNovel,unknown],true).some(x=>x.id==='n'&&x.patch.bookFormat),'Explicit novels survive bulk comic assignment.');
+const world={...main,id:'w',title:'ワールドトリガー 1',seriesTitle:'自分のワートリ',seriesAliases:['ワールドトリガー'],publisher:'集英社'};
+const guide={...main,id:'g',title:'ワールドトリガーオフィシャルデータブックBORDER BRIEFING FILE',seriesTitle:'ワールドトリガーオフィシャルデータブックBORDER BRIEFING FILE',volumeKind:'main',publisher:'集英社'};
+const guidePlan=planLibraryOrganization([world,guide]).find(x=>x.id==='g');
+assert.equal(guidePlan.patch.volumeKind,'extra');assert.equal(guidePlan.patch.seriesTitle,'自分のワートリ');
+assert(guidePlan.patch.seriesAliases.includes(guide.seriesTitle));
+assert.equal(guide.volumeKind,'main','Planning does not mutate existing books.');
+const {canFillMissingBookIdentity}=load('src/lib/bookRegistration.ts');
+const legacy={...main,id:'legacy',title:'化物語 5',seriesTitle:'自分のシリーズ',volumeNumber:5,isbn:undefined,publisher:'講談社'};
+const exact={...legacy,title:'化物語（5）',isbn:'9784065148891'};
+assert.equal(canFillMissingBookIdentity(legacy,exact,[legacy]),true);
+for(const wrong of [{...exact,volumeNumber:6},{...exact,title:'別作品 5'},{...exact,publisher:'別出版社'},{...exact,title:'化物語 5 特装版'},{...exact,isbn:'9784065148890'}])assert.equal(canFillMissingBookIdentity(legacy,wrong,[legacy]),false);
+assert.equal(canFillMissingBookIdentity(legacy,exact,[legacy,{...exact,id:'other'}]),false,'Never duplicate an existing ISBN while repairing.');
+console.log('Existing library organization: deliberate comic default, novel preservation, legacy guides, renamed parents; missing-ISBN repair rejects wrong volume/title/publisher/edition/checksum/duplicates: OK');
