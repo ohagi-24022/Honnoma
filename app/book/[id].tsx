@@ -125,9 +125,6 @@ export default function BookDetailsScreen() {
           const knownCover = getKnownBookCoverOverride({ isbn: targetBook.isbn, title: targetBook.title });
           const nextThumbnailUrl = knownCover ?? result.thumbnailUrl;
           const metadataUpdates = {
-            ...(result.source === 'Developer Override' && result.title && result.title !== targetBook.title
-              ? { title: result.title }
-              : {}),
             ...(result.author && result.author !== targetBook.author
               ? { author: result.author }
               : {}),
@@ -214,7 +211,7 @@ export default function BookDetailsScreen() {
   }
 
   const knownCover = getKnownBookCoverOverride({ isbn: book.isbn, title: book.title });
-  const displayTitle = details?.title ?? book.title;
+  const displayTitle = book.title;
   const displayAuthor = details?.author ?? book.author;
   const seriesPublisher = books.find(
     (candidate) =>

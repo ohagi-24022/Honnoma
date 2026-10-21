@@ -71,10 +71,13 @@ let uiSlot=0,uiRef=0;const uiStates=[],uiRefs=[],submitted=[];
 const uiReact={useCallback:x=>x,useMemo:fn=>fn(),useState:v=>{const i=uiSlot++;if(!(i in uiStates))uiStates[i]=v;return [uiStates[i],n=>{uiStates[i]=typeof n==='function'?n(uiStates[i]):n}]},useRef:v=>{const i=uiRef++;return uiRefs[i]??={current:v}}};
 const native=Object.fromEntries(['View','Text','Pressable','ScrollView','TextInput'].map(x=>[x,x]));
 native.StyleSheet={create:x=>x};native.Animated={Value:function(){this.setValue=()=>{}},View:'Animated.View',timing:()=>({start(){}})};native.Alert={alert(){}};
+let additionalCalls=0;
 const {default:Screen}=load('app/(tabs)/wishlist.tsx',{
   react:uiReact,'react/jsx-runtime':{jsx,jsxs:jsx},'react-native':native,
   'expo-router/react-navigation':{useScrollToTop(){}},'@expo/vector-icons/Ionicons':'Icon','expo-web-browser':{},
   '../../src/components/BookCover':{BookCover:'BookCover'},
+  '../../src/lib/wishlistAdditionalSearch':{wishlistSearchKey:s=>s.trim(),searchWishlistAgain:async()=>{additionalCalls++;return candidates;}},
+  '../../src/store/AuthContext':{useAuth:()=>({user:{id:'test'}})},
   '../../src/lib/bookApis':{searchSeriesCandidates:async()=>candidates,buildPurchaseUrl:()=>''},
   '../../src/store/AppSettingsContext':{useAppSettings:()=>({})},'../../src/store/LibraryContext':{useLibrary:()=>({books:[]})},
   '../../src/store/ThemeContext':{useAppTheme:()=>({colors:{}})},
@@ -83,10 +86,11 @@ const {default:Screen}=load('app/(tabs)/wishlist.tsx',{
 const nodes=t=>!t||typeof t!=='object'?[]:[t,...[t.props?.children].flat(Infinity).flatMap(nodes)];
 function renderScreen(){uiSlot=0;uiRef=0;return Screen();}
 let tree=renderScreen();assert(nodes(tree).filter(n=>n.type==='BookCover').every(n=>n.props.isbn===isbn && n.props.displayContext==='personal'));
-nodes(tree).find(n=>n.props?.accessibilityLabel==='欲しい漫画の追加パネルを開く').props.onPress();tree=renderScreen();
+nodes(tree).find(n=>n.props?.accessibilityLabel==='欲しい本の追加パネルを開く').props.onPress();tree=renderScreen();
 nodes(tree).find(n=>n.type==='TextInput'&&n.props.placeholder==='作品名、シリーズ名').props.onChangeText(book.seriesTitle);tree=renderScreen();
 await nodes(tree).find(n=>n.type==='TextInput'&&n.props.placeholder==='作品名、シリーズ名').props.onSubmitEditing();await new Promise(r=>setTimeout(r,0));tree=renderScreen();
 assert.equal(nodes(tree).filter(n=>n.type==='BookCover').length,3);
 assert(nodes(tree).filter(n=>n.type==='BookCover').every(n=>n.props.isbn===isbn && n.props.displayContext==='personal'));
-nodes(tree).find(n=>n.props?.accessibilityLabel==='欲しい漫画に追加').props.onPress();assert.equal(submitted[0].isbn,isbn);
+const additional=nodes(tree).find(n=>n.props?.accessibilityLabel==='作品名を補って追加検索');additional.props.onPress();additional.props.onPress();await new Promise(r=>setTimeout(r,0));tree=renderScreen();assert.equal(additionalCalls,1);assert(nodes(tree).find(n=>n.props?.accessibilityLabel==='作品名を補って追加検索').props.disabled);
+nodes(tree).find(n=>n.props?.accessibilityLabel==='欲しい本に追加').props.onPress();assert.equal(submitted[0].isbn,isbn);
 console.log('Wishlist covers: ISBN from provider to search cards, selected item, local/cloud persistence, list cards, legacy URL, undo, exact-title fallback and edition ambiguity: OK');

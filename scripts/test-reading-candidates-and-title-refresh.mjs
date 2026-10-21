@@ -1,0 +1,27 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
+import ts from 'typescript';
+const compile=s=>ts.transpileModule(s,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText;
+const detail=readFileSync('app/book/[id].tsx','utf8');
+const block=detail.slice(detail.indexOf('  const loadDetails = useCallback('),detail.indexOf('  useEffect(() => {\n    if (book && !loaded)',detail.indexOf('  const loadDetails = useCallback('))>0?detail.indexOf('  useEffect(() => {\n    if (book && !loaded)',detail.indexOf('  const loadDetails = useCallback(')):detail.indexOf('  useEffect(() => {\r\n    if (book && !loaded)',detail.indexOf('  const loadDetails = useCallback(')));
+const writes=[],exports={};const book={id:'one',title:'自分が付けた巻の名前',seriesTitle:'選んだシリーズ',volumeNumber:3,isbn:'9780306406157'};
+const fetched={source:'Developer Override',title:'外部の別名',author:'作者',thumbnailUrl:'https://example.test/cover',description:'紹介文'};
+vm.runInNewContext(compile(`${block}\nexports.run=loadDetails;`),{exports,useCallback:f=>f,book,routeBookId:'one',loading:false,activeBookIdRef:{current:'one'},setLoading(){},setError(){},setDetails(){},setLoaded(){},getBookVolumeDetails:async()=>fetched,getKnownBookCoverOverride:()=>null,trackPurchasePrices:false,updateBook:async(id,patch)=>writes.push(patch)});
+await exports.run(true);assert.equal(writes.length,1);assert(!('title' in writes[0]));assert(!('seriesTitle' in writes[0]));assert(!('volumeNumber' in writes[0]));assert.equal(writes[0].thumbnailUrl,fetched.thumbnailUrl);
+const displayLine=detail.match(/const displayTitle = .*;/)[0];assert.equal(vm.runInNewContext(`${displayLine} displayTitle`,{book,details:fetched}),book.title);
+const source=readFileSync('app/reading-suggestions.tsx','utf8');
+const selector=source.slice(source.indexOf('  const activeTargets ='),source.indexOf('  const filteredLibraryTargets'));
+const local=[{key:'local',title:'本棚'}],global=[{key:'global',title:'全体'}];
+function selected(mode,key,globals=global){return vm.runInNewContext(compile(`${selector}\nselectedTarget;`),{targetMode:mode,selectedSeriesKey:key,libraryTargets:local,globalTargets:globals,useMemo:f=>f()});}
+assert.equal(selected('global','local').title,'全体');assert.equal(selected('library','global').title,'本棚');assert.equal(selected('global','local',[]),undefined);
+const loadBlock=source.slice(source.indexOf('  const loadGlobalTargets = async'),source.indexOf('  useEffect(() => {',source.indexOf('  const loadGlobalTargets = async')));
+let targets,chosen,rpc;
+const load={};
+vm.runInNewContext(compile(`${loadBlock}\nexports.load=loadGlobalTargets;`),{exports:load,user:{id:'test'},supabase:{rpc:async(name,params)=>{rpc={name,params};return {data:[{series_title:'報告の少ない作品'}]}}},normalizeSeriesKey:s=>s,globalLoading:false,globalRequest:{current:0},globalMounted:{current:true},setGlobalTargets:v=>targets=v,setSelectedSeriesKey:v=>chosen=v,setGlobalLoading(){},setGlobalError(){}});
+await load.load();assert.equal(rpc.name,'get_series_reading_report_candidates');assert.equal(rpc.params.limit_count,4);assert.equal(chosen,targets[0].key);
+const example=source.match(/placeholder=\{(currentReading \?[^\n]+)\}/)[1];
+const placeholder=(currentReading,selectedTarget)=>vm.runInNewContext(example,{currentReading,selectedTarget});
+assert.equal(placeholder('さくひん',{title:'作品'}),'例: さくひん');assert.equal(placeholder('',{title:'作品'}),'「作品」の読み方');assert.equal(placeholder('',undefined),'シリーズを選んでください');
+assert(source.includes("useEffect(() => { setSuggestedReading(''); setNote(''); }, [selectedTarget?.key, targetMode])"));
+console.log('Actual refresh handler preserves saved title/group/volume; actual mode selection, candidate RPC and first selection, selected-work example and draft reset: OK');

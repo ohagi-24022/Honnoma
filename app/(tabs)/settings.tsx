@@ -171,7 +171,7 @@ export default function SettingsScreen() {
       contentContainerStyle={styles.content}
     >
       <View style={[styles.section, { borderBottomColor: colors.border }]}>
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>アカウント</Text>
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>アカウントと同期</Text>
         {initializing ? (
           <View style={styles.loadingRow}>
             <ActivityIndicator color={colors.text} />
@@ -307,10 +307,8 @@ export default function SettingsScreen() {
             </Link>
           </View>
         )}
-      </View>
 
-      <View style={[styles.section, { borderBottomColor: colors.border }]}>
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>クラウド同期</Text>
+        <Text style={[styles.rowTitle, { color: colors.text, marginTop: 16 }]}>データの保存と同期</Text>
         <View style={styles.row}>
           <View style={[styles.accountIcon, { backgroundColor: colors.surface }]}>
             <Ionicons color={colors.text} name={user ? "cloud-done-outline" : "cloud-upload-outline"} size={21} />
@@ -327,74 +325,6 @@ export default function SettingsScreen() {
           </View>
         </View>
 
-      </View>
-
-      <View style={[styles.section, { borderBottomColor: colors.border }]}>
-        <View style={styles.sectionTitleRow}>
-          <Ionicons color={colors.primary} name="help-circle-outline" size={20} />
-          <Text style={[styles.sectionTitle, styles.sectionTitleInRow, { color: colors.text }]}>ヘルプ</Text>
-        </View>
-        <Link href="/help" asChild>
-          <Pressable
-            style={StyleSheet.flatten([
-              styles.helpLink,
-              { backgroundColor: colors.surface, borderColor: colors.border },
-            ])}
-          >
-            <View style={styles.rowText}>
-              <View style={styles.navigationTitleRow}>
-                <Ionicons color={colors.muted} name="chevron-forward" size={16} />
-                <Text style={[styles.rowTitle, { color: colors.text }]}>本の間の使い方</Text>
-              </View>
-              <Text style={[styles.helpCopy, { color: colors.muted }]} numberOfLines={2}>
-                {'\u767b\u9332\u3001\u672c\u68da\u3001\u6b32\u3057\u3044\u3001\u30e9\u30f3\u30ad\u30f3\u30b0\u3001\u901a\u77e5\u306a\u3069\u306e\u64cd\u4f5c\u3092\u78ba\u8a8d\u3067\u304d\u307e\u3059\u3002'}
-              </Text>
-            </View>
-          </Pressable>
-        </Link>
-      </View>
-
-      <View style={[styles.section, { borderBottomColor: colors.border }]}>
-        <View style={styles.sectionTitleRow}>
-          <Text style={[styles.sectionTextIcon, { color: colors.primary }]}>Aa</Text>
-          <Text style={[styles.sectionTitle, styles.sectionTitleInRow, { color: colors.text }]}>データ補正</Text>
-        </View>
-        <Link href="/reading-suggestions" asChild>
-          <Pressable
-            style={StyleSheet.flatten([
-              styles.helpLink,
-              { backgroundColor: colors.surface, borderColor: colors.border },
-            ])}
-          >
-            <View style={styles.rowText}>
-              <View style={styles.navigationTitleRow}>
-                <Ionicons color={colors.muted} name="chevron-forward" size={16} />
-                <Text style={[styles.rowTitle, { color: colors.text }]}>シリーズ名の読み方を報告</Text>
-              </View>
-              <Text style={[styles.helpCopy, { color: colors.muted }]} numberOfLines={2}>
-                五十音順の並び替えに使う読み方の候補を送信できます。
-              </Text>
-            </View>
-          </Pressable>
-        </Link>
-      </View>
-
-      <View style={[styles.section, { borderBottomColor: colors.border }]}>
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>外部EC</Text>
-        <View style={styles.row}>
-          <View style={styles.rowText}>
-            <Text style={[styles.rowTitle, { color: colors.text }]}>購入リンクを外部で開く</Text>
-            <Text style={[styles.rowCopy, { color: colors.muted }]}>
-              OFFはアプリ内ブラウザ、ONは外部ブラウザや対応する購入アプリで開きます。
-            </Text>
-          </View>
-          <Switch
-            onValueChange={setOpenExternalPurchaseLinks}
-            thumbColor="#ffffff"
-            trackColor={{ false: '#d4d4d4', true: '#31c759' }}
-            value={openExternalPurchaseLinks}
-          />
-        </View>
       </View>
 
       <View style={[styles.section, { borderBottomColor: colors.border }]}>
@@ -438,8 +368,8 @@ export default function SettingsScreen() {
       </View>
 
       <View style={[styles.section, { borderBottomColor: colors.border }]}>
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>表示</Text>
-        <View style={styles.row}>
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>本棚・購入</Text>
+        <View style={[styles.row, { marginBottom: 14 }]}>
           <View style={styles.rowText}>
             <Text style={[styles.rowTitle, { color: colors.text }]}>購入価格を記録</Text>
             <Text style={[styles.rowCopy, { color: colors.muted }]}>ONにすると、登録時とシリーズ詳細の編集で通常価格または中古価格を記録できます。</Text>
@@ -451,6 +381,25 @@ export default function SettingsScreen() {
             value={trackPurchasePrices}
           />
         </View>
+        <View style={styles.row}>
+          <View style={styles.rowText}>
+            <Text style={[styles.rowTitle, { color: colors.text }]}>購入リンクを外部で開く</Text>
+            <Text style={[styles.rowCopy, { color: colors.muted }]}>
+              OFFはアプリ内ブラウザ、ONは外部ブラウザや対応する購入アプリで開きます。
+            </Text>
+          </View>
+          <Switch
+            onValueChange={setOpenExternalPurchaseLinks}
+            thumbColor="#ffffff"
+            trackColor={{ false: '#d4d4d4', true: '#31c759' }}
+            value={openExternalPurchaseLinks}
+          />
+        </View>
+      </View>
+
+      <View style={[styles.section, { borderBottomColor: colors.border }]}>
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>表示</Text>
+        <Text style={[styles.rowTitle, { color: colors.text, marginBottom: 10 }]}>画面のテーマ</Text>
         <View style={[styles.segmented, { backgroundColor: colors.elevated }]}>
           {themeOptions.map((option) => (
             <Pressable
@@ -464,6 +413,50 @@ export default function SettingsScreen() {
             </Pressable>
           ))}
         </View>
+      </View>
+
+      <View style={[styles.section, { borderBottomColor: colors.border }]}>
+        <View style={styles.sectionTitleRow}>
+          <Ionicons color={colors.primary} name="help-circle-outline" size={20} />
+          <Text style={[styles.sectionTitle, styles.sectionTitleInRow, { color: colors.text }]}>ヘルプ・改善</Text>
+        </View>
+        <Link href="/help" asChild>
+          <Pressable
+            style={StyleSheet.flatten([
+              styles.helpLink,
+              { backgroundColor: colors.surface, borderColor: colors.border },
+            ])}
+          >
+            <View style={styles.rowText}>
+              <View style={styles.navigationTitleRow}>
+                <Ionicons color={colors.muted} name="chevron-forward" size={16} />
+                <Text style={[styles.rowTitle, { color: colors.text }]}>本の間の使い方</Text>
+              </View>
+              <Text style={[styles.helpCopy, { color: colors.muted }]} numberOfLines={2}>
+                {'\u767b\u9332\u3001\u672c\u68da\u3001\u6b32\u3057\u3044\u3001\u30e9\u30f3\u30ad\u30f3\u30b0\u3001\u901a\u77e5\u306a\u3069\u306e\u64cd\u4f5c\u3092\u78ba\u8a8d\u3067\u304d\u307e\u3059\u3002'}
+              </Text>
+            </View>
+          </Pressable>
+        </Link>
+        <Link href="/reading-suggestions" asChild>
+          <Pressable
+            style={StyleSheet.flatten([
+              styles.helpLink,
+              { marginTop: 10 },
+              { backgroundColor: colors.surface, borderColor: colors.border },
+            ])}
+          >
+            <View style={styles.rowText}>
+              <View style={styles.navigationTitleRow}>
+                <Ionicons color={colors.muted} name="chevron-forward" size={16} />
+                <Text style={[styles.rowTitle, { color: colors.text }]}>シリーズ名の読み方を報告</Text>
+              </View>
+              <Text style={[styles.helpCopy, { color: colors.muted }]} numberOfLines={2}>
+                五十音順の並び替えに使う読み方の候補を送信できます。
+              </Text>
+            </View>
+          </Pressable>
+        </Link>
       </View>
 
       <View style={[styles.section, { borderBottomColor: colors.border }]}>

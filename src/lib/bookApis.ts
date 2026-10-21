@@ -82,6 +82,7 @@ type RakutenBooksResponse = {
     Item?: {
       title?: string;
       titleKana?: string;
+      booksGenreId?: string;
       subTitle?: string;
       author?: string;
       publisherName?: string;
@@ -355,6 +356,7 @@ function isNonBookTitle(title?: string) {
 }
 
 function isNonBookRakutenItem(item?: RakutenItem) {
+  if (item?.booksGenreId && !item.booksGenreId.split('/').some(genre => genre.startsWith('001'))) return true;
   return isNonBookTitle([item?.title, item?.subTitle, item?.itemCaption].filter(Boolean).join(' '));
 }
 
@@ -778,7 +780,7 @@ async function searchRakutenBookInputs(params: {
 }) {
   if (!supabase || !params.query.trim()) return [];
 
-  const searchParams = new URLSearchParams({ [params.queryParamName]: params.query });
+  const searchParams = new URLSearchParams({ [params.queryParamName]: params.query, booksGenreId: '001' });
   const response = await fetchRakutenWithTimeout(
     `https://openapi.rakuten.co.jp/services/api/${params.path}?${searchParams.toString()}`,
     { path: params.path, params: Object.fromEntries(searchParams.entries()) },
@@ -822,8 +824,11 @@ export async function searchBookCandidates(query: string): Promise<BookInput[]> 
 }
 
 function toSeriesSearchCandidate(book: BookInput, source: SeriesSearchCandidate['source']): SeriesSearchCandidate | null {
+  if (!book.isbn || !isBookIsbnBarcode(book.isbn) || isNonBookTitle(book.title) || /VHS|ビデオテープ|アクリルスタンド|フィギュア|ぬいぐるみ|缶バッジ|キーホルダー/i.test(book.title)) return null;
   const parsed = parseSeriesTitle(book.seriesTitle || book.title);
-  const seriesTitle = parsed.seriesTitle.trim();
+  const volume = book.volumeNumber ?? parseSeriesTitle(book.title).volumeNumber ?? parsed.volumeNumber;
+  if (volume !== undefined && volume !== 1) return null;
+  const seriesTitle = normalizeNdlTitle(parsed.seriesTitle).replace(/[.．]$/, '').trim();
   if (!seriesTitle) return null;
 
   return {
@@ -834,11 +839,11 @@ function toSeriesSearchCandidate(book: BookInput, source: SeriesSearchCandidate[
     sampleTitle: book.title,
     seriesTitle,
     source,
-    volumeNumber: book.volumeNumber ?? parsed.volumeNumber,
+    volumeNumber: volume,
   };
 }
 
-function mergeSeriesCandidates(candidates: SeriesSearchCandidate[]) {
+function mergeSeriesCandidates(candidates: SeriesSearchCandidate[], query = '') {
   const bySeries = new Map<string, SeriesSearchCandidate>();
 
   for (const candidate of candidates) {
@@ -848,18 +853,28 @@ function mergeSeriesCandidates(candidates: SeriesSearchCandidate[]) {
     const currentRank = current?.volumeNumber === 1 ? 0 : current?.volumeNumber ?? Number.MAX_SAFE_INTEGER;
     const candidateRank = candidate.volumeNumber === 1 ? 0 : candidate.volumeNumber ?? Number.MAX_SAFE_INTEGER;
     const shouldReplace =
-      !current ||
-      (!current.coverUrl && !!candidate.coverUrl) ||
-      (!!current.coverUrl === !!candidate.coverUrl && candidateRank < currentRank);
+      !current || candidateRank < currentRank ||
+      (candidateRank === currentRank && !current.coverUrl && !!candidate.coverUrl);
 
     if (shouldReplace) bySeries.set(key, candidate);
   }
 
+  const queryKey = normalizeSeriesKey(query);
+  const relevance = (candidate: SeriesSearchCandidate) => {
+    const key = normalizeSeriesKey(candidate.seriesTitle);
+    if (!queryKey) return 0;
+    if (key === queryKey) return 0;
+    if (key.startsWith(queryKey)) return 1;
+    if (key.includes(queryKey)) return 2;
+    if (queryKey.includes(key) && key.length >= 3) return 3;
+    return 4;
+  };
   return [...bySeries.values()].sort(
     (left, right) =>
+      relevance(left) - relevance(right) ||
       Number(!left.coverUrl) - Number(!right.coverUrl) ||
       (left.volumeNumber ?? Number.MAX_SAFE_INTEGER) - (right.volumeNumber ?? Number.MAX_SAFE_INTEGER) ||
-      left.seriesTitle.localeCompare(right.seriesTitle),
+      left.seriesTitle.localeCompare(right.seriesTitle, 'ja'),
   );
 }
 
@@ -867,9 +882,10 @@ export async function searchSeriesCandidates(query: string): Promise<SeriesSearc
   const trimmedQuery = query.trim();
   if (!trimmedQuery) return [];
 
-  const titleQueries = buildTitleQueries(trimmedQuery).slice(0, 2);
-  const rakutenBooks = (
-    await Promise.all(
+  const baseQuery = parseSeriesTitle(trimmedQuery.normalize('NFKC')).seriesTitle;
+  const titleQueries = [`${baseQuery} 1`, baseQuery];
+  const rakutenResults = (
+    await Promise.allSettled(
       titleQueries.flatMap((titleQuery) => [
         searchRakutenBookInputs({
           path: 'BooksBook/Search/20170404',
@@ -883,7 +899,8 @@ export async function searchSeriesCandidates(query: string): Promise<SeriesSearc
         }),
       ]),
     )
-  ).flat();
+  );
+  const rakutenBooks = rakutenResults.flatMap(result => result.status === 'fulfilled' ? result.value : []);
 
   const googleBooks = (
     await Promise.all(
@@ -900,7 +917,7 @@ export async function searchSeriesCandidates(query: string): Promise<SeriesSearc
     ...googleBooks
       .map((book) => toSeriesSearchCandidate(book, 'Google Books'))
       .filter((candidate): candidate is SeriesSearchCandidate => !!candidate),
-  ]).slice(0, 8);
+  ], trimmedQuery).slice(0, 8);
 }
 
 function findLatestVolumeFromTitles(titles: Array<string | undefined>, seriesTitle: string) {

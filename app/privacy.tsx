@@ -1,40 +1,10 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
+import { privacyPolicySections as sections, privacyPolicyUpdatedAt } from '../src/lib/privacyPolicy';
 import { useAppTheme } from '../src/store/ThemeContext';
 
-const sections = [
-  {
-    title: '取得する情報',
-    body:
-      '本の間は、アカウント情報、蔵書情報、欲しい漫画情報、通知情報、ランキング集計に必要な匿名集計値、シリーズ名の読み方報告、アプリ設定を保存または利用する場合があります。',
-  },
-  {
-    title: '利用目的',
-    body:
-      '蔵書・シリーズ・巻抜けの管理、ISBN検索、表紙画像URLの取得、欲しい漫画リスト、新刊通知、ランキング表示、シリーズ名の読み方補正、アカウント管理、不具合調査のために利用します。',
-  },
-  {
-    title: 'ランキング',
-    body:
-      'ランキングでは、個々のユーザー名やメールアドレスは表示しません。作品ごとの欲しい人数、平均優先度、所持人数、登録冊数などの集計値のみを表示し、少人数のデータは除外する場合があります。',
-  },
-  {
-    title: '外部サービス',
-    body:
-      'Supabase、Expo Push Notifications、OpenBD、Google Books API、Rakuten Books API、NDL Search、OpenAI API、外部ECサイトまたはブラウザを利用する場合があります。表紙・紹介文の表示確認には、公開されている書誌情報と表紙画像をOpenAI APIへ送信します。ユーザーのメールアドレス、メモ、読書履歴は送信しません。',
-  },
-  {
-    title: '削除',
-    body:
-      'アカウント削除を行うと、クラウド上の蔵書情報、欲しい漫画情報、通知トークン、シリーズ通知設定、通知ログ、認証アカウントが削除されます。',
-  },
-  {
-    title: '安全管理',
-    body:
-      '運用ログなど管理用の情報は一般ユーザーから閲覧できないよう制限し、アクセス制御、認証、通信の暗号化など合理的な安全管理措置を講じます。',
-  },
-];
+
 
 export default function PrivacyScreen() {
   const { colors } = useAppTheme();
@@ -59,7 +29,7 @@ export default function PrivacyScreen() {
         </View>
         <Text style={[styles.title, { color: colors.text }]}>プライバシーポリシー</Text>
         <Text style={[styles.copy, { color: colors.muted }]}>
-          最終更新日: 2026年8月24日
+          最終更新日: {privacyPolicyUpdatedAt}
         </Text>
         <Text style={[styles.copy, { color: colors.muted }]}>
           本ポリシーは、本の間における利用者情報の取り扱いについて説明するものです。お問い合わせは下記のフォームまたはメールアドレスからご連絡ください。

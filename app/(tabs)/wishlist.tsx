@@ -19,7 +19,9 @@ import {
 import { BookCover } from '../../src/components/BookCover';
 import { resolveWishlistCover, wishlistCoverIdentity } from '../../src/lib/wishlistCover';
 import { buildPurchaseUrl, searchSeriesCandidates, SeriesSearchCandidate } from '../../src/lib/bookApis';
+import { searchWishlistAgain, wishlistSearchKey } from '../../src/lib/wishlistAdditionalSearch';
 import { normalizeSeriesKey } from '../../src/lib/series';
+import { useAuth } from '../../src/store/AuthContext';
 import { useAppSettings } from '../../src/store/AppSettingsContext';
 import { useLibrary } from '../../src/store/LibraryContext';
 import { useAppTheme } from '../../src/store/ThemeContext';
@@ -39,6 +41,7 @@ function priorityLabel(score: number) {
 
 export default function WishlistScreen() {
   const { colors } = useAppTheme();
+  const { user } = useAuth();
   const { openExternalPurchaseLinks } = useAppSettings();
   const { books } = useLibrary();
   const { addItem, deleteItem, items, updateItem } = useWishlist();
@@ -46,6 +49,10 @@ export default function WishlistScreen() {
   const [note, setNote] = useState('');
   const [candidates, setCandidates] = useState<SeriesSearchCandidate[]>([]);
   const [candidateLoading, setCandidateLoading] = useState(false);
+  const [searchedQuery, setSearchedQuery] = useState('');
+  const [additionalQueries, setAdditionalQueries] = useState<Set<string>>(new Set());
+  const searchRequest = useRef(0);
+  const searchBusy = useRef(false);
   const [selectedCandidate, setSelectedCandidate] = useState<SeriesSearchCandidate | null>(null);
   const [selectedPriority, setSelectedPriority] = useState(priorityOptions[1]);
   const [memoOpen, setMemoOpen] = useState(false);
@@ -162,30 +169,45 @@ export default function WishlistScreen() {
     return results.slice(0, 5);
   };
 
-  const searchCandidates = async () => {
+  const searchCandidates = async (additional = false) => {
+    const query = trimmedTitle;
+    const key = wishlistSearchKey(query);
+    if (searchBusy.current || (additional && additionalQueries.has(key))) return;
     if (!trimmedTitle) {
       Alert.alert('本の間', 'タイトルまたはシリーズ名を入力してください。');
       return;
     }
+    if (additional && !user) { Alert.alert('ログインが必要です', '追加検索はログイン後に利用できます。'); return; }
+    const request = ++searchRequest.current;
+    searchBusy.current = true;
+    if (additional) setAdditionalQueries(current => new Set([...current, key]));
     setCandidateLoading(true);
     setSelectedCandidate(null);
     try {
-      const results = refineCandidates(await searchSeriesCandidates(trimmedTitle));
+      const found = additional ? await searchWishlistAgain(query) : await searchSeriesCandidates(query);
+      if (request !== searchRequest.current) return;
+      const merged = additional ? [...found, ...candidates.filter(item => !found.some(next => normalizeSeriesKey(next.seriesTitle) === normalizeSeriesKey(item.seriesTitle)))] : found;
+      const results = additional ? merged.slice(0, 8) : refineCandidates(merged);
       setCandidates(results);
+      setSearchedQuery(key);
       setSelectedCandidate(results.length === 1 ? results[0] : null);
       if (results.length === 0) {
         Alert.alert('候補が見つかりませんでした', '入力したシリーズ名のまま追加できます。');
       }
     } catch (error) {
+      if (additional && error && typeof error === 'object' && 'retryable' in error && error.retryable === true) { setAdditionalQueries(current => { const next = new Set(current); next.delete(key); return next; }); }
+      if (request !== searchRequest.current) return;
+      setSearchedQuery(key);
       Alert.alert('検索に失敗しました', error instanceof Error ? error.message : '通信状態を確認してもう一度お試しください。');
     } finally {
+      searchBusy.current = false;
       setCandidateLoading(false);
     }
   };
 
   const submit = () => {
     if (!trimmedTitle) {
-      Alert.alert('本の間', '欲しい漫画のタイトルを入力してください。');
+      Alert.alert('本の間', '欲しい本のタイトルを入力してください。');
       return;
     }
     if (candidates.length > 1 && !selectedCandidate) {
@@ -285,7 +307,7 @@ export default function WishlistScreen() {
       >
           <View style={styles.header}>
             <View style={styles.headerTitleRow}>
-              <Text style={[styles.title, { color: colors.text }]}>欲しい漫画</Text>
+              <Text style={[styles.title, { color: colors.text }]}>欲しい本</Text>
               <Pressable
                 accessibilityLabel={editMode ? '編集モードを終了' : '編集モードを開始'}
                 onPress={toggleEditMode}
@@ -325,7 +347,7 @@ export default function WishlistScreen() {
 
       {!editMode ? (
         <Pressable
-          accessibilityLabel={quickAddOpen ? '欲しい漫画の追加パネルを閉じる' : '欲しい漫画の追加パネルを開く'}
+          accessibilityLabel={quickAddOpen ? '欲しい本の追加パネルを閉じる' : '欲しい本の追加パネルを開く'}
           onPress={() => setQuickAddOpen((current) => !current)}
           style={[styles.quickAddToggle, { backgroundColor: colors.surface, borderColor: quickAddOpen ? colors.text : colors.border }]}
         >
@@ -334,7 +356,7 @@ export default function WishlistScreen() {
               <Ionicons color={colors.text} name="add" size={20} />
             </View>
             <View style={styles.quickAddToggleText}>
-              <Text style={[styles.quickAddToggleTitle, { color: colors.text }]}>欲しい漫画を追加</Text>
+              <Text style={[styles.quickAddToggleTitle, { color: colors.text }]}>欲しい本を追加</Text>
               <Text style={[styles.copy, { color: colors.muted }]} numberOfLines={1}>作品名から候補を探してリストに入れます</Text>
             </View>
           </View>
@@ -348,6 +370,8 @@ export default function WishlistScreen() {
           <TextInput
             onChangeText={(value) => {
               setTitle(value);
+              searchRequest.current++;
+              setSearchedQuery('');
               setCandidates([]);
               setSelectedCandidate(null);
             }}
@@ -371,6 +395,8 @@ export default function WishlistScreen() {
             <Ionicons color={colors.background} name={candidateLoading ? 'hourglass-outline' : 'search'} size={21} />
           </Pressable>
         </View>
+
+        <Text style={[styles.copy, { color: colors.muted }]}>シリーズごとに1巻（巻数のない本はその本）を表示します。</Text>
 
         {candidateLoading ? (
           <View style={styles.searchStatus}>
@@ -399,7 +425,7 @@ export default function WishlistScreen() {
                 >
                   <BookCover
                     displayContext="personal"
-                    placeholderText="No Cover"
+                    placeholderText="表紙確認中"
                     style={styles.candidateCover}
                     isbn={wishlistCoverIdentity(candidate).isbn}
                     thumbnailUrl={candidate.coverUrl}
@@ -409,7 +435,7 @@ export default function WishlistScreen() {
                       {candidate.seriesTitle}
                     </Text>
                     <Text numberOfLines={1} style={[styles.candidateMeta, { color: colors.muted }]}>
-                      {[candidate.author, candidate.publisher, candidate.source].filter(Boolean).join(' / ')}
+                      {[candidate.author, candidate.publisher].filter(Boolean).join(' / ')}
                     </Text>
                     <Text numberOfLines={1} style={[styles.candidateSample, { color: colors.muted }]}>
                       {candidate.sampleTitle}
@@ -423,6 +449,27 @@ export default function WishlistScreen() {
                 </Pressable>
               );
             })}
+          </View>
+        ) : null}
+
+        {searchedQuery === wishlistSearchKey(trimmedTitle) && searchedQuery ? (
+          <View style={{ gap: 6 }}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="作品名を補って追加検索"
+              disabled={candidateLoading || additionalQueries.has(searchedQuery)}
+              onPress={() => void searchCandidates(true)}
+              style={[
+                styles.searchAgainButton,
+                { backgroundColor: colors.input, borderColor: colors.border },
+                (candidateLoading || additionalQueries.has(searchedQuery)) && styles.disabledButton,
+              ]}
+            >
+              <Text style={[styles.copyStrong, { color: colors.text, textAlign: 'center' }]}>
+                {candidateLoading ? 'もう一度探しています…' : additionalQueries.has(searchedQuery) ? 'もう一度検索しました' : '見つからないときは、もう一度探す'}
+              </Text>
+            </Pressable>
+            <Text style={[styles.copy, { color: colors.muted }]}>作品名をAIで補って探します。同じ検索語は1回までです。</Text>
           </View>
         ) : null}
 
@@ -467,7 +514,7 @@ export default function WishlistScreen() {
         ) : null}
 
         <Pressable
-          accessibilityLabel="欲しい漫画に追加"
+          accessibilityLabel="欲しい本に追加"
           disabled={!trimmedTitle || (candidates.length > 1 && !selectedCandidate)}
           onPress={submit}
           style={[
@@ -537,7 +584,7 @@ export default function WishlistScreen() {
                     isbn={resolveWishlistCover(item, books).isbn}
                     thumbnailUrl={resolveWishlistCover(item, books).coverUrl}
                     style={styles.topCover}
-                    placeholderText="No Cover"
+                    placeholderText="表紙確認中"
                   />
                   <View style={[styles.topRankBadge, { backgroundColor: colors.text }]}>
                     <Text style={[styles.topRankText, { color: colors.background }]}>#{index + 1}</Text>
@@ -561,12 +608,12 @@ export default function WishlistScreen() {
             気になった作品をここに置いておくと、あとで優先順位と購入先をすぐ確認できます。
           </Text>
           <Pressable
-            accessibilityLabel="欲しい漫画の追加パネルを開く"
+            accessibilityLabel="欲しい本の追加パネルを開く"
             onPress={() => setQuickAddOpen(true)}
             style={[styles.emptyAddButton, { backgroundColor: colors.text }]}
           >
             <Ionicons color={colors.background} name="add-circle-outline" size={18} />
-            <Text style={[styles.primaryAddText, { color: colors.background }]}>欲しい漫画を追加</Text>
+            <Text style={[styles.primaryAddText, { color: colors.background }]}>欲しい本を追加</Text>
           </Pressable>
           <View style={styles.emptyHints}>
             <View style={[styles.emptyHint, { backgroundColor: colors.elevated }]}>
@@ -599,7 +646,7 @@ export default function WishlistScreen() {
                   isbn={resolveWishlistCover(item, books).isbn}
                   thumbnailUrl={resolveWishlistCover(item, books).coverUrl}
                   style={styles.cover}
-                  placeholderText="No Cover"
+                  placeholderText="表紙確認中"
                 />
                 <View style={styles.cardBody}>
                   <Text style={[styles.cardTitle, { color: colors.text }]}>{item.title}</Text>
@@ -782,6 +829,16 @@ const styles = StyleSheet.create({
     gap: 10,
     minHeight: 76,
     padding: 8,
+  },
+  searchAgainButton: {
+    alignItems: 'center',
+    alignSelf: 'stretch',
+    borderRadius: 8,
+    borderWidth: 1,
+    justifyContent: 'center',
+    minHeight: 48,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
   },
   candidateCover: { borderRadius: 5, height: 58, width: 40 },
   candidateBody: { flex: 1, gap: 3 },

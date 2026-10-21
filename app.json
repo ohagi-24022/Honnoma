@@ -29,7 +29,7 @@
       "package": "com.ohagiworks.honnoma",
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon.png",
-        "backgroundColor": "#e3f4e8"
+        "backgroundColor": "#24517D"
       },
       "predictiveBackGestureEnabled": false,
       "permissions": [

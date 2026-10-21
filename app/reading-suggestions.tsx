@@ -1,10 +1,9 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useNavigation, useRouter } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { normalizeKanaReading } from '../src/lib/kana';
-import { GlobalRankingRow } from '../src/lib/rankings';
 import { loadSeriesReadingCorrections, SeriesReadingCorrection } from '../src/lib/seriesReadingCorrections';
 import { getKnownSeriesReading, normalizeSeriesKey } from '../src/lib/series';
 import { submitSeriesReadingSuggestion } from '../src/lib/seriesReadingSuggestions';
@@ -21,13 +20,6 @@ type ReadingTarget = {
 
 function normalizeReading(value?: string | null) {
   return normalizeKanaReading(value) ?? '';
-}
-
-function shuffleTargets(targets: ReadingTarget[]) {
-  return [...targets]
-    .map((target) => ({ target, weight: Math.random() }))
-    .sort((left, right) => left.weight - right.weight)
-    .map(({ target }) => target);
 }
 
 export default function ReadingSuggestionsScreen() {
@@ -56,11 +48,13 @@ export default function ReadingSuggestionsScreen() {
       })),
     [seriesGroups],
   );
-  const libraryKeys = useMemo(() => new Set(libraryTargets.map((target) => target.key)), [libraryTargets]);
-  const allTargets = useMemo(() => [...libraryTargets, ...globalTargets], [globalTargets, libraryTargets]);
+  const globalRequest = useRef(0);
+  const globalMounted = useRef(true);
+  useEffect(() => { globalMounted.current = true; return () => { globalMounted.current = false; globalRequest.current++; }; }, []);
+  const activeTargets = targetMode === 'library' ? libraryTargets : globalTargets;
   const selectedTarget = useMemo(
-    () => allTargets.find((target) => target.key === selectedSeriesKey) ?? libraryTargets[0] ?? globalTargets[0],
-    [allTargets, globalTargets, libraryTargets, selectedSeriesKey],
+    () => activeTargets.find((target) => target.key === selectedSeriesKey) ?? activeTargets[0],
+    [activeTargets, selectedSeriesKey],
   );
   const filteredLibraryTargets = useMemo(() => {
     const query = libraryQuery.normalize('NFKC').trim().toLowerCase();
@@ -83,25 +77,30 @@ export default function ReadingSuggestionsScreen() {
   }, [books, readingCorrections, selectedTarget]);
 
   const loadGlobalTargets = async () => {
+    if (!user) { setGlobalTargets([]); setGlobalError('全体の候補はログイン後に利用できます。'); return; }
     if (!supabase) {
       setGlobalTargets([]);
       setGlobalError('現在みんなの候補を取得できません。しばらくしてからもう一度お試しください。');
       return;
     }
+    if (globalLoading) return;
+    const request = ++globalRequest.current;
     setGlobalLoading(true);
     setGlobalError(null);
     try {
-      const { data, error } = await supabase.rpc('get_wanted_manga_rankings', { limit_count: 50 });
+      const { data, error } = await supabase.rpc('get_series_reading_report_candidates', { limit_count: 4 });
       if (error) throw error;
-      const targets = ((data ?? []) as GlobalRankingRow[])
-        .map((row) => ({ key: normalizeSeriesKey(row.title), source: 'global' as const, title: row.title }))
-        .filter((target, index, self) => target.title && !libraryKeys.has(target.key) && self.findIndex((item) => item.key === target.key) === index);
-      setGlobalTargets(shuffleTargets(targets).slice(0, 4));
+      if (!globalMounted.current || request !== globalRequest.current) return;
+      const targets = ((data ?? []) as { series_title: string }[])
+        .map((row) => ({ key: normalizeSeriesKey(row.series_title), source: 'global' as const, title: row.series_title }));
+      setGlobalTargets(targets);
+      setSelectedSeriesKey(targets[0]?.key ?? '');
     } catch (error) {
+      if (!globalMounted.current || request !== globalRequest.current) return;
       setGlobalTargets([]);
       setGlobalError(error instanceof Error ? error.message : 'みんなの候補を取得できませんでした。');
     } finally {
-      setGlobalLoading(false);
+      if (globalMounted.current && request === globalRequest.current) setGlobalLoading(false);
     }
   };
 
@@ -130,6 +129,8 @@ export default function ReadingSuggestionsScreen() {
     }
   }, [selectedSeriesKey, selectedTarget]);
 
+  useEffect(() => { setSuggestedReading(''); setNote(''); }, [selectedTarget?.key, targetMode]);
+
 
   const submit = async () => {
     if (!user) {
@@ -142,7 +143,7 @@ export default function ReadingSuggestionsScreen() {
     }
     const cleanedReading = normalizeKanaReading(suggestedReading);
     if (!cleanedReading) {
-      Alert.alert('読み方を入力してください', '例: とにかくかわいい');
+      Alert.alert('読み方を入力してください', `「${selectedTarget.title}」の読み方をひらがなで入力してください。`);
       return;
     }
 
@@ -161,6 +162,7 @@ export default function ReadingSuggestionsScreen() {
       }
       setSuggestedReading('');
       setNote('');
+      if (targetMode === 'global') void loadGlobalTargets();
       Alert.alert(
         '報告しました',
         localTargets.length > 0
@@ -175,7 +177,7 @@ export default function ReadingSuggestionsScreen() {
   };
 
   const renderTarget = (target: ReadingTarget) => {
-    const selected = target.key === selectedSeriesKey;
+    const selected = target.key === selectedTarget?.key;
     return (
       <Pressable
         accessibilityLabel={`${target.title}を読み方報告の対象にする`}
@@ -212,7 +214,7 @@ export default function ReadingSuggestionsScreen() {
         <View style={[styles.modeSwitch, { backgroundColor: colors.elevated }]}>
           <Pressable
             accessibilityLabel="自分の本棚から選ぶ"
-            onPress={() => setTargetMode('library')}
+            onPress={() => { setTargetMode('library'); setSelectedSeriesKey(libraryTargets[0]?.key ?? ''); }}
             style={[styles.modeButton, targetMode === 'library' && { backgroundColor: colors.text }]}
           >
             <Ionicons color={targetMode === 'library' ? colors.background : colors.text} name="library-outline" size={16} />
@@ -220,7 +222,7 @@ export default function ReadingSuggestionsScreen() {
           </Pressable>
           <Pressable
             accessibilityLabel="みんなの候補から選ぶ"
-            onPress={() => setTargetMode('global')}
+            onPress={() => { setTargetMode('global'); setSelectedSeriesKey(globalTargets[0]?.key ?? ''); if (!globalTargets.length) void loadGlobalTargets(); }}
             style={[styles.modeButton, targetMode === 'global' && { backgroundColor: colors.text }]}
           >
             <Ionicons color={targetMode === 'global' ? colors.background : colors.text} name="earth-outline" size={16} />
@@ -260,9 +262,9 @@ export default function ReadingSuggestionsScreen() {
             <View style={styles.sectionHeader}>
               <View style={styles.headerTextBlock}>
                 <Text style={[styles.sectionTitle, { color: colors.text }]}>みんなの候補</Text>
-                <Text style={[styles.copy, { color: colors.muted }]}>ボタンを押すと少数だけ表示します。</Text>
+                <Text style={[styles.copy, { color: colors.muted }]}>報告の少ない作品からランダムに表示します。</Text>
               </View>
-              <Pressable accessibilityLabel="みんなの候補を見る" onPress={() => void loadGlobalTargets()} style={styles.textButton}>
+              <Pressable accessibilityLabel="みんなの候補を見る" disabled={globalLoading || submitting} onPress={() => void loadGlobalTargets()} style={styles.textButton}>
                 <Ionicons color={colors.text} name="refresh-outline" size={16} />
                 <Text style={[styles.textButtonLabel, { color: colors.text }]}>{globalLoading ? '取得中' : '候補を見る'}</Text>
               </Pressable>
@@ -270,7 +272,7 @@ export default function ReadingSuggestionsScreen() {
             <View style={styles.seriesList}>
               {globalError ? <Text style={[styles.copy, { color: colors.muted }]}>{globalError}</Text> : null}
               {!globalError && globalTargets.length === 0 ? (
-                <Text style={[styles.copy, { color: colors.muted }]}>まだ候補を表示していません。</Text>
+                <Text style={[styles.copy, { color: colors.muted }]}>{globalLoading ? '候補を探しています。' : '現在、報告できる候補がありません。'}</Text>
               ) : null}
               {globalTargets.map(renderTarget)}
             </View>
@@ -288,7 +290,7 @@ export default function ReadingSuggestionsScreen() {
           autoCapitalize="none"
           autoCorrect={false}
           onChangeText={setSuggestedReading}
-          placeholder="例: とにかくかわいい"
+          placeholder={currentReading ? `例: ${currentReading}` : selectedTarget ? `「${selectedTarget.title}」の読み方` : 'シリーズを選んでください'}
           placeholderTextColor={colors.muted}
           style={[styles.input, { backgroundColor: colors.input, color: colors.text }]}
           value={suggestedReading}
