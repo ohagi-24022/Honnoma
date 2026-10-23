@@ -44,5 +44,8 @@
     "supabase:deploy:notifications": "supabase functions deploy check-new-releases --use-api",
     "supabase:deploy:delete-account": "supabase functions deploy delete-account --use-api"
   },
+  "engines": {
+    "node": ">=22.23.4 <23"
+  },
   "private": true
 }

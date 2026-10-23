@@ -1,3 +1,4 @@
+import {sendAdminMail} from './shushuka-admin-mail.mjs';
 import {createApiLimitAlerts,openAiLimitKind} from './shushuka-api-limit-alerts.mjs';
 import {registerWishlistSearch} from './shushuka-wishlist-search.mjs';
 import {registerSeriesVolumeCovers} from './shushuka-series-volumes.mjs';
@@ -242,16 +243,11 @@ export function createReviewService(db, env = process.env, deps = {}) {
     if (!batch?.length) return;
     let sent = false;
     try {
-      const transport = deps.transport ?? (await import('nodemailer')).default.createTransport({
-        host: env.CONTENT_REVIEW_SMTP_HOST, port: Number(env.CONTENT_REVIEW_SMTP_PORT || 465), secure: (env.CONTENT_REVIEW_SMTP_PORT || '465') === '465',
-        requireTLS: true, auth: { user: env.CONTENT_REVIEW_SMTP_USER, pass: env.CONTENT_REVIEW_SMTP_PASSWORD },
-        connectionTimeout: 15000, greetingTimeout: 15000, socketTimeout: 30000,
-      });
-      await transport.sendMail({ from: env.CONTENT_REVIEW_MAIL_FROM, to: env.CONTENT_REVIEW_MAIL_TO,
+      await sendAdminMail(env,{ from: env.CONTENT_REVIEW_MAIL_FROM, to: env.CONTENT_REVIEW_MAIL_TO,
         subject: `【本の間】確認待ちの本が${batch.length}件あります`,
         messageId: `<${sha(batch.map(x => x.id).sort().join(','))}@honnoma.review>`,
         text: `自動確認で判断が難しい本が追加されました。\n\nISBN:\n${batch.map(x => x.isbn13).join('\n')}\n\n管理画面でご確認ください。\nhttps://shushukaadmin.onrender.com/reviews\n\n表紙と紹介文は個別に確認できます。`,
-      }); sent = true;
+      },{transport:deps.transport,fetcher:deps.mailFetch}); sent = true;
     } catch { console.warn('Content review mail failed; queued for retry.'); }
     await rpc(db, 'finish_book_content_review_mail', { p_ids: batch.map(x => x.id), p_lease: batch[0].lease_token, p_sent: sent });
   }

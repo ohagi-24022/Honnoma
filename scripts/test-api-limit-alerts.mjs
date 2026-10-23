@@ -30,6 +30,9 @@ await a.notify('wishlist_search','quota');await a.flush();assert.equal(mails.len
 await a.recover('wishlist_search','quota','2026-10-22T00:00:00Z');
 await a.notify('wishlist_search','quota');await a.flush();assert.equal(mails.length,2);
 assert.equal(rows.size,2);assert.notEqual(mails[0].messageId,mails[1].messageId);
+rows.set('test-mail',{id:'test-mail',source:'wishlist_search',kind:'rate_limit',status:'pending',attempts:0,available:clock,created_at:new Date().toISOString(),is_test:true,recovered_at:new Date().toISOString()});
+await a.flush();assert.equal(mails.length,3);assert.match(mails[2].subject,/テストメール/);assert.match(mails[2].text,/実際のAPI制限やクレジット不足は発生していません/);
+await a.flush();assert.equal(mails.length,3);
 const calls=[];const alerts={notify:async(...args)=>calls.push(args)};
 const searchDb={rpc:async()=>({data:'claimed'}),from(){return {update(){return this},eq(){return this},then(resolve){resolve({});}};}};
 const search=createWishlistSearch(searchDb,{env:{OPENAI_API_KEY:'not-real'},alerts,fetcher:async()=>response(429,'insufficient_quota')});

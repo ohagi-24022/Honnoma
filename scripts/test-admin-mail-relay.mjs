@@ -1,0 +1,25 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import ts from 'typescript';
+import {sendAdminMail} from './shushuka-admin-mail.mjs';
+const source=fs.readFileSync('supabase/functions/admin-mail/index.ts','utf8').replace("import nodemailer from 'npm:nodemailer@7.0.13';",'const nodemailer={createTransport(){throw Error("unexpected transport")}};').replace('Deno.serve(createMailHandler(Deno.env));','');
+const js=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;
+const {createMailHandler}=await import('data:text/javascript;base64,'+Buffer.from(js).toString('base64'));
+let sent=0,closed=0;
+const handler=createMailHandler({get:()=> 'server-only-test-token'},opts=>{
+ assert.equal(opts.host,'smtp.gmail.com');assert.equal(opts.port,465);assert.equal(opts.secure,true);assert.equal(opts.logger,false);
+ return {sendMail:async mail=>{sent++;assert.equal(mail.to,'ohagiworks.contact@gmail.com');return {accepted:[mail.to]};},close:()=>closed++};
+});
+const mail={from:'本の間 <sender@gmail.com>',to:'ohagiworks.contact@gmail.com',subject:'テスト',text:'送信テスト',messageId:'<test@honnoma.review>'};
+const payload={smtp:{user:'sender@gmail.com',pass:'not-a-real-password'},mail};
+const request=(token,body=payload)=>new Request('https://example.test',{method:'POST',headers:{Authorization:'Bearer '+token},body:JSON.stringify(body)});
+assert.equal((await handler(request('anon'))).status,403);assert.equal(sent,0);
+assert.equal((await handler(request('server-only-test-token',{...payload,mail:{...mail,to:'other@example.test'}}))).status,400);
+assert.equal((await handler(request('server-only-test-token',{...payload,mail:{...mail,subject:'bad\r\nBcc: other@example.test'}}))).status,400);
+assert.equal((await handler(request('server-only-test-token'))).status,200);assert.equal(sent,1);assert.equal(closed,1);
+const env={SUPABASE_URL:'https://ccaregwftbjqwaztvwdu.supabase.co',SUPABASE_SERVICE_ROLE_KEY:'server-only-test-token',CONTENT_REVIEW_SMTP_HOST:'smtp.gmail.com',CONTENT_REVIEW_SMTP_USER:'sender@gmail.com',CONTENT_REVIEW_SMTP_PASSWORD:'not-a-real-password',CONTENT_REVIEW_MAIL_TO:mail.to};
+let calls=0;
+await sendAdminMail(env,mail,{fetcher:async(url,options)=>{calls++;assert.equal(String(url),'https://ccaregwftbjqwaztvwdu.supabase.co/functions/v1/admin-mail');assert.equal(options.headers.Authorization,'Bearer server-only-test-token');const req=request('server-only-test-token',JSON.parse(options.body));return handler(req);}});
+assert.equal(calls,1);assert.equal(sent,2);
+await assert.rejects(()=>sendAdminMail({...env,SUPABASE_URL:'https://evil.example.test'},mail,{fetcher:()=>{throw Error('Credential leakage')}}));
+console.log('Admin mail relay: exact server credential, fixed TLS Gmail host/port, fixed recipient, header injection rejection, closed connection, owned-project HTTPS only: OK');

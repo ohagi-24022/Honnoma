@@ -1,3 +1,4 @@
+import {sendAdminMail} from './shushuka-admin-mail.mjs';
 const sources = { wishlist_search: '欲しい本のAI検索', content_review: '表紙・紹介文の自動判別' };
 const reasons = {
   rate_limit: 'OpenAI APIの短時間の利用回数・トークン制限を検知しました。時間をおいてご確認ください。',
@@ -33,21 +34,15 @@ export function createApiLimitAlerts(db, env = process.env, deps = {}) {
         if (!alert) break;
         let sent = false;
         try {
-          const transport = deps.transport ?? (await import('nodemailer')).default.createTransport({
-            host: env.CONTENT_REVIEW_SMTP_HOST, port: Number(env.CONTENT_REVIEW_SMTP_PORT || 465),
-            secure: (env.CONTENT_REVIEW_SMTP_PORT || '465') === '465', requireTLS: true,
-            auth: { user: env.CONTENT_REVIEW_SMTP_USER, pass: env.CONTENT_REVIEW_SMTP_PASSWORD },
-            connectionTimeout: 10000, greetingTimeout: 10000, socketTimeout: 15000,
-          });
           const detected = new Date(alert.created_at).toLocaleString('ja-JP', { timeZone:'Asia/Tokyo', hour12:false });
-          await transport.sendMail({
+          await sendAdminMail(env,{
             from: env.CONTENT_REVIEW_MAIL_FROM, to: env.CONTENT_REVIEW_MAIL_TO,
-            subject: `【本の間】${sources[alert.source]}の利用制限を検知しました`,
+            subject: alert.is_test ? '【本の間】API制限通知のテストメール' : `【本の間】${sources[alert.source]}の利用制限を検知しました`,
             messageId: `<api-limit-${alert.id}@honnoma.review>`,
-            text: `対象：${sources[alert.source]}\n検知日時：${detected}（日本時間）\n\n${reasons[alert.kind]}\n${alert.recovered_at ? 'この通知の送信前に正常な処理を確認し、復旧済みとして記録しています。\n' : ''}\n同じ制限が続く間は1日1通までに抑えます。復旧を確認後に再発した場合は、同じ日でも改めて通知します（1日の区切りは日本時間9:00）。\n検索語・個人の本棚・APIキーはこの通知に含めていません。\n\nOpenAIの設定：https://platform.openai.com/settings/organization/billing/overview\n管理画面：https://shushukaadmin.onrender.com/reviews`,
-          });
+            text: alert.is_test ? 'これは、ご依頼に基づくAPI制限通知の送信テストです。\n実際のAPI制限やクレジット不足は発生していません。\n\nこのメールが届けば、管理アプリから設定済みの宛先への通知送信を確認できます。\n通常の制限通知・復旧後の再通知の記録には影響しません。\n\n管理画面：https://shushukaadmin.onrender.com/reviews' : `対象：${sources[alert.source]}\n検知日時：${detected}（日本時間）\n\n${reasons[alert.kind]}\n${alert.recovered_at ? 'この通知の送信前に正常な処理を確認し、復旧済みとして記録しています。\n' : ''}\n同じ制限が続く間は1日1通までに抑えます。復旧を確認後に再発した場合は、同じ日でも改めて通知します（1日の区切りは日本時間9:00）。\n検索語・個人の本棚・APIキーはこの通知に含めていません。\n\nOpenAIの設定：https://platform.openai.com/settings/organization/billing/overview\n管理画面：https://shushukaadmin.onrender.com/reviews`,
+          },{transport:deps.transport,fetcher:deps.mailFetch});
           sent = true;
-        } catch { console.warn('API limit alert mail failed; queued for retry.'); }
+        } catch(error) { console.warn('API limit alert mail failed; queued for retry.', {code:error.code??'MAIL_FAILED'}); }
         await rpc('finish_api_limit_mail', { p_id:alert.id, p_lease:alert.lease_token, p_sent:sent });
       }
     } catch { console.warn('API limit alert queue unavailable.'); }
