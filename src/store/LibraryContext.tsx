@@ -1,3 +1,5 @@
+import { registrationPurchasePrice } from '../lib/purchasePrices';
+import { useAppSettings } from './AppSettingsContext';
 import { planAutomaticLibraryOrganization } from '../lib/libraryOrganization';
 import { resolveBookFormat } from '../lib/bookFormat';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -14,7 +16,7 @@ import {
 } from 'react';
 
 import { getStorageItemWithLegacy, removeStorageItemWithLegacy } from '../lib/asyncStorageCompat';
-import { lookupBookByIsbn, lookupBookByTitle } from '../lib/bookApis';
+import { lookupBookByIsbn, lookupBookByTitle, withBookRetailPrice } from '../lib/bookApis';
 import { getBookMetadataOverrideDetails } from '../lib/bookMetadataOverrides';
 import { normalizeAuthor } from '../lib/bookMetadata';
 import { canFillMissingBookIdentity, DuplicateBookError } from '../lib/bookRegistration';
@@ -468,6 +470,7 @@ function buildMetadataLookupTitle(book: Pick<Book, 'title' | 'seriesTitle' | 'vo
 }
 
 export function LibraryProvider({ children }: PropsWithChildren) {
+  const { trackPurchasePrices } = useAppSettings();
   const { configured, initializing, user } = useAuth();
   const [books, setBooks] = useState<Book[]>(() => configured ? [] : createDemoBooks());
   const [hydrated, setHydrated] = useState(false);
@@ -754,7 +757,8 @@ export function LibraryProvider({ children }: PropsWithChildren) {
   );
 
   const addBook = useCallback(async (bookInput: BookInput, options: AddBookOptions = {}) => {
-    const normalizedBookInput = resolveUserSeriesName(books, normalizeReadingBookInput(normalizeBookInput(bookInput)));
+    bookInput = await withBookRetailPrice(bookInput);
+    const normalizedBookInput = resolveUserSeriesName(books, normalizeReadingBookInput(normalizeBookInput({ ...bookInput, purchasePrice: registrationPurchasePrice(bookInput, trackPurchasePrices) })));
     if (!options.allowDuplicate && findDuplicate(books, normalizedBookInput)) {
       const duplicate = findDuplicate(books, normalizedBookInput);
       const sameIsbn = !!normalizedBookInput.isbn && normalizedBookInput.isbn.replace(/[^0-9X]/gi, '') === duplicate?.isbn?.replace(/[^0-9X]/gi, '');
@@ -813,7 +817,7 @@ export function LibraryProvider({ children }: PropsWithChildren) {
 
     setBooks((currentBooks) => [book, ...currentBooks]);
     return book;
-  }, [books, configured, user]);
+  }, [books, configured, trackPurchasePrices, user]);
 
   const addBookByIsbn = useCallback(
     async (isbn: string) => {

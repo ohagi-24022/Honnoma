@@ -1,0 +1,824 @@
+{
+  "series": [
+    {
+      "formats": [
+        "comic"
+      ],
+      "publishers": [
+        "集英社"
+      ],
+      "series_title": "MoMo-the blood taker",
+      "owned_volumes": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ]
+    },
+    {
+      "formats": [
+        "comic"
+      ],
+      "publishers": [
+        "集英社"
+      ],
+      "series_title": "あかね噺",
+      "owned_volumes": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+      ]
+    },
+    {
+      "formats": [
+        "comic"
+      ],
+      "publishers": [
+        "講談社"
+      ],
+      "series_title": "オリエント",
+      "owned_volumes": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17
+      ]
+    },
+    {
+      "formats": [
+        "comic"
+      ],
+      "publishers": [
+        "集英社"
+      ],
+      "series_title": "かぐや様は告らせたい : 天才たちの恋愛頭脳戦",
+      "owned_volumes": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ]
+    },
+    {
+      "formats": [
+        "comic"
+      ],
+      "publishers": [
+        "芳文社"
+      ],
+      "series_title": "がっこうぐらし!",
+      "owned_volumes": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ]
+    },
+    {
+      "formats": [
+        "comic"
+      ],
+      "publishers": [
+        "集英社"
+      ],
+      "series_title": "シド・クラフトの最終推理",
+      "owned_volumes": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "formats": [
+        "comic"
+      ],
+      "publishers": [
+        "小学館"
+      ],
+      "series_title": "トニカクカワイイ : FLY ME TO THE MOON",
+      "owned_volumes": [
+        1,
+        5,
+        7,
+        14,
+        15
+      ]
+    },
+    {
+      "formats": [
+        "comic"
+      ],
+      "publishers": [
+        "小学館"
+      ],
+      "series_title": "トニカクカワイイ : FLY ME TO THE MOON.",
+      "owned_volumes": [
+        1,
+        2,
+        3,
+        4,
+        6,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        16,
+        17,
+        18,
+        19,
+        20
+      ]
+    },
+    {
+      "formats": [
+        "comic",
+        "novel"
+      ],
+      "publishers": [
+        "集英社"
+      ],
+      "series_title": "ニセコイ",
+      "owned_volumes": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25
+      ]
+    },
+    {
+      "formats": [
+        "comic"
+      ],
+      "publishers": [
+        "集英社"
+      ],
+      "series_title": "バクマン。",
+      "owned_volumes": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20
+      ]
+    },
+    {
+      "formats": [
+        "comic"
+      ],
+      "publishers": [
+        "講談社"
+      ],
+      "series_title": "ヒットマン",
+      "owned_volumes": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13
+      ]
+    },
+    {
+      "formats": [
+        "comic"
+      ],
+      "publishers": [
+        "集英社"
+      ],
+      "series_title": "ぼくたちは勉強ができない",
+      "owned_volumes": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21
+      ]
+    },
+    {
+      "formats": [
+        "comic"
+      ],
+      "publishers": [
+        "芳文社"
+      ],
+      "series_title": "ぼっち・ざ・ろっく!",
+      "owned_volumes": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ]
+    },
+    {
+      "formats": [
+        "comic"
+      ],
+      "publishers": [
+        "集英社"
+      ],
+      "series_title": "マジカルパティシエ小咲ちゃん!!",
+      "owned_volumes": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "formats": [
+        "comic"
+      ],
+      "publishers": [
+        "小学館"
+      ],
+      "series_title": "よふかしのうた.",
+      "owned_volumes": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "formats": [
+        "comic"
+      ],
+      "publishers": [
+        "KADOKAWA"
+      ],
+      "series_title": "ライバーダイバーラバー",
+      "owned_volumes": [
+        1,
+        2,
+        3
+      ]
+    },
+    {
+      "formats": [
+        "comic"
+      ],
+      "publishers": [
+        "マッグガーデン"
+      ],
+      "series_title": "リィンカーネーションの花弁",
+      "owned_volumes": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11
+      ]
+    },
+    {
+      "formats": [
+        "comic"
+      ],
+      "publishers": [
+        "SBクリエイティブ",
+        "スクウェア・エニックス"
+      ],
+      "series_title": "りゅうおうのおしごと!",
+      "owned_volumes": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "formats": [
+        "comic"
+      ],
+      "publishers": [
+        "集英社"
+      ],
+      "series_title": "ルリドラゴン",
+      "owned_volumes": [
+        1,
+        2,
+        3
+      ]
+    },
+    {
+      "formats": [
+        "comic"
+      ],
+      "publishers": [
+        "集英社"
+      ],
+      "series_title": "ワールドトリガー",
+      "owned_volumes": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30
+      ]
+    },
+    {
+      "formats": [
+        "comic"
+      ],
+      "publishers": [
+        "集英社"
+      ],
+      "series_title": "久保さんは僕(モブ)を許さない",
+      "owned_volumes": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ]
+    },
+    {
+      "formats": [
+        "comic"
+      ],
+      "publishers": [
+        "KADOKAWA",
+        "ブシロードワークス"
+      ],
+      "series_title": "僕のいけずな婚約者",
+      "owned_volumes": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "formats": [
+        "comic"
+      ],
+      "publishers": [
+        "一迅社"
+      ],
+      "series_title": "八十亀ちゃんかんさつにっき",
+      "owned_volumes": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13
+      ]
+    },
+    {
+      "formats": [
+        "comic"
+      ],
+      "publishers": [
+        "講談社"
+      ],
+      "series_title": "化物語",
+      "owned_volumes": [
+        1,
+        2,
+        3,
+        4,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19
+      ]
+    },
+    {
+      "formats": [
+        "comic",
+        "novel"
+      ],
+      "publishers": [
+        "集英社"
+      ],
+      "series_title": "双星の陰陽師",
+      "owned_volumes": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35
+      ]
+    },
+    {
+      "formats": [
+        "comic"
+      ],
+      "publishers": [
+        "講談社"
+      ],
+      "series_title": "可愛いだけじゃない式守さん",
+      "owned_volumes": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ]
+    },
+    {
+      "formats": [
+        "comic"
+      ],
+      "publishers": [
+        "集英社"
+      ],
+      "series_title": "大東京鬼嫁伝",
+      "owned_volumes": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "formats": [
+        "comic"
+      ],
+      "publishers": [
+        "講談社"
+      ],
+      "series_title": "将来的に死んでくれ",
+      "owned_volumes": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ]
+    },
+    {
+      "formats": [
+        "comic"
+      ],
+      "publishers": [
+        "小学館"
+      ],
+      "series_title": "尾守つみきと奇日常。",
+      "owned_volumes": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "formats": [
+        "comic"
+      ],
+      "publishers": [
+        "講談社"
+      ],
+      "series_title": "彼女、お借りします.",
+      "owned_volumes": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25
+      ]
+    },
+    {
+      "formats": [
+        "comic"
+      ],
+      "publishers": [
+        "講談社"
+      ],
+      "series_title": "彼女、人見知ります",
+      "owned_volumes": [
+        1,
+        2,
+        3
+      ]
+    },
+    {
+      "formats": [
+        "comic"
+      ],
+      "publishers": [
+        "集英社"
+      ],
+      "series_title": "恋の神様 : 古味直志短編集",
+      "owned_volumes": null
+    },
+    {
+      "formats": [
+        "comic"
+      ],
+      "publishers": [
+        "集英社"
+      ],
+      "series_title": "推しの子",
+      "owned_volumes": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        12
+      ]
+    },
+    {
+      "formats": [
+        "comic"
+      ],
+      "publishers": [
+        "講談社"
+      ],
+      "series_title": "渡くんの××が崩壊寸前.",
+      "owned_volumes": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ]
+    },
+    {
+      "formats": [
+        "comic"
+      ],
+      "publishers": [
+        "集英社"
+      ],
+      "series_title": "黒子のバスケ",
+      "owned_volumes": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30
+      ]
+    }
+  ],
+  "publication": [
+    {
+      "series_title": "ヒットマン",
+      "latest_volume": 13
+    }
+  ]
+}

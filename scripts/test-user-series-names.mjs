@@ -60,7 +60,7 @@ const mocks = {
   'react-native': { AppState: {} },
   '@react-native-async-storage/async-storage': { setItem: async (k, v) => writes.set(k, v) },
   '../lib/asyncStorageCompat': { getStorageItemWithLegacy: async () => null },
-  '../lib/bookApis': { lookupBookByIsbn: async () => next },
+  '../lib/bookApis': { lookupBookByIsbn: async () => next, withBookRetailPrice: async input => input.listPrice == null && input.isbn === '9784088838199' ? {...input,listPrice:550,priceSource:'rakuten',priceFetchedAt:'2026-10-24T00:00:00Z'} : input },
   '../lib/bookMetadataOverrides': {},
   '../lib/demoLibrary': { createDemoBooks: () => seed, repairDemoBook: (b) => b },
   '../lib/kana': { normalizeKanaReading: (s) => s },
@@ -68,6 +68,7 @@ const mocks = {
   '../lib/errorMessages': {},
   '../lib/seriesSelectors': { buildSeriesGroups: () => [], buildSeriesItems: () => [] },
   '../lib/supabase': { supabase: null },
+  './AppSettingsContext': { useAppSettings: () => ({trackPurchasePrices: true}) },
   './AuthContext': { useAuth: () => ({ configured: false, initializing: false, user: null }) },
 };
 const { LibraryProvider, fromBookRow, toBookInsert, toBookUpdate } = load('src/store/LibraryContext.tsx', mocks);
@@ -100,3 +101,11 @@ assert.ok(saved.every((b) => b.seriesAliases.includes('ワールドトリガー'
 assert.ok(saved.some(book=>book.bookFormat==='novel'),'Book format is persisted locally with user edits.');
 assert.equal(resolve(saved, { ...next, title: 'ワールドトリガー 3', volumeNumber: 3 }).seriesTitle, '私の本棚');
 console.log('User series names: real rename/add/duplicate handlers, repeated renames, persisted history, legacy names, ambiguity, author/edition safeguards: OK');
+
+const retailBook = await render().addBook({title:'価格確認シリーズ 1',seriesTitle:'価格確認シリーズ',volumeNumber:1,listPrice:594,status:'unread'});
+assert.equal(retailBook.purchasePrice,594);
+const usedBook = await render().addBook({title:'価格確認シリーズ 2',seriesTitle:'価格確認シリーズ',volumeNumber:2,listPrice:880,purchasePrice:110,status:'unread'});
+assert.equal(usedBook.purchasePrice,110,'Actual registration must preserve explicitly entered used prices.');
+console.log('Actual library registration defaults to retail while preserving explicitly entered prices.');
+
+const newlyPriced=await render().addBook({isbn:'9784088838199',title:'新規価格テスト 1',seriesTitle:'新規価格テスト',volumeNumber:1,status:'unread'});assert.equal(newlyPriced.listPrice,550);assert.equal(newlyPriced.purchasePrice,550);const cloudPayload=toBookInsert(newlyPriced,'test-user','new-id');assert.equal(cloudPayload.list_price,550);assert.equal(cloudPayload.price_source,'rakuten');assert.equal(cloudPayload.purchase_price,550);assert.equal(fromBookRow({...cloudPayload,created_at:'2026-10-24'}).listPrice,550);console.log('New registration supplements price before purchase-price default and preserves it through cloud serialization.');

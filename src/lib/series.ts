@@ -54,7 +54,7 @@ export function parseSeriesTitle(title: string) {
   }
 
   seriesTitle = seriesTitle
-    .replace(/[(（【「『〈<].*?[)）】」』〉>]\s*$/g, '')
+    .replace(/[(（【「『〈<].*?[)）】」』〉>]\s*$/g, (annotation, offset) => offset === 0 ? annotation : '')
     .replace(/(?:第\s*)?[0-9]{1,3}\s*巻(?:目)?$/, '')
     .replace(/[0-9]{1,3}\s*$/, '')
     .replace(/[\[(（【]\s*(?:第\s*)?[0-9]{1,3}\s*(?:巻)?\s*[\]）)】]/g, '')

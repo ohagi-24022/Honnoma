@@ -1,10 +1,11 @@
+import { hasBookPrice, initialPurchasePriceText } from '../../src/lib/purchasePrices';
 import { loadMissingVolumeCovers, MissingVolumeCover } from '../../src/lib/missingVolumeCovers';
 import { resolveBookFormat } from '../../src/lib/bookFormat';
 import { verifiedSeriesPublication } from '../../src/lib/verifiedSeriesPublication';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as WebBrowser from 'expo-web-browser';
-import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -99,6 +100,7 @@ export default function SeriesScreen() {
   const [renaming, setRenaming] = useState(false);
   const renameRunning = useRef(false);
   const mergeTargets = useMemo(() => {
+    if (!renameOpen) return [];
     const counts = new Map<string, number>();
     for (const book of books) {
       if (book.seriesTitle === seriesTitle) continue;
@@ -106,7 +108,7 @@ export default function SeriesScreen() {
     }
     return [...counts].filter(([title]) => title.toLocaleLowerCase().includes(mergeSearch.trim().toLocaleLowerCase()))
       .sort(([a], [b]) => a.localeCompare(b, 'ja'));
-  }, [books, seriesTitle, mergeSearch]);
+  }, [books, seriesTitle, mergeSearch, renameOpen]);
   const [publicationInfo, setPublicationInfo] = useState<SeriesPublicationInfo | null>(null);
   const [seriesMetadata, setSeriesMetadata] = useState<SeriesMetadataOverride | null>(null);
   const [bulkFillOpen, setBulkFillOpen] = useState(false);
@@ -154,11 +156,14 @@ export default function SeriesScreen() {
   }, [baseItems, effectivePublicationInfo, seriesTitle, user?.id]);
   const pageCount = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
   const visibleItems = useMemo(() => items.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE), [items, page]);
-  const coverScope = JSON.stringify({series:seriesTitle,owned:books.filter(book=>book.seriesTitle===seriesTitle)
-    .map(book=>({title:book.title,aliases:book.seriesAliases,publisher:book.publisher,format:book.bookFormat,kind:book.volumeKind}))});
+  const seriesOwnedBooks = useMemo(() => baseItems.filter(isOwnedBook), [baseItems]);
+  const coverScope = useMemo(() => JSON.stringify({series:seriesTitle,owned:seriesOwnedBooks
+    .map(book=>({title:book.title,aliases:book.seriesAliases,publisher:book.publisher,format:book.bookFormat,kind:book.volumeKind}))}), [seriesTitle, seriesOwnedBooks]);
   const pageItems = useMemo(() => visibleItems.map(item => item.isMissing && missingCovers.scope === coverScope && missingCovers.items[item.volumeNumber]
     ? { ...item, ...missingCovers.items[item.volumeNumber] } : item), [visibleItems, missingCovers, coverScope]);
   const missingCoverVolumes = visibleItems.filter(item=>item.isMissing).map(item=>item.volumeNumber).join(',');
+  const [missingCoverRevision, setMissingCoverRevision] = useState(0);
+  useFocusEffect(useCallback(() => { setMissingCoverRevision(value => value + 1); }, []));
   useEffect(() => {
     setMissingCovers({scope:coverScope,items:{}});
   }, [coverScope]);
@@ -166,7 +171,7 @@ export default function SeriesScreen() {
     if (!missingCoverVolumes) return;
     let cancelled = false;
     const timer = setTimeout(() => {
-      const owned = books.filter(book=>book.seriesTitle===seriesTitle && book.volumeKind!=='extra');
+      const owned = seriesOwnedBooks.filter(book=>book.volumeKind!=='extra');
       const formats = [...new Set(owned.map(resolveBookFormat).filter(format=>format!=='unknown'))];
       const publishers = [...new Set(owned.map(book=>book.publisher).filter((p):p is string=>!!p))];
       const seriesTitles = [seriesTitle,...owned.flatMap(book=>[...(book.seriesAliases??[]),parseSeriesTitle(book.title).seriesTitle])];
@@ -176,7 +181,7 @@ export default function SeriesScreen() {
         .catch(()=>{ /* Retain the normal pending cover when the catalog is unavailable. */ });
     }, 250);
     return () => { cancelled=true; clearTimeout(timer); };
-  }, [coverScope, missingCoverVolumes]);
+  }, [coverScope, missingCoverVolumes, missingCoverRevision]);
   const ownedItems = useMemo(() => items.filter(isOwnedBook), [items]);
   const missingItems = useMemo(() => items.filter((item) => item.isMissing), [items]);
   const readCount = ownedItems.filter((item) => item.status === 'read').length;
@@ -340,10 +345,7 @@ export default function SeriesScreen() {
       closeInlineEdit();
       return;
     }
-    if (item.isMissing) {
-      void addMissingAsOwned(item);
-      return;
-    }
+    if (item.isMissing) return;
     toggleSelected(item);
   };
 
@@ -442,18 +444,22 @@ export default function SeriesScreen() {
     }
   };
 
-  const updateSelectedPurchasePrice = async () => {
+  const updateSelectedPurchasePrice = async (useNewPrice = false) => {
     const selected = new Set(selectedIds);
     const normalizedPrice = bulkPurchasePrice.replace(/[^0-9]/g, '');
     const nextPrice = normalizedPrice ? Number.parseInt(normalizedPrice, 10) : null;
-    const targets = ownedItems.filter((book) => selected.has(book.id));
-    if (targets.length === 0) return;
+    const selectedBooks = ownedItems.filter((book) => selected.has(book.id));
+    const targets = useNewPrice ? selectedBooks.filter(book => hasBookPrice(book.listPrice)) : selectedBooks;
+    if (targets.length === 0) {
+      Alert.alert('新品価格が見つかりません', '価格が取得できている本を選択してください。');
+      return;
+    }
 
     try {
-      await Promise.all(targets.map((book) => updateBook(book.id, { purchasePrice: nextPrice })));
+      await Promise.all(targets.map((book) => updateBook(book.id, { purchasePrice: useNewPrice ? book.listPrice : nextPrice })));
       setBulkPurchasePrice('');
       setSelectedIds([]);
-      Alert.alert('購入価格を更新しました', `${targets.length}冊の購入価格を${nextPrice === null ? '未設定' : `¥${nextPrice.toLocaleString('ja-JP')}`}にしました。`);
+      Alert.alert('購入価格を更新しました', useNewPrice ? `${targets.length}冊にそれぞれの新品価格を設定しました。${selectedBooks.length > targets.length ? `新品価格が不明な${selectedBooks.length - targets.length}冊は変更していません。` : ''}` : `${targets.length}冊の購入価格を${nextPrice === null ? '未設定' : `¥${nextPrice.toLocaleString('ja-JP')}`}にしました。`);
     } catch (error) {
       Alert.alert('本の間', error instanceof Error ? error.message : '購入価格の更新に失敗しました。');
     }
@@ -468,7 +474,7 @@ export default function SeriesScreen() {
     setDraftSeries(book.seriesTitle);
     setDraftVolume(book.volumeNumber ? String(book.volumeNumber) : '');
     setDraftVolumeKind(book.volumeKind ?? 'main');
-    setDraftPurchasePrice(typeof book.purchasePrice === 'number' ? String(book.purchasePrice) : '');
+    setDraftPurchasePrice(initialPurchasePriceText(book));
   };
 
   const submitEdit = async (book: Book) => {
@@ -636,6 +642,13 @@ export default function SeriesScreen() {
             </Pressable>
             {trackPurchasePrices && (
               <View style={styles.bulkPriceRow}>
+                <Pressable
+                  accessibilityLabel="選択した本にそれぞれの新品価格を設定"
+                  onPress={() => void updateSelectedPurchasePrice(true)}
+                  style={[styles.statusTextButton, { borderColor: colors.border }]}
+                >
+                  <Text style={[styles.statusTextButtonLabel, { color: colors.text }]}>新品価格で設定</Text>
+                </Pressable>
                 <TextInput
                   keyboardType="number-pad"
                   onChangeText={(value) => setBulkPurchasePrice(value.replace(/[^0-9]/g, ''))}
@@ -775,6 +788,9 @@ export default function SeriesScreen() {
         key={normalizeSeriesKey(seriesTitle)}
         ref={listRef}
         data={pageItems}
+        initialNumToRender={4}
+        maxToRenderPerBatch={3}
+        windowSize={5}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.list}
         onContentSizeChange={() => {
@@ -819,7 +835,7 @@ export default function SeriesScreen() {
               ]}
             >
               <Pressable
-                accessibilityLabel={selected ? `${item.title}の選択を解除` : `${item.title}を選択`}
+                accessibilityLabel={missing ? `${item.title}を所持に追加` : selected ? `${item.title}の選択を解除` : `${item.title}を選択`}
                 onPress={(event) => {
                   event.stopPropagation();
                   if (editingId) {
@@ -950,6 +966,12 @@ export default function SeriesScreen() {
                       ))}
                     </View>
                     {trackPurchasePrices && (
+                      <View style={{ gap: 8 }}>
+                      {hasBookPrice(item.listPrice) && (
+                        <Pressable onPress={() => setDraftPurchasePrice(String(item.listPrice))} style={[styles.statusTextButton, { borderColor: colors.border }]}>
+                          <Text style={[styles.statusTextButtonLabel, { color: colors.text }]}>新品価格を入力（{`¥${item.listPrice.toLocaleString('ja-JP')}`}）</Text>
+                        </Pressable>
+                      )}
                       <TextInput
                         value={draftPurchasePrice}
                         onChangeText={(value) => setDraftPurchasePrice(value.replace(/[^0-9]/g, ''))}
@@ -958,6 +980,7 @@ export default function SeriesScreen() {
                         placeholderTextColor={colors.muted}
                         style={[styles.editInput, { backgroundColor: colors.input, color: colors.text }]}
                       />
+                      </View>
                     )}
                     <Pressable
                       accessibilityLabel={`${item.title}の編集内容を保存`}
@@ -1011,16 +1034,18 @@ export default function SeriesScreen() {
                         <Ionicons color={colors.text} name="pricetag-outline" size={19} />
                       </Pressable>
                     )}
-                    <Pressable
-                      accessibilityLabel={`${item.title}を削除`}
-                      onPress={(event) => {
-                        event.stopPropagation();
-                        confirmDelete(item);
-                      }}
-                      style={[styles.iconActionButton, { borderColor: colors.danger }]}
-                    >
-                      <Ionicons color={colors.danger} name="trash-outline" size={19} />
-                    </Pressable>
+                    {editingId === item.id && (
+                      <Pressable
+                        accessibilityLabel={`${item.title}を削除`}
+                        onPress={(event) => {
+                          event.stopPropagation();
+                          confirmDelete(item);
+                        }}
+                        style={[styles.iconActionButton, { borderColor: colors.danger }]}
+                      >
+                        <Ionicons color={colors.danger} name="trash-outline" size={19} />
+                      </Pressable>
+                    )}
                   </View>
                 )}
               </View>
@@ -1222,7 +1247,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
   },
   statusTextButtonLabel: { fontSize: 12, fontWeight: '800' },
-  bulkPriceRow: { flexDirection: 'row', gap: 8, width: '100%' },
+  bulkPriceRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, width: '100%' },
   bulkPriceInput: { borderRadius: 8, flex: 1, fontSize: 13, fontWeight: '700', height: 36, paddingHorizontal: 10 },
   renameBox: { borderBottomWidth: 1, gap: 8, padding: 12 },
   bulkFillBox: { borderBottomWidth: 1, gap: 8, padding: 12 },

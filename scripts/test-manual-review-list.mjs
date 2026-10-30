@@ -9,7 +9,7 @@ const app={get:(p,fn)=>handlers.set('GET '+p,fn),post:(p,fn)=>handlers.set('POST
 function query(table){const filters=[];let fields,options={},start=0,end=999;
  const q={select(f,o={}){fields=f;options=o;return q},eq(k,v){filters.push([k,v]);return q},is(k,v){filters.push([k,v]);return q},not(k){filters.push([k,'not-null']);return q},ilike(k,v){filters.push([k,v]);return q},order(){return q},in(){return q},limit(){return q},range(a,b){start=a;end=b;return q},single:async()=>({data:table==='book_content_review_config'?{enabled:false,daily_limit:50}:jobs.find(x=>x.isbn13===filters.find(x=>x[0]==='isbn13')?.[1])}),then(resolve){
   let data=table==='book_content_review_jobs'?jobs:table==='reviewed_book_content'?published:[];
-  for(const [k,v]of filters){if(k==='enabled')data=data.filter(x=>x.enabled===v);if(k==='cover_url')data=data.filter(x=>!!x.cover_url);if(k==='adult_only')data=data.filter(x=>x.adult_only===v);if(k==='candidate->>title')data=data.filter(x=>v==='not-null'?!!x.candidate?.title:!x.candidate?.title);if(k==='candidate->>cover_hash')data=data.filter(x=>v==='not-null'?!!x.candidate?.cover_hash:!x.candidate?.cover_hash);if(k==='candidate->>publisher')data=data.filter(x=>x.candidate?.publisher===v);if(k==='title'||k==='isbn13'){const needle=v.replaceAll('%','');data=data.filter(x=>String(x[k]).includes(needle));}}
+  for(const [k,v]of filters){if(k==='review_requested')data=data.filter(x=>(x.review_requested??true)===v);if(k==='enabled')data=data.filter(x=>x.enabled===v);if(k==='cover_url')data=data.filter(x=>!!x.cover_url);if(k==='adult_only')data=data.filter(x=>x.adult_only===v);if(k==='candidate->>title')data=data.filter(x=>v==='not-null'?!!x.candidate?.title:!x.candidate?.title);if(k==='candidate->>cover_hash')data=data.filter(x=>v==='not-null'?!!x.candidate?.cover_hash:!x.candidate?.cover_hash);if(k==='candidate->>publisher')data=data.filter(x=>x.candidate?.publisher===v);if(k==='title'||k==='isbn13'){const pattern=new RegExp('^'+v.split('%').map(part=>part.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('.*')+'$','iu');data=data.filter(x=>pattern.test(String(x[k])));}}
   const count=data.length;data=data.slice(start,end+1);
   if(fields==='candidate->>publisher')data=data.map(x=>({publisher:x.candidate.publisher}));
   resolve({data:options.head?null:data,count});}};return q;}
@@ -134,3 +134,18 @@ assert(html.includes('表紙の取得状況'));assert(html.includes('/missing-co
 await handlers.get('GET /reviews')({query:{view:'all',source:'ready',size:'10'}},res);
 assert(html.includes(`data-isbn="${original[0].isbn13}"`));assert(!html.includes(`data-isbn="${waiting.isbn13}"`));
 console.log('Source acquisition filter: missing/ready independent from public permission, applied before pagination and retained in URLs: OK');
+
+const activeRows = jobs.length;
+jobs.push({...original[0],isbn13:'9784591124796',title:'UNSAVED_SEARCH_ONLY',review_requested:false});
+await handlers.get('GET /reviews')({query:{view:'all',size:'100',q:'UNSAVED_SEARCH_ONLY'}},res);
+assert(!html.includes('UNSAVED_SEARCH_ONLYの表紙'));
+assert(html.includes('全0件'));
+assert.equal(jobs.length,activeRows+1,'Search metadata remains stored even though it is excluded from review.');
+jobs.pop();
+console.log('Saved-only review list: unselected search rows excluded before counting and pagination, source data retained.');
+
+const punctuationOriginal=[...jobs];
+jobs.splice(0,jobs.length,...['りゅうおうのおしごと！ 2','りゅうおうのおしごと! 3'].map((title,n)=>({...original[0],title,isbn13:String(9784757549920+n)})));
+for(const q of ['りゅうおうのおしごと!','りゅうおうのおしごと！']){await handlers.get('GET /reviews')({query:{q,view:'all'}},res);assert(html.includes('全2件'));assert(html.includes('！ 2'));assert(html.includes('! 3'));}
+jobs.splice(0,jobs.length,...punctuationOriginal);
+console.log('Admin search matches both fullwidth and ASCII title punctuation before pagination.');

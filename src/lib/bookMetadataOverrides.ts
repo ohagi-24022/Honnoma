@@ -1,5 +1,5 @@
 import { Book } from '../types';
-import { BookVolumeDetails } from './bookApis';
+import { BookVolumeDetails, lookupBookRetailPrice } from './bookApis';
 import { env } from './env';
 import { getKnownBookMetadataOverride, KnownBookMetadataOverride, normalizeKnownIsbn } from './knownBookOverrides';
 import { normalizeSeriesKey } from './series';
@@ -78,6 +78,8 @@ async function getRemoteBookMetadataOverride(book: Book): Promise<KnownBookMetad
 export async function getBookMetadataOverrideDetails(book: Book): Promise<BookVolumeDetails | null> {
   const confirmed = await getConfirmedBookMetadata(book.isbn);
   if (confirmed) {
+    const existingPrice = confirmed.list_price ?? book.listPrice;
+    const price = existingPrice == null && book.isbn ? await lookupBookRetailPrice(book.isbn) : null;
     return {
       title: confirmed.title,
       bookFormat: confirmed.book_format ?? undefined,
@@ -89,9 +91,9 @@ export async function getBookMetadataOverrideDetails(book: Book): Promise<BookVo
       publisher: confirmed.publisher ?? undefined,
       description: confirmed.description ?? undefined,
       thumbnailUrl: confirmed.thumbnail_url ?? undefined,
-      listPrice: confirmed.list_price ?? undefined,
-      priceSource: confirmed.price_source ?? undefined,
-      priceFetchedAt: confirmed.price_fetched_at ?? undefined,
+      listPrice: existingPrice ?? price?.listPrice,
+      priceSource: confirmed.price_source ?? book.priceSource ?? price?.priceSource,
+      priceFetchedAt: confirmed.price_fetched_at ?? book.priceFetchedAt ?? price?.priceFetchedAt,
       source: 'Developer Override',
       sourceUrl: confirmed.source_url ?? undefined,
       checkedAt: confirmed.confirmed_at ?? new Date().toISOString(),

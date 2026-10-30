@@ -63,8 +63,8 @@ type HomeFilter =
   | `author:${string}`
   | `publisher:${string}`;
 type SortDirection = 'asc' | 'desc';
-type SeriesSort = 'title' | 'recent' | 'missing' | 'unread' | 'completion' | 'favorite' | 'author' | 'publisher';
-type BookSort = 'recent' | 'title' | 'series' | 'volume' | 'status' | 'favorite' | 'author' | 'publisher';
+type SeriesSort = 'title' | 'recent' | 'missing' | 'unread' | 'completion' | 'favorite' | 'publisher';
+type BookSort = 'recent' | 'title' | 'series' | 'volume' | 'status' | 'favorite' | 'publisher';
 type SeriesDisplayMode = 'detail' | 'cover' | 'title';
 type SeriesPublicationCache = Record<string, SeriesPublicationInfo>;
 type SeriesPublicationAttemptCache = Record<string, string>;
@@ -108,7 +108,6 @@ const seriesSortOptions: Array<{ label: string; value: SeriesSort }> = [
   { label: '未読優先', value: 'unread' },
   { label: '所持率順', value: 'completion' },
   { label: 'お気に入り優先', value: 'favorite' },
-  { label: '作者順', value: 'author' },
   { label: '出版社順', value: 'publisher' },
 ];
 const bookSortOptions: Array<{ label: string; value: BookSort }> = [
@@ -118,7 +117,6 @@ const bookSortOptions: Array<{ label: string; value: BookSort }> = [
   { label: '巻数順', value: 'volume' },
   { label: '読書状態順', value: 'status' },
   { label: 'お気に入り優先', value: 'favorite' },
-  { label: '作者順', value: 'author' },
   { label: '出版社順', value: 'publisher' },
 ];
 const readingStatusOrder: Record<ReadingStatus, number> = { reading: 0, unread: 1, read: 2 };
@@ -131,7 +129,6 @@ const defaultSeriesSortDirections: Record<SeriesSort, SortDirection> = {
   unread: 'desc',
   completion: 'desc',
   favorite: 'desc',
-  author: 'asc',
   publisher: 'asc',
 };
 
@@ -142,7 +139,6 @@ const defaultBookSortDirections: Record<BookSort, SortDirection> = {
   volume: 'asc',
   status: 'asc',
   favorite: 'desc',
-  author: 'asc',
   publisher: 'asc',
 };
 
@@ -294,6 +290,21 @@ function getSeriesReadingSortText(
   return usableReading(reading?.seriesReading) ?? usableReading(reading?.titleReading) ?? seriesTitle;
 }
 
+
+function buildSeriesReadingSortTextMap(
+  books: Book[], titles: string[], readingCorrections: Map<string, SeriesReadingCorrection>,
+) {
+  const grouped = new Map<string, Book[]>();
+  for (const book of books) {
+    const key = normalizeSeriesKey(book.seriesTitle);
+    const group = grouped.get(key) ?? [];
+    group.push(book);
+    grouped.set(key, group);
+  }
+  return new Map(titles.map(title => [title, getSeriesReadingSortText(
+    grouped.get(normalizeSeriesKey(title)) ?? [], title, readingCorrections,
+  )]));
+}
 
 function findReadingRepairTarget(books: Book[], seriesTitle: string) {
   const targetSeriesKey = normalizeSeriesKey(seriesTitle);
@@ -681,6 +692,11 @@ export default function HomeScreen() {
     );
   }, [formatBooks, effectivePublicationCache]);
 
+  const seriesReadingSortTexts = useMemo(
+    () => buildSeriesReadingSortTextMap(books, formatGroups.map(group => group.title), readingCorrections),
+    [books, formatGroups, readingCorrections],
+  );
+
   const visibleGroups = useMemo(() => {
     const activeFilters = getActiveFilters(filters);
     const metadataFilters = getSelectedMetadataFilters(filters);
@@ -737,19 +753,17 @@ export default function HomeScreen() {
         comparison =
           Number(favoriteSeriesKeySet.has(normalizeSeriesKey(left.title))) -
           Number(favoriteSeriesKeySet.has(normalizeSeriesKey(right.title)));
-      } else if (seriesSort === 'author') {
-        comparison = compareText(left.authors[0], right.authors[0]);
       } else if (seriesSort === 'publisher') {
         comparison = compareText(left.publishers[0], right.publishers[0]);
       } else {
         comparison = compareText(
-          getSeriesReadingSortText(books, left.title, readingCorrections),
-          getSeriesReadingSortText(books, right.title, readingCorrections),
+          seriesReadingSortTexts.get(left.title) ?? left.title,
+          seriesReadingSortTexts.get(right.title) ?? right.title,
         );
       }
       return applySortDirection(comparison, seriesSortDirection) || compareText(left.title, right.title);
     });
-  }, [books, effectivePublicationCache, favoriteSeriesKeySet, filters, query, readingCorrections, seriesGroups, formatGroups, seriesSort, seriesSortDirection, seriesStats]);
+  }, [books, effectivePublicationCache, favoriteSeriesKeySet, filters, query, readingCorrections, seriesGroups, formatGroups, seriesSort, seriesSortDirection, seriesStats, seriesReadingSortTexts]);
 
   const visibleBooks = useMemo(() => {
     const activeFilters = getActiveFilters(filters);
@@ -793,8 +807,6 @@ export default function HomeScreen() {
         comparison =
           Number(favoriteSeriesKeySet.has(normalizeSeriesKey(left.seriesTitle))) -
           Number(favoriteSeriesKeySet.has(normalizeSeriesKey(right.seriesTitle)));
-      } else if (bookSort === 'author') {
-        comparison = compareText(left.author, right.author);
       } else if (bookSort === 'publisher') {
         comparison = compareText(left.publisher, right.publisher);
       } else {
@@ -1061,6 +1073,9 @@ export default function HomeScreen() {
           ref={seriesListRef}
           style={styles.list}
           data={visibleGroups}
+          initialNumToRender={6}
+          maxToRenderPerBatch={6}
+          windowSize={7}
           extraData={`${listVersion}-${seriesDisplayMode}-${coverTileWidth}-${visibleFavoriteSeriesKeys.join(',')}-${refreshingSeriesTitle}-published-latest-${notificationSeriesKeys.join(',')}-${updatingNotificationSeriesKey}`}
           keyExtractor={(item) => item.id}
           numColumns={seriesDisplayMode === 'cover' ? coverGridColumns : 1}
@@ -1177,7 +1192,7 @@ export default function HomeScreen() {
               />
             );
           }}
-          ListEmptyComponent={!loading ? <EmptyLibraryState requiresAuth={requiresAuth} libraryIsEmpty={books.length === 0} /> : null}
+          ListEmptyComponent={!loading ? <EmptyLibraryState requiresAuth={requiresAuth} libraryIsEmpty={books.length === 0} /> : undefined}
         />
       ) : (
         <FlatList
@@ -1185,6 +1200,9 @@ export default function HomeScreen() {
           ref={booksListRef}
           style={styles.list}
           data={visibleBooks}
+          initialNumToRender={6}
+          maxToRenderPerBatch={6}
+          windowSize={7}
           extraData={listVersion}
           keyExtractor={(item) => item.id}
           contentContainerStyle={[styles.bookList, { paddingTop: listTopPadding }]}
@@ -1193,7 +1211,7 @@ export default function HomeScreen() {
           onScroll={handleScroll}
           scrollEventThrottle={16}
           renderItem={({ item }) => <BookRow book={item} />}
-          ListEmptyComponent={!loading ? <EmptyLibraryState requiresAuth={requiresAuth} libraryIsEmpty={books.length === 0} /> : null}
+          ListEmptyComponent={!loading ? <EmptyLibraryState requiresAuth={requiresAuth} libraryIsEmpty={books.length === 0} /> : undefined}
         />
       )}
 

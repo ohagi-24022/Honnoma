@@ -735,6 +735,7 @@ async function lookupRakutenBooks(
   if (!supabase) return null;
 
   const searchParams = new URLSearchParams();
+  searchParams.set('outOfStockFlag', '1');
   if (params.isbn) searchParams.set('isbn', normalizeIsbn(params.isbn));
   if (params.title) searchParams.set('title', params.title);
 
@@ -793,6 +794,34 @@ async function searchRakutenBookInputs(params: {
       .filter((item): item is RakutenItem => !!item?.title && !isNonBookRakutenItem(item))
       .map((item) => rakutenItemToBookInput(item)) ?? []
   );
+}
+
+/** Bounded paper-book catalog lookup for private missing-volume covers; no registration. */
+export async function searchMissingVolumeBookCandidates(seriesTitle: string): Promise<BookInput[]> {
+  if (!seriesTitle.trim()) return [];
+  const known = [...verifiedBakemonogatariBooks, ...verifiedStandardBooks]
+    .filter(book => normalizeSeriesKey(book.seriesTitle) === normalizeSeriesKey(seriesTitle));
+  if (!supabase) return known;
+  const query = seriesTitle.normalize('NFKC').trim().replace(/[.．]$/, '')
+    .replace(/\s+[:：]\s+.*$/, '').trim();
+  const path = 'BooksBook/Search/20170404';
+  const found = [...known];
+  // Special editions can fill the first page. Fetch at most 90 results once per
+  // cached series lookup, instead of issuing a separate search for each volume.
+  for (let page = 1; page <= 3; page += 1) {
+    const params = { title: query, hits: '30', page: String(page), sort: '-releaseDate', outOfStockFlag: '1', booksGenreId: '001' };
+    const response = await fetchRakutenWithTimeout(
+      `https://openapi.rakuten.co.jp/services/api/${path}?${new URLSearchParams(params)}`,
+      { path, params },
+    );
+    if (!response.ok) throw new Error('Book catalog unavailable');
+    const payload = await response.json() as RakutenBooksResponse;
+    found.push(...(payload.Items ?? []).map(entry => entry.Item)
+      .filter((item): item is RakutenItem => !!item?.title && !isNonBookRakutenItem(item))
+      .map(item => rakutenItemToBookInput(item)));
+    if ((payload.Items?.length ?? 0) < 30) break;
+  }
+  return found;
 }
 
 /** Book-level results keep individual volumes and editions for manual registration. */
@@ -1439,6 +1468,7 @@ async function lookupRakutenBookVolumeDetails(
   let item: RakutenItem | undefined;
   for (const query of queries) {
     const searchParams = new URLSearchParams();
+    searchParams.set('outOfStockFlag', '1');
     if (book.isbn) searchParams.set('isbn', query);
     else searchParams.set('title', query);
 
@@ -1473,7 +1503,39 @@ async function lookupRakutenBookVolumeDetails(
   };
 }
 
+type RetailPrice = Pick<BookVolumeDetails, 'listPrice' | 'priceSource' | 'priceFetchedAt'>;
+const retailPriceRequests = new Map<string, {expires: number; result: Promise<RetailPrice | null>}>();
+export function lookupBookRetailPrice(isbn: string): Promise<RetailPrice | null> {
+  const normalized = normalizeIsbn(isbn);
+  if (!isBookIsbnBarcode(normalized)) return Promise.resolve(null);
+  const cached = retailPriceRequests.get(normalized);
+  if (cached && cached.expires > Date.now()) return cached.result;
+  const result = (async () => {
+    try {
+      const details = await lookupRakutenBookVolumeDetails({isbn: normalized, title: '', seriesTitle: ''});
+      if (!Number.isInteger(details?.listPrice) || (details?.listPrice ?? 0) <= 0) return null;
+      return {listPrice: details!.listPrice, priceSource: details!.priceSource, priceFetchedAt: details!.priceFetchedAt};
+    } catch { return null; }
+  })();
+  if (retailPriceRequests.size >= 200) retailPriceRequests.delete(retailPriceRequests.keys().next().value!);
+  retailPriceRequests.set(normalized, {expires: Date.now() + 24 * 60 * 60 * 1000, result});
+  return result;
+}
+export async function withBookRetailPrice(input: BookInput): Promise<BookInput> {
+  if (input.listPrice != null || !input.isbn) return input;
+  const price = await lookupBookRetailPrice(input.isbn);
+  return price ? {...input, ...price} : input;
+}
 export async function lookupBookVolumeDetails(
+  book: Pick<Book, 'isbn' | 'title' | 'seriesTitle' | 'volumeNumber'>,
+  options: {exactIsbnOnly?: boolean} = {},
+): Promise<BookVolumeDetails | null> {
+  const details = await lookupBookVolumeDetailsBase(book, options);
+  if (!details || details.listPrice != null || !book.isbn) return details;
+  const price = await lookupBookRetailPrice(book.isbn);
+  return price ? {...details, ...price} : details;
+}
+async function lookupBookVolumeDetailsBase(
   book: Pick<Book, 'isbn' | 'title' | 'seriesTitle' | 'volumeNumber'>,
   options: { exactIsbnOnly?: boolean } = {},
 ): Promise<BookVolumeDetails | null> {
@@ -1585,11 +1647,12 @@ export async function lookupBookByIsbn(isbn: string): Promise<BookInput | null> 
   const normalizedIsbn = normalizeIsbn(isbn);
   if (!isBookIsbnBarcode(normalizedIsbn)) return null;
   const companion = knownCompanionByIsbn(normalizedIsbn);
-  if (companion) return companion;
+  if (companion) return withBookRetailPrice(companion);
 
   const confirmed = await getConfirmedBookMetadata(normalizedIsbn);
   if (confirmed?.title) {
     const parsed = parseSeriesTitle(confirmed.title);
+    const retailPrice = confirmed.list_price == null ? await lookupBookRetailPrice(normalizedIsbn) : null;
     return {
       isbn: normalizedIsbn,
       title: confirmed.title,
@@ -1600,14 +1663,14 @@ export async function lookupBookByIsbn(isbn: string): Promise<BookInput | null> 
       author: confirmed.author ?? undefined,
       publisher: confirmed.publisher ?? undefined,
       thumbnailUrl: confirmed.thumbnail_url ?? undefined,
-      listPrice: confirmed.list_price ?? undefined,
-      priceSource: confirmed.price_source ?? undefined,
-      priceFetchedAt: confirmed.price_fetched_at ?? undefined,
+      listPrice: confirmed.list_price ?? retailPrice?.listPrice,
+      priceSource: confirmed.price_source ?? retailPrice?.priceSource,
+      priceFetchedAt: confirmed.price_fetched_at ?? retailPrice?.priceFetchedAt,
       status: 'unread',
     };
   }
   const standard=verifiedStandardBooks.find(book=>book.isbn===normalizedIsbn);
-  if(standard)return {...standard};
+  if(standard)return withBookRetailPrice({...standard});
   const knownFallback = lookupKnownBookFallbackByIsbn(normalizedIsbn);
   const ndlResult = await tryLookup('NDL Search', () => lookupNdlByIsbn(normalizedIsbn));
   const openBdResult = await tryLookup('OpenBD', () => lookupOpenBd(normalizedIsbn));
@@ -1632,7 +1695,7 @@ export async function lookupBookByIsbn(isbn: string): Promise<BookInput | null> 
 
   if (openBdResult) {
     const openBdWithFallback = withIsbnCoverFallback(openBdResult, normalizedIsbn);
-    if (openBdWithFallback?.thumbnailUrl && openBdWithFallback.volumeNumber) return openBdWithFallback;
+    if (openBdWithFallback?.thumbnailUrl && openBdWithFallback.volumeNumber) return mergeBookMetadataList(openBdWithFallback, [rakutenResult, strictGoogleResult]);
 
     const titleFallback = keepThumbnailOnlyForSafeMatch(
       await lookupBookByTitle(openBdResult.title, normalizedIsbn),

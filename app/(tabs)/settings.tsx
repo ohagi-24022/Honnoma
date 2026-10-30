@@ -7,6 +7,7 @@ import {
   Alert,
   Pressable,
   ScrollView,
+  type ScrollViewInstance,
   StyleSheet,
   Switch,
   Text,
@@ -31,7 +32,7 @@ const themeOptions: Array<{ label: string; value: ThemeMode }> = [
 ];
 
 export default function SettingsScreen() {
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
   const tabScrollToTopRef = useRef({
     scrollToTop: () => scrollRef.current?.scrollTo({ y: 0, animated: true }),
   });
@@ -372,7 +373,7 @@ export default function SettingsScreen() {
         <View style={[styles.row, { marginBottom: 14 }]}>
           <View style={styles.rowText}>
             <Text style={[styles.rowTitle, { color: colors.text }]}>購入価格を記録</Text>
-            <Text style={[styles.rowCopy, { color: colors.muted }]}>ONにすると、登録時とシリーズ詳細の編集で通常価格または中古価格を記録できます。</Text>
+            <Text style={[styles.rowCopy, { color: colors.muted }]}>ONにすると、新しく登録する本は取得できた新品価格を初期値にします。編集時に購入価格を変更できます。</Text>
           </View>
           <Switch
             onValueChange={setTrackPurchasePrices}

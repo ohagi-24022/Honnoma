@@ -43,8 +43,8 @@ export default function TabLayout() {
         options={{
           title: '本棚',
           tabBarLabel: '本棚',
-          tabBarIcon: ({ color, focused }) => (
-            <Ionicons color={color} name={focused ? 'library' : 'library-outline'} size={24} />
+          tabBarIcon: ({ focused }) => (
+            <Ionicons color={focused ? colors.primary : colors.muted} name={focused ? 'library' : 'library-outline'} size={24} />
           ),
         }}
       />
@@ -54,8 +54,8 @@ export default function TabLayout() {
         options={{
           title: '欲しい',
           tabBarLabel: '欲しい',
-          tabBarIcon: ({ color, focused }) => (
-            <Ionicons color={color} name={focused ? 'cart' : 'cart-outline'} size={24} />
+          tabBarIcon: ({ focused }) => (
+            <Ionicons color={focused ? colors.primary : colors.muted} name={focused ? 'cart' : 'cart-outline'} size={24} />
           ),
         }}
       />
@@ -64,7 +64,7 @@ export default function TabLayout() {
         options={{
           title: 'スキャン',
           tabBarLabel: () => null,
-          tabBarIcon: ({ color, focused }) => (
+          tabBarIcon: ({ focused }) => (
             <View
               style={{
                 alignItems: 'center',
@@ -83,13 +83,13 @@ export default function TabLayout() {
               }}
             >
               <Ionicons
-                color={focused ? colors.background : color}
+                color={focused ? colors.background : colors.muted}
                 name={focused ? 'barcode' : 'barcode-outline'}
                 size={22}
               />
               <Text
                 style={{
-                  color: focused ? colors.background : color,
+                  color: focused ? colors.background : colors.muted,
                   fontSize: 10,
                   fontWeight: '800',
                   marginTop: 2,
@@ -110,8 +110,8 @@ export default function TabLayout() {
         options={{
           title: '順位',
           tabBarLabel: '順位',
-          tabBarIcon: ({ color, focused }) => (
-            <Ionicons color={color} name={focused ? 'podium' : 'podium-outline'} size={24} />
+          tabBarIcon: ({ focused }) => (
+            <Ionicons color={focused ? colors.primary : colors.muted} name={focused ? 'podium' : 'podium-outline'} size={24} />
           ),
         }}
       />
@@ -121,8 +121,8 @@ export default function TabLayout() {
         options={{
           title: '設定',
           tabBarLabel: '設定',
-          tabBarIcon: ({ color, focused }) => (
-            <Ionicons color={color} name={focused ? 'settings' : 'settings-outline'} size={24} />
+          tabBarIcon: ({ focused }) => (
+            <Ionicons color={focused ? colors.primary : colors.muted} name={focused ? 'settings' : 'settings-outline'} size={24} />
           ),
         }}
       />

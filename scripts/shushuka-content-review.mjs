@@ -32,11 +32,15 @@ async function rpc(db, name, args) {
   if (error) throw new Error(`Database operation failed: ${name}`);
   return data;
 }
-export async function fetchBook(db, isbn, fetcher = fetch, ignoredCovers = new Set()) {
+export async function fetchBook(db, isbn, fetcher = fetch, ignoredCovers = new Set(), { requireDescription = false } = {}) {
   let primary = null;
+  let incomplete = false;
   const choose = book => {
     if (ignoredCovers.has(book.cover_url)) book={...book,cover_url:null};
-    primary = primary ? {...book,...primary,cover_url:primary.cover_url||book.cover_url} : book;
+    primary = primary ? {...book,...primary,cover_url:primary.cover_url||book.cover_url,
+      description:primary.description?.trim()?primary.description:book.description,
+      description_source_url:primary.description?.trim()?(primary.description_source_url||primary.source_url):book.source_url,
+      description_provider:primary.description?.trim()?(primary.description_provider||primary.provider):book.provider} : book;
     return primary;
   };
   // Administrator-confirmed exact-ISBN records precede providers; client-editable cache rows never do.
@@ -50,13 +54,14 @@ export async function fetchBook(db, isbn, fetcher = fetch, ignoredCovers = new S
       description: String(info.description ?? '').slice(0, 20000), cover_url: ignoredCovers.has(info.thumbnail_url) ? null : info.thumbnail_url || null,
       source_url: info.source_url || '', provider: 'administrator',
     };
-      if(primary.cover_url) return primary;
+      if(primary.cover_url && (!requireDescription || primary.description?.trim())) return primary;
     }
   }
   const result = await db.functions.invoke('rakuten-books', { signal: AbortSignal.timeout(8000), body: {
-    path: 'BooksBook/Search/20170404', params: { isbn, hits: '1', format: 'json' },
+    path: 'BooksBook/Search/20170404', params: { isbn, hits: '1', format: 'json', outOfStockFlag: '1' },
   }}).catch(() => ({ error: true }));
   const body = result.data?.body;
+  if (result.error) incomplete = true;
   const rakuten = body?.Items?.map(item => item.Item ?? item).find(item => item.isbn === isbn);
   if (!result.error && rakuten?.title) {
     choose({
@@ -64,7 +69,7 @@ export async function fetchBook(db, isbn, fetcher = fetch, ignoredCovers = new S
     cover_url: rakuten.largeImageUrl || rakuten.mediumImageUrl || null,
     source_url: `https://books.rakuten.co.jp/search?sitem=${isbn}`, provider: 'rakuten',
     });
-    if(primary.cover_url)return primary;
+    if(primary.cover_url && (!requireDescription || primary.description?.trim()))return primary;
   }
   try {
     const [item] = await checked(await fetcher(`https://api.openbd.jp/v1/get?isbn=${isbn}`, { signal: AbortSignal.timeout(15000), redirect: 'error' }));
@@ -72,13 +77,13 @@ export async function fetchBook(db, isbn, fetcher = fetch, ignoredCovers = new S
       const text = (item.onix?.CollateralDetail?.TextContent ?? []).map(x => typeof x.Text === 'string' ? x.Text : '').join('\n');
       choose({ title: String(item.summary.title).slice(0, 1000), publisher: item.summary.publisher || '', imprint: item.summary.series || '', description: text.slice(0, 20000),
         cover_url: item.summary.cover || null, source_url: `https://api.openbd.jp/v1/get?isbn=${isbn}`, provider: 'openbd' });
-      if(primary.cover_url)return primary;
+      if(primary.cover_url && (!requireDescription || primary.description?.trim()))return primary;
     }
-  } catch { /* Try another provider without publishing an incomplete result. */ }
+  } catch { incomplete = true; /* Try another provider without publishing an incomplete result. */ }
   let google;
-  try { google = await checked(await fetcher(`https://www.googleapis.com/books/v1/volumes?q=isbn:${isbn}&maxResults=5`, { signal: AbortSignal.timeout(15000), redirect: 'error' })); } catch(error) { if(primary)return primary; throw error; }
+  try { google = await checked(await fetcher(`https://www.googleapis.com/books/v1/volumes?q=isbn:${isbn}&maxResults=5`, { signal: AbortSignal.timeout(15000), redirect: 'error' })); } catch(error) { if(primary)return {...primary,acquisition_incomplete:true}; throw error; }
   const book = google.items?.find(x => x.volumeInfo?.industryIdentifiers?.some(id => id.identifier === isbn));
-  if (!book?.volumeInfo?.title) { if(primary)return primary; throw new Error('No exact ISBN match'); }
+  if (!book?.volumeInfo?.title) { if(primary)return {...primary,acquisition_incomplete:incomplete}; throw Object.assign(new Error('No exact ISBN match'),{code:incomplete?'PROVIDER_UNAVAILABLE':'NO_EXACT_ISBN'}); }
   const info = book.volumeInfo;
   return choose({ title: String(info.title).slice(0, 1000), publisher: info.publisher || '', imprint: '', description: String(info.description ?? '').slice(0, 20000),
     cover_url: (info.imageLinks?.thumbnail ?? '').replace(/^http:/, 'https:') || null,
@@ -275,7 +280,7 @@ export function createReviewService(db, env = process.env, deps = {}) {
     preparationRunning=true;
     try {
     if (!db) return {prepared:[],skipped:[],failed:[]};
-    const {data:jobs,error}=await db.from('book_content_review_jobs').select('isbn13')
+    const {data:jobs,error}=await db.from('book_content_review_jobs').select('isbn13').eq('review_requested',true)
       .in('status',['queued','retry']).is('adult_only',null).is('candidate->>title',null)
       .lte('available_at',new Date().toISOString()).order('created_at',{ascending:true}).limit(3);
     if(error)throw error;
@@ -290,9 +295,9 @@ export function createReviewService(db, env = process.env, deps = {}) {
     const result={prepared:[],skipped:[],failed:[]};
     for(const isbn of [...new Set(isbns)]) {
       try {
-        const {data:job,error}=await db.from('book_content_review_jobs').select('status,candidate,classification_source,adult_only').eq('isbn13',isbn).maybeSingle();
+        const {data:job,error}=await db.from('book_content_review_jobs').select('status,candidate,classification_source,adult_only,review_requested').eq('isbn13',isbn).maybeSingle();
         if(error)throw error;
-        if(!job||(job.candidate?.title&&job.candidate?.cover_hash)||job.classification_source||job.adult_only!==null||!['queued','retry','pending_review'].includes(job.status)){result.skipped.push(isbn);continue;}
+        if(!job||job.review_requested===false||(job.candidate?.title&&job.candidate?.cover_hash)||job.classification_source||job.adult_only!==null||!['queued','retry','pending_review'].includes(job.status)){result.skipped.push(isbn);continue;}
         const {book,image}=await fetchBookWithCover(db,isbn,fetcher);
         const candidate={...book,cover_hash:image?.hash??null,review_origin:'registration'};
         const hash=sha(JSON.stringify(candidate));
@@ -343,6 +348,16 @@ export function registerReviewPublic(app, db, service) {
           try{outcomes.push({id,result:await retrieveMissingBookCover(db,id)});}catch(error){outcomes.push({id,result:'failed',stage:['read-book','fetch-cover','save-cover'].includes(error.stage)?error.stage:'search',code:/^[A-Z0-9]{2,12}$/.test(error.code??'')?error.code:undefined});}
         }
         return res.json({outcomes});
+      }
+      if (req.body?.action === 'run-catalog-retail-prices') {
+        const {processCatalogPrices}=await import('./shushuka-catalog-prices.mjs');
+        return res.json(await processCatalogPrices(db));
+      }
+      if (req.body?.action === 'retrieve-retail-prices') {
+        const isbns=req.body.isbns;
+        if(!Array.isArray(isbns)||!isbns.length||isbns.length>5||!isbns.every(validIsbn))return res.status(400).json({error:'Up to 5 valid ISBNs only'});
+        const {retrieveRetailPrices}=await import('./shushuka-retail-prices.mjs');
+        return res.json({outcomes:await retrieveRetailPrices(db,isbns)});
       }
       if (req.body?.action === 'prepare') {
         const isbns=req.body.isbns;

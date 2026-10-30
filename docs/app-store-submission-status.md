@@ -80,3 +80,44 @@ Apple公式参考：
 ## 2026年10月7日 年齢制限指定
 
 App Store Connectの年齢質問票を保存済み。無制限のウェブアクセスは「はい」、他の機能項目は「いいえ」、現在表示するコンテンツの頻度は「なし」。表示許可済みの表紙・紹介文は本番で0件。算出結果は16+（ブラジルA16、大韓民国15+）、OS 26未満では地域的例外を除き17+。回答と表示許可の運用上の条件は `app-store-age-rating-assessment.md` に記録。審査提出は未実施。
+
+## 2026年10月23日 初回公開の再確認
+
+ユーザーより「初回公開の申請」と確認。提出対象は1.0.0・iPhone専用の最新ビルド20。ビルド19は追加のURIセキュリティ修正前のため提出しない。39件のテスト、型チェック、Expo推奨版チェック、iOSバンドルの作成に成功。公開プライバシーポリシーは10月23日版へ更新済み。
+
+TestFlightの実機確認、登録画面を含む掲載スクショの一致、現在の個人画面の表示範囲に合わせた年齢質問票の再確認が必要。ここに記載された10月7日の選択ビルド・未設定事項を現在のApp Store Connectの状態として扱わない。審査への最終送信は未実施。
+
+詳細とビルド情報：`operations/initial-release-2026-10-23.md`。審査メモ案：`app-review-notes-1.0.0.md`。
+
+ビルド20のEAS作成・アップロード完了、Appleの処理完了（VALID）と内部TestFlight利用可能（IN_BETA_TESTING）を確認済み。ストア審査送信は未実施。
+
+## 2026年10月30日 更新版ビルド21
+
+ユーザーの依頼により、1.0.0（21）のiPhone本番ビルドを作成完了。Expo SDK58、型チェック、全45テスト、Expo Doctor 20/20成功。完成IPAのビルド番号・iPhone専用・日本語設定を検証済み。今回の依頼ではApp Store Connectへのアップロードとストア審査送信は実施していない。
+
+詳細：`operations/production-build-21-2026-10-30.md`。
+
+その後の続行依頼によりビルド21のApp Store Connectアップロードも完了（EAS Submit: `607b243e-9044-4fd6-858d-18b67ebe6a90`）。Apple側で処理中。TestFlightの利用可能状態はまだ未確認。ストア審査には送信していない。
+
+再ログイン後、Appleの処理完了とTeam (Expo)内のビルド21「テスト中」を画面で確認済み。既存内部テスターが利用可能。アプリ一覧にはApple Developer Program契約更新の通知があり、新規提出前にAccount Holder本人の確認・同意が必要。
+
+## 2026年10月30日 公開依頼に基づく申請準備
+
+- 提出画面の旧ビルド16を21へ差し替えて保存し、「審査用に追加」を実行。1.0.0（21）が提出物の下書きに入り「審査準備完了」。最終の「審査へ提出」は未実施。
+- 掲載画像6枚、価格は日本￥0.00、配信地域は日本1か国、Mac/Vision Proの配信はOFF、公開配信、手動リリースを確認。
+- プライバシー情報は公開済み。ポリシーURLは https://ohagi-24022.github.io/Honnoma/ 。年齢区分は16+（旧OSは17+）。今回回答の変更は行っていない。
+- Apple Developerアカウント側でも契約更新が未同意であることを確認。「最新のApple Developer Program License Agreementに同意してください」と表示され、会員リソースが制限されている。
+- 契約確認用の https://developer.apple.com/account を開いて引き継ぎ。本人による契約確認・同意が必要。代理で同意しない。
+- 画像の現在の実機UIとの完全照合、審査用アカウントのログイン実試験は未実施。旧スクショを最新撮影分と誤認しない。
+- 記録画像：`operations/screenshots/apple-agreement-required-2026-10-30.png`。
+
+## 2026年10月30日 初回審査申請の送信完了
+
+ユーザーより契約への同意完了の連絡。Apple Developerアカウントを再読み込みし、契約更新の警告が消え、会員リソースが利用可能になったことを確認。
+
+- 14:25 JST、1.0.0（21）を「審査へ提出」で送信。
+- Apple画面で「1項目が提出されました」「提出物がApp Reviewに送信されました」、状態「審査待ち」を確認。
+- Review Submission ID: `d6ba5e23-aa18-4b84-95f7-deeadff79142`
+- https://appstoreconnect.apple.com/apps/6819377765/distribution/reviewsubmissions/details/d6ba5e23-aa18-4b84-95f7-deeadff79142
+- 記録画像：`operations/screenshots/app-review-submitted-build21-2026-10-30.png`。
+- 初回公開はまだ行われていない。保存済みの手動リリース設定を維持しているため、審査承認後に公開操作が必要。

@@ -1,22 +1,34 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 import ts from 'typescript';
 
 // Personal search keeps adult titles; public ranking classification is enforced on the server.
-const source = readFileSync(new URL('../src/lib/bookApis.ts', import.meta.url), 'utf8');
-const compiled = ts.transpileModule(source + '\nexport { googleBookItems };', {
-  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
-}).outputText;
-const series = {};
-vm.runInNewContext(ts.transpileModule(readFileSync(new URL('../src/lib/series.ts', import.meta.url), 'utf8'), {
-  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
-}).outputText, { exports: series });
-const exports = {};
-vm.runInNewContext(compiled, {
-  exports, URLSearchParams,
-  require: name => name === './series' ? series : ({ env: {}, getKnownIsbnCoverOverride: () => undefined }),
-});
+const cache = new Map();
+const mocks = {
+  './env': { env: {} },
+  './supabase': { supabase: null },
+  './confirmedBookMetadata': { getConfirmedBookMetadata: async () => null },
+  './knownBookOverrides': { getKnownBookCoverOverride: () => undefined, getKnownIsbnCoverOverride: () => undefined },
+};
+function load(filename, entry = false) {
+  const name = path.resolve(filename);
+  if (cache.has(name)) return cache.get(name);
+  const exports = {};
+  cache.set(name, exports);
+  const source = readFileSync(name, 'utf8') + (entry ? '\nexport { googleBookItems };' : '');
+  const compiled = ts.transpileModule(source, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true },
+  }).outputText;
+  vm.runInNewContext(compiled, {
+    exports, URL, URLSearchParams, AbortController, setTimeout, clearTimeout,
+    require: dependency => dependency in mocks ? mocks[dependency] : load(path.resolve(path.dirname(name), dependency) + '.ts'),
+  });
+  return exports;
+}
+const exports = load(fileURLToPath(new URL('../src/lib/bookApis.ts', import.meta.url)), true);
 const { googleBookItems, buildPurchaseUrl } = exports;
 const items = [
   { id: 'adult', volumeInfo: { title: 'Example', maturityRating: 'MATURE', imageLinks: { thumbnail: 'https://example.test/adult.jpg' } } },

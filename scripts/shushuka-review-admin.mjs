@@ -1,3 +1,4 @@
+import { registerSynopsisAdmin } from './shushuka-synopsis-admin.mjs';
 import { registerMissingCoverAdmin } from './shushuka-missing-covers.mjs';
 import { randomBytes, createHash } from 'node:crypto';
 import { automaticReviewPanel, saveAutomaticReviewSettings } from './shushuka-automatic-review-settings.mjs';
@@ -67,6 +68,7 @@ export function reviewPageSize(querySize,cookie='') {
 
 export function registerReviewAdmin(app, db, service, page, escapeHtml, coverOps = { fetchCover, snapshotCover }) {
   registerMissingCoverAdmin(app, db, service, page, escapeHtml);
+  registerSynopsisAdmin(app, db, page, escapeHtml);
   const csrf = randomBytes(32).toString('hex'); const e = escapeHtml;
   const returnLink=req=>`<a href="${e(reviewReturnTo(req))}">一覧へ戻る</a>`;
   const token = `<input type="hidden" name="csrf" value="${csrf}">`;
@@ -85,19 +87,19 @@ export function registerReviewAdmin(app, db, service, page, escapeHtml, coverOps
     let currentPage=Math.max(1,Math.min(100000,Math.floor(Number(req.query.page)||1)));
     const publisher=String(req.query.publisher??'').slice(0,200); const search=String(req.query.q??'').trim().slice(0,200);
     const buildQuery=()=>{
-      let query=db.from('book_content_review_jobs').select('isbn13,title,status,reason,cover_status,description_status,updated_at,candidate,content_hash,adult_only',{count:'exact'});
+      let query=db.from('book_content_review_jobs').select('isbn13,title,status,reason,cover_status,description_status,updated_at,candidate,content_hash,adult_only',{count:'exact'}).eq('review_requested',true);
       if(view==='unclassified')query=query.is('adult_only',null);
       if(view==='general'||view==='adult')query=query.eq('adult_only',view==='adult');
       if(sourceView==='missing')query=query.is('candidate->>cover_hash',null);
       if(sourceView==='ready')query=query.not('candidate->>cover_hash','is',null);
       if(publisher)query=query.eq('candidate->>publisher',publisher);
-      if(search)query=query.ilike(/^\d+$/.test(search)?'isbn13':'title',`%${search.replace(/[\\%_]/g,'\\$&')}%`);
+      if(search)query=query.ilike(/^\d+$/.test(search)?'isbn13':'title',`%${search.replace(/[\\%_]/g,'\\$&').replace(/[!！?？]+/g,'%')}%`);
       return query.order('updated_at',{ascending:view==='unclassified'}).order('isbn13',{ascending:true});
     };
     const loadPublishers=async()=>{
       const names=new Set();
       for(let start=0;;start+=1000){
-        const {data,error}=await db.from('book_content_review_jobs').select('candidate->>publisher').not('candidate->>title','is',null).order('isbn13').range(start,start+999);
+        const {data,error}=await db.from('book_content_review_jobs').select('candidate->>publisher').eq('review_requested',true).not('candidate->>title','is',null).order('isbn13').range(start,start+999);
         if(error)throw error;
         for(const item of data??[])if(item.publisher)names.add(item.publisher);
         if((data??[]).length<1000)break;
@@ -126,7 +128,7 @@ export function registerReviewAdmin(app, db, service, page, escapeHtml, coverOps
       db.from('book_content_review_config').select('enabled,daily_limit,attempts_today,budget_day').eq('id',true).single(),
       loadCoverFiltered(),
       db.from('book_content_review_mail').select('id',{count:'exact',head:true}).eq('status','failed'),
-      db.from('book_content_review_jobs').select('isbn13',{count:'exact',head:true}).is('candidate->>title',null).in('status',['queued','retry']),
+      db.from('book_content_review_jobs').select('isbn13',{count:'exact',head:true}).eq('review_requested',true).is('candidate->>title',null).in('status',['queued','retry']),
       loadPublishers(),
     ]);
     if (configError || result.error || mailError || prepareError) throw new Error('Unavailable');
@@ -162,7 +164,7 @@ export function registerReviewAdmin(app, db, service, page, escapeHtml, coverOps
       .review-footer label{margin:0;display:flex;align-items:center;gap:8px}.review-footer input{width:auto}
       .review-bulk{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:14px 0}.review-bulk p{margin:0;color:var(--muted)}.review-bulk button:disabled{opacity:.45;cursor:default}
       @media(max-width:850px){.review-row{grid-template-columns:64px minmax(0,1fr);gap:12px}.review-actions{grid-column:2;flex-wrap:wrap}.review-image,.review-image img{width:64px;height:90px}.review-title strong{font-size:15px}}
-    </style>${automaticReviewPanel({config,service,token,escapeHtml:e,failed:failed??0})}<section class="panel"><h2>表紙・タイトルの確認</h2><p><a href="/missing-covers">本棚の表紙未取得を管理（ISBN未設定を含む）</a></p><p>表紙とタイトルを見て「一般向け／成人向け」を選び、保存してください。出版社ごとに絞り込めます。未選択の本は変更されません。</p>
+    </style>${automaticReviewPanel({config,service,token,escapeHtml:e,failed:failed??0})}<section class="panel"><h2>表紙・タイトルの確認</h2><p><a href="/synopses">巻の紹介文の取得状況</a> ／ <a href="/missing-covers">本棚の表紙未取得を管理（ISBN未設定を含む）</a></p><p>表紙とタイトルを見て「一般向け／成人向け」を選び、保存してください。出版社ごとに絞り込めます。未選択の本は変更されません。検索しただけの候補は含まず、本棚・欲しいリストへ保存した本と手動追加した本が対象です。</p>
       <form class="review-filter" method="get"><label>分類<select name="view">${[['unclassified','未分類'],['general','一般向け'],['adult','成人向け'],['all','すべて']].map(([v,t])=>`<option value="${v}" ${view===v?'selected':''}>${t}</option>`).join('')}</select></label>
       <label>表紙の公開設定<select name="cover">${[['all','すべて'],['show','表示可'],['hide','非表示'],['unreviewed','未確認']].map(([v,t])=>`<option value="${v}" ${coverView===v?'selected':''}>${t}</option>`).join('')}</select></label><label>表紙の取得状況<select name="source">${[['all','すべて'],['missing','未取得・取得失敗'],['ready','取得済み']].map(([v,t])=>`<option value="${v}" ${sourceView===v?'selected':''}>${t}</option>`).join('')}</select></label><label>出版社<select name="publisher"><option value="">すべての出版社</option>${publishers.map(x=>`<option ${x===publisher?'selected':''}>${e(x)}</option>`).join('')}</select></label><label>タイトル・ISBN<input name="q" value="${e(search)}"></label><label>表示件数<select name="size">${sizes.map(n=>`<option value="${n}" ${size===n?'selected':''}>${n}件</option>`).join('')}</select></label><button>絞り込む</button></form>${pager}
       <form method="post" action="/reviews/classify" data-review-classify>${token}<input type="hidden" name="return_to" value="${e(returnTo)}">
@@ -209,7 +211,7 @@ export function registerReviewAdmin(app, db, service, page, escapeHtml, coverOps
   app.post('/reviews/prepare',guarded(async(req,res)=>{
     const requested=String(req.body?.prepare_isbn??'');
     if(requested&&!validIsbn(requested))throw new Error('Invalid ISBN');
-    let query=db.from('book_content_review_jobs').select('isbn13,candidate,adult_only,status').in('status',requested?['queued','retry','pending_review']:['queued','retry']).is('adult_only',null);
+    let query=db.from('book_content_review_jobs').select('isbn13,candidate,adult_only,status').eq('review_requested',true).in('status',requested?['queued','retry','pending_review']:['queued','retry']).is('adult_only',null);
     if(!requested)query=query.is('candidate->>title',null);
     if(requested)query=query.eq('isbn13',requested);
     const {data:jobs,error}=await query.order('created_at',{ascending:true}).limit(requested?1:5);

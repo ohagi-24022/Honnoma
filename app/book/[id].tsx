@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 
 import { BookCover } from '../../src/components/BookCover';
+import { hasBookPrice, initialPurchasePriceText } from '../../src/lib/purchasePrices';
 import { BookVolumeDetails } from '../../src/lib/bookApis';
 import { getBookVolumeDetails } from '../../src/lib/bookDetailsCache';
 import { getKnownBookCoverOverride } from '../../src/lib/knownBookOverrides';
@@ -174,7 +175,7 @@ export default function BookDetailsScreen() {
   }, [book, loadDetails, loaded, routeBookId]);
   useEffect(() => {
     if (!book || !trackPurchasePrices) return;
-    setDraftPurchasePrice(typeof book.purchasePrice === 'number' ? String(book.purchasePrice) : '');
+    setDraftPurchasePrice(initialPurchasePriceText(book));
     if (params.editPrice === '1' && priceEditParamConsumedRef.current !== routeBookId) {
       priceEditParamConsumedRef.current = routeBookId;
       setEditingPrice(true);
@@ -237,7 +238,7 @@ export default function BookDetailsScreen() {
           accessibilityLabel="購入価格を編集"
           disabled={savingPrice}
           onPress={() => {
-            setDraftPurchasePrice(typeof book.purchasePrice === 'number' ? String(book.purchasePrice) : '');
+            setDraftPurchasePrice(initialPurchasePriceText(book));
             setEditingPrice((current) => !current);
           }}
           style={[styles.priceEditButton, { borderColor: colors.border }]}
@@ -245,6 +246,16 @@ export default function BookDetailsScreen() {
           <Ionicons color={colors.text} name={editingPrice ? 'close' : 'create-outline'} size={18} />
         </Pressable>
       </View>
+      {hasBookPrice(book.listPrice) ? (
+        <Pressable
+          accessibilityLabel="新品価格を購入価格に入力"
+          disabled={savingPrice}
+          onPress={() => { setDraftPurchasePrice(String(book.listPrice)); setEditingPrice(true); }}
+          style={[styles.priceNewButton, { borderColor: colors.border }]}
+        >
+          <Text style={[styles.priceMeta, { color: colors.text }]}>新品価格を入力（{formatCurrency(book.listPrice)}）</Text>
+        </Pressable>
+      ) : null}
       {editingPrice ? (
         <View style={styles.priceEditRow}>
           <TextInput
@@ -383,6 +394,7 @@ const styles = StyleSheet.create({
   priceValue: { fontSize: 18, fontWeight: '900', marginTop: 3 },
   priceMeta: { fontSize: 12, fontWeight: '700', marginTop: 4 },
   priceEditButton: { alignItems: 'center', borderRadius: 8, borderWidth: 1, height: 36, justifyContent: 'center', width: 38 },
+  priceNewButton: { alignSelf: 'flex-start', borderWidth: 1, borderRadius: 8, padding: 10 },
   priceEditRow: { alignItems: 'center', flexDirection: 'row', gap: 8 },
   priceInput: { borderRadius: 8, flex: 1, fontSize: 15, fontWeight: '800', height: 42, paddingHorizontal: 12 },
   priceSaveButton: { alignItems: 'center', borderRadius: 8, height: 42, justifyContent: 'center', width: 46 },

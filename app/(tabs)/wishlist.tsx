@@ -10,6 +10,7 @@ import {
   NativeSyntheticEvent,
   Pressable,
   ScrollView,
+  type ScrollViewInstance,
   StyleSheet,
   Text,
   TextInput,
@@ -66,7 +67,7 @@ export default function WishlistScreen() {
   const [overviewHeight, setOverviewHeight] = useState(0);
   const [topSectionHeight, setTopSectionHeight] = useState(0);
   const [headerHeight, setHeaderHeight] = useState(84);
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
   const scrollYRef = useRef(0);
   const headerTranslateY = useRef(new Animated.Value(0)).current;
   const headerVisibleRef = useRef(true);

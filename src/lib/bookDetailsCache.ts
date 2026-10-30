@@ -200,6 +200,20 @@ function mergeOverrideDetails(
     checkedAt: override.checkedAt,
   };
 }
+async function readLastLocalDetails(key: string, legacyKey: string) {
+  const values = await Promise.allSettled([
+    getStorageItemWithLegacy(key, legacyKey),
+    AsyncStorage.getItem(`${key}:synopsis-v1`),
+  ]);
+  for (const result of values) {
+    try {
+      if (result.status !== 'fulfilled' || !result.value) continue;
+      const entry = JSON.parse(result.value) as CacheEntry;
+      if (entry?.details?.source !== 'Developer Override' && typeof entry?.details?.description === 'string' && entry.details.description.trim()) return entry.details;
+    } catch { /* Keep trying another saved copy. */ }
+  }
+  return null;
+}
 export async function getBookVolumeDetails(
   book: Book,
   options: { forceRefresh?: boolean } = {},
@@ -210,28 +224,41 @@ export async function getBookVolumeDetails(
   const key = cacheKey(book);
   const legacyKey = legacyCacheKey(book);
   const overrideDetails = await getBookMetadataOverrideDetails(book);
+  const savedDetails = await readSupabaseCache(book);
+  const localDetails = await readLastLocalDetails(key, legacyKey);
+  const fallbackDescription = savedDetails?.description?.trim() || localDetails?.description;
   if (overrideDetails?.title) {
     // Fill only a missing synopsis; confirmed identity, edition and cover stay authoritative.
     if (overrideDetails.description?.trim() || !book.isbn) return overrideDetails;
+    if (!options.forceRefresh && savedDetails?.description?.trim()) {
+      return { ...overrideDetails, description: savedDetails.description };
+    }
     const synopsisKey = `${key}:synopsis-v1`;
     if (!options.forceRefresh) {
       try {
         const cached = JSON.parse((await AsyncStorage.getItem(synopsisKey)) ?? 'null') as CacheEntry | null;
         const ttl = cached?.details?.description ? CACHE_TTL_MS : 24 * 60 * 60 * 1000;
         if (cached && Date.now() - cached.fetchedAt < ttl) {
-          return { ...overrideDetails, description: cached.details?.description };
+          return { ...overrideDetails, description: cached.details?.description || fallbackDescription };
         }
       } catch { /* A failed local cache must not prevent a synopsis lookup. */ }
     }
     try {
       const supplement = await lookupBookVolumeDetails(book, { exactIsbnOnly: true });
+      if (supplement?.description?.trim()) await writeSupabaseCache(book, supplement);
       try {
-        await AsyncStorage.setItem(synopsisKey, JSON.stringify({ fetchedAt: Date.now(), details: supplement }));
+        if (supplement?.description?.trim() || !localDetails?.description) {
+          await AsyncStorage.setItem(synopsisKey, JSON.stringify({ fetchedAt: Date.now(), details: supplement }));
+        }
       } catch { /* The fetched synopsis remains usable when local storage is full. */ }
-      return { ...overrideDetails, description: supplement?.description };
+      return { ...overrideDetails, description: supplement?.description || fallbackDescription };
     } catch {
-      return overrideDetails;
+      return { ...overrideDetails, description: fallbackDescription };
     }
+  }
+
+  if (!options.forceRefresh && savedDetails?.description?.trim()) {
+    return mergeOverrideDetails(book, savedDetails, overrideDetails);
   }
 
   if (!options.forceRefresh) {
@@ -248,21 +275,8 @@ export async function getBookVolumeDetails(
     }
   }
 
-  if (!options.forceRefresh) {
-    const dbCached = await readSupabaseCache(book);
-    if (dbCached?.description) {
-      const mergedDetails = mergeOverrideDetails(book, dbCached, overrideDetails);
-      const entry: CacheEntry = { fetchedAt: Date.now(), details: mergedDetails };
-      try {
-        await AsyncStorage.setItem(key, JSON.stringify(entry));
-      } catch (error) {
-        console.warn('Failed to save book details cache', error);
-      }
-      return mergedDetails;
-    }
-  }
-
-  const details = await lookupBookVolumeDetails(book);
+  const fetched = await lookupBookVolumeDetails(book);
+  const details = fetched ? { ...fetched, description: fetched.description || fallbackDescription } : savedDetails ?? localDetails;
   await writeSupabaseCache(book, details);
   const mergedDetails = mergeOverrideDetails(book, details, overrideDetails);
   const entry: CacheEntry = { fetchedAt: Date.now(), details: mergedDetails };

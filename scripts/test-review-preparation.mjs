@@ -40,3 +40,9 @@ const failedCoverService=createReviewService(db,{}, {fetch:async()=>new Response
 assert.deepEqual((await failedCoverService.prepare([isbn])).prepared,[isbn]);
 assert.equal(writes.at(-1).args.p_candidate.cover_hash,null,'Failed cover must not prevent title editing.');
 console.log('Pending preparation while AI OFF: bounded metadata-only path, no classification/mail; failed images retain editable metadata: OK');
+
+jobs.get(isbn).review_requested=false;
+const beforeArchived = writes.length;
+assert.deepEqual((await service.prepare([isbn])).skipped,[isbn]);
+assert.equal(writes.length,beforeArchived,'Archived search candidates must not be prepared or call AI.');
+console.log('Search-only intake remains parked and does not trigger preparation or paid classification.');

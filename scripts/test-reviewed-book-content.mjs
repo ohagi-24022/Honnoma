@@ -102,21 +102,23 @@ const keysRef = { current: new Map() };
 const cleanups = [];
 let lifecycle;
 let networkError = false;
+let networkRows = [approved];
 const queries = [];
+let reviewIntakeCalls = 0;
 const client = { from: () => ({ select: () => ({ eq: () => ({ in: (column, values) => {
   queries.push({ column, values });
-  return { abortSignal: async () => networkError ? { data: null, error: new Error('offline') } : { data: [approved], error: null } };
+  return { abortSignal: async () => networkError ? { data: null, error: new Error('offline') } : { data: networkRows, error: null } };
 } }) }) }) };
 const { BookContentProvider } = compile('../src/store/BookContentContext.tsx', (name) => {
   if (name === 'react') return {
-    createContext: () => ({ Provider: 'Provider' }), useCallback: (fn) => fn, useRef: () => keysRef,
+    createContext: () => ({ Provider: 'Provider' }), useCallback: (fn) => fn, useMemo: (fn) => fn(), useRef: () => keysRef,
     useEffect: (fn) => { const cleanup = fn(); if (cleanup) cleanups.push(cleanup); },
     useState: (initial) => { const index = slot++; if (states[index] === undefined) states[index] = initial; return [states[index], (value) => { states[index] = typeof value === 'function' ? value(states[index]) : value; }]; },
   };
   if (name === 'react/jsx-runtime') return { jsx, jsxs: jsx };
   if (name === 'react-native') return { AppState: { currentState: 'active', addEventListener: (_name, fn) => { lifecycle = fn; return { remove() {} }; } } };
   if (name.endsWith('reviewedBookContent')) return policy;
-  if (name.endsWith('bookContentReviewQueue')) return { queueBookContentReviews: async () => {} };
+  if (name.endsWith('bookContentReviewQueue')) return { queueBookContentReviews: async () => { reviewIntakeCalls++; } };
   if (name.endsWith('/supabase')) return { supabase: client };
   if (name.endsWith('AppSettingsContext')) return { useAppSettings: () => ({ hydrated: true, showBookContent: enabled }) };
   throw new Error(name);
@@ -131,6 +133,24 @@ await new Promise((resolve) => setTimeout(resolve, 180));
 assert.equal(queries.length, 1);
 assert.equal(queries[0].values.length, 2); // Duplicate visible covers share one request.
 assert.equal(states[1][0], approved);
+assert.equal(reviewIntakeCalls, 0, 'Displaying search candidates must only read approvals, never enqueue paid reviews.');
+const stableRows = states[1];
+renderProvider();
+await new Promise(resolve => setTimeout(resolve, 180));
+assert.equal(states[1], stableRows, 'Unchanged approvals retain the same array instead of rerendering every cover.');
+assert.equal(states[2], 'ready');
+networkRows = [{ ...approved, description: 'Updated synopsis' }];
+renderProvider();
+await new Promise(resolve => setTimeout(resolve, 180));
+assert.notEqual(states[1], stableRows);
+assert.equal(states[1][0].description, 'Updated synopsis');
+networkRows = [];
+renderProvider();
+await new Promise(resolve => setTimeout(resolve, 180));
+assert.equal(states[1].length, 0, 'Revoked approvals are removed on the next scheduled read.');
+networkRows = [approved];
+renderProvider();
+await new Promise(resolve => setTimeout(resolve, 180));
 lifecycle('background');
 assert.equal(states[1].length, 0);
 networkError = true;

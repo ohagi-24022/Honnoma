@@ -1,8 +1,7 @@
-import { createContext, PropsWithChildren, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { createContext, PropsWithChildren, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 
 import { contentLookupKey, resolveReviewedContent, ReviewedBookContent } from '../lib/reviewedBookContent';
-import { queueBookContentReviews } from '../lib/bookContentReviewQueue';
 import { supabase } from '../lib/supabase';
 import { useAppSettings } from './AppSettingsContext';
 
@@ -44,7 +43,9 @@ export function BookContentProvider({ children }: PropsWithChildren) {
       refresh();
       if (state !== 'active') setRows([]);
     });
-    const timer = setInterval(() => setRevision((value) => value + 1), 15_000);
+    const timer = setInterval(() => {
+      if (AppState.currentState === 'active') setRevision((value) => value + 1);
+    }, 15_000);
     return () => { subscription.remove(); clearInterval(timer); };
   }, [refresh]);
 
@@ -55,7 +56,9 @@ export function BookContentProvider({ children }: PropsWithChildren) {
       setLookupState('loading');
       return;
     }
-    setLookupState('loading');
+    // Keep a successful result during a periodic read, as before, without
+    // making every mounted cover render a loading/ready cycle.
+    setLookupState(current => current === 'error' ? 'loading' : current);
     let cancelled = false;
     const controller = new AbortController();
     let deadline: ReturnType<typeof setTimeout> | undefined;
@@ -76,10 +79,11 @@ export function BookContentProvider({ children }: PropsWithChildren) {
           }
         }
         if (!cancelled) {
-          setRows(collected);
+          setRows(previous => previous.length === collected.length && previous.every((row, index) => {
+            const next = collected[index];
+            return row.isbn13 === next.isbn13 && row.cover_url === next.cover_url && row.description === next.description;
+          }) ? previous : collected);
           setLookupState('ready');
-          const known = new Set(collected.map((row) => row.isbn13));
-          void queueBookContentReviews(keys.filter((key) => key.startsWith('isbn:')).map((key) => key.slice(5)).filter((isbn) => !known.has(isbn)), controller.signal);
         }
       })().catch(() => {
         if (!cancelled) { setRows([]); setLookupState('error'); }
@@ -88,7 +92,8 @@ export function BookContentProvider({ children }: PropsWithChildren) {
     return () => { cancelled = true; clearTimeout(timer); if (deadline) clearTimeout(deadline); controller.abort(); };
   }, [hydrated, revision, showBookContent]);
 
-  return <Context.Provider value={{ rows, lookupState, register, refresh }}>{children}</Context.Provider>;
+  const value = useMemo(() => ({ rows, lookupState, register, refresh }), [rows, lookupState, register, refresh]);
+  return <Context.Provider value={value}>{children}</Context.Provider>;
 }
 
 export function useReviewedBookContent(isbn?: string, coverUrl?: string) {

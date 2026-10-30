@@ -65,7 +65,7 @@ const helperCode=ts.transpileModule(helpers,{compilerOptions:{target:ts.ScriptTa
 const {buildSeriesGroups}=load('src/lib/seriesSelectors.ts');
 const {normalizeSeriesKey}=load('src/lib/series.ts');
 const books=[{...main,id:'comic'}, {...main,id:'novel',bookFormat:'novel'}, {...main,id:'unknown',bookFormat:'unknown',seriesTitle:'未分類作品'}];
-const context={...format,useMemo:fn=>fn(),books,seriesGroups:buildSeriesGroups(books),buildSeriesGroups,filters:[],normalizeSeriesKey,
+const context={seriesReadingSortTexts:new Map(),...format,useMemo:fn=>fn(),books,seriesGroups:buildSeriesGroups(books),buildSeriesGroups,filters:[],normalizeSeriesKey,
  readingFilters:['read','unread','reading'],query:'',seriesStats:new Map(),effectivePublicationCache:{},favoriteSeriesKeySet:new Set(),readingCorrections:new Map(),
  seriesSort:'recent',seriesSortDirection:'asc',bookSort:'recent',bookSortDirection:'asc',
  compareText:(a='',b='')=>a.localeCompare(b),normalizeText:text=>text.toLowerCase(),applySortDirection:n=>n};

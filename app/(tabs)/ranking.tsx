@@ -2,7 +2,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useScrollToTop } from 'expo-router/react-navigation';
 import { router } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, type ScrollViewInstance, StyleSheet, Text, View } from 'react-native';
 
 import { RankingCard } from '../../src/components/RankingCard';
 import { buildPurchaseUrl } from '../../src/lib/bookApis';
@@ -52,7 +52,7 @@ export default function RankingScreen() {
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
   const tabScrollToTopRef = useRef({
     scrollToTop: () => scrollRef.current?.scrollTo({ y: 0, animated: true }),
   });

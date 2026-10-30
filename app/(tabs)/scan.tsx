@@ -13,6 +13,7 @@ import {
   Platform,
   Pressable,
   ScrollView,
+  type ScrollViewInstance,
   StyleSheet,
   Switch,
   Text,
@@ -68,7 +69,7 @@ export default function ScanScreen() {
   const tourActive = tour.focus !== null;
   const tourActiveRef = useRef(tourActive);
   tourActiveRef.current = tourActive;
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
   const tabScrollToTopRef = useRef({
     scrollToTop: () => scrollRef.current?.scrollTo({ y: 0, animated: true }),
   });
