@@ -121,3 +121,34 @@ TestFlightの実機確認、登録画面を含む掲載スクショの一致、�
 - https://appstoreconnect.apple.com/apps/6819377765/distribution/reviewsubmissions/details/d6ba5e23-aa18-4b84-95f7-deeadff79142
 - 記録画像：`operations/screenshots/app-review-submitted-build21-2026-10-30.png`。
 - 初回公開はまだ行われていない。保存済みの手動リリース設定を維持しているため、審査承認後に公開操作が必要。
+
+## 2026年11月2日 審査状況の確認
+
+既存のEASに登録されたApp Store Connect API接続を使い、公式APIで状態を読み取り確認した。
+
+- iOS 1.0.0のappStoreState / appVersionStateは `REJECTED`。
+- 提出ID `d6ba5e23-aa18-4b84-95f7-deeadff79142` は `UNRESOLVED_ISSUES`。
+- Appleからの指摘対応が必要。却下理由の本文は、この確認では取得できていないため断定しない。
+- 公開、再申請、設定変更は行っていない。
+
+ユーザーからAppleのGuideline 2.1追加情報要求の全文を受領。実機動画ほか6項目をNotesへ追記して再提出する要求。英文Notesと撮影手順を作成したが、動画URL・実際の端末/OS・第三者コンテンツの利用根拠資料は未確定。`app-review-notes-1.0.0.md` と `operations/app-review-2.1-response-2026-11-02.md` を参照。再提出は未実施。
+
+## 2026-11-03 01:21 JST：追加資料の返信送信
+
+- App Store Connectの審査メッセージへ追加説明を送信済み。送信者表示 `UtsunoYuki 今日 1:21` を確認。
+- 添付：`Honnoma-login-demo.mp4`、`Honnoma-main-demo-mosaic-v2-submit.mp4`。両方のダウンロード項目を送信済みメッセージ内で確認。
+- Apple指定のApp Reviewメモ欄にも6項目の説明を保存済み。
+- 添付処理が長時間「処理中」だったが、下書き保存後に2本とも添付済みと確認でき、下書きを再開して「返信」を送信した。
+- 返信送信とアプリの再提出は別操作。今回、再提出は行っていない。第三者コンテンツについて、提供元の利用規約を提示し、別途出版社の許諾書を添付していない事実を記載。権利取得済みという未確認の断言はしていない。
+- 証跡：`docs/operations/screenshots/app-review-videos-sent-2026-11-03.png`。
+
+## 2026-11-03 01:26 JST：再提出完了
+
+ユーザーの「再提出を行なって欲しいです」の指示に基づき、保存済み審査メモと送信済み動画2本を確認し、「審査内容を更新」から「App Reviewに再提出」を実行した。
+
+- 対象：iOS 1.0.0、ビルド21。新規ビルドは作成していない。
+- App Store Connectで提出物とアプリバージョンの両方が「審査待ち」になったことを確認。
+- 提出日時：2026年11月3日 01:26 JST。
+- 提出ID：d6ba5e23-aa18-4b84-95f7-deeadff79142。
+- 公開方式は従来の手動リリースを維持。
+- 証跡：docs/operations/screenshots/app-review-resubmitted-2026-11-03.png。

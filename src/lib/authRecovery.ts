@@ -1,11 +1,18 @@
-export const AUTH_REDIRECT_URL = 'honnoma://auth-callback';
+import Constants from 'expo-constants';
+
+const configuredScheme = Constants.expoConfig?.scheme;
+const isPreview = Array.isArray(configuredScheme)
+  ? configuredScheme.includes('honnoma-preview')
+  : configuredScheme === 'honnoma-preview';
+const AUTH_SCHEME = isPreview ? 'honnoma-preview' : 'honnoma';
+export const AUTH_REDIRECT_URL = `${AUTH_SCHEME}://auth-callback`;
 export const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // Native auth uses the implicit flow: the verified email link returns session tokens.
 // Never log this URL, or place its tokens in router parameters.
 export function parseAuthCallback(rawUrl: string): { type: 'recovery' | 'signup'; tokens: { access_token: string; refresh_token: string } } {
   const url = new URL(rawUrl);
-  if (url.protocol !== 'honnoma:' || url.hostname !== 'auth-callback' || (url.pathname && url.pathname !== '/')) {
+  if (url.protocol !== `${AUTH_SCHEME}:` || url.hostname !== 'auth-callback' || (url.pathname && url.pathname !== '/') || url.username || url.password || url.port) {
     throw new Error('本の間の確認メールにあるリンクを開いてください。');
   }
   const params = new URLSearchParams(url.hash.slice(1));

@@ -23,12 +23,20 @@ module.exports = ({ config }) => ({
   ...config,
   ...appJson.expo,
   name: process.env.APP_ENV === 'preview' ? `${appJson.expo.name} Preview` : appJson.expo.name,
+  scheme: process.env.APP_ENV === 'preview' ? 'honnoma-preview' : appJson.expo.scheme,
   ios: {
     ...appJson.expo.ios,
     bundleIdentifier:
       process.env.APP_ENV === 'preview'
         ? `${appJson.expo.ios.bundleIdentifier}.preview`
         : appJson.expo.ios.bundleIdentifier,
+  },
+  android: {
+    ...appJson.expo.android,
+    package:
+      process.env.APP_ENV === 'preview'
+        ? `${appJson.expo.android.package}.preview`
+        : appJson.expo.android.package,
   },
   extra: {
     ...appJson.expo.extra,

@@ -10,6 +10,7 @@ import {
   AppState,
   Alert,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -77,7 +78,7 @@ export default function ScanScreen() {
   useEffect(() => {
     if (tour.focus === 'scan' || tour.focus === 'series') scrollRef.current?.scrollTo({ y: 0, animated: false });
   }, [tour.focus]);
-  const [permission, requestPermission] = useCameraPermissions();
+  const [permission, requestPermission, getPermission] = useCameraPermissions();
   const { books = [], addBook, deleteBook, findDuplicateBook } = useLibrary();
   const { trackPurchasePrices } = useAppSettings();
   const { colors } = useAppTheme();
@@ -94,6 +95,9 @@ export default function ScanScreen() {
     const subscription = AppState.addEventListener('change', (state) => setAppActive(state === 'active'));
     return () => subscription.remove();
   }, []);
+  useEffect(() => {
+    if (isFocused && appActive) void getPermission().catch(() => undefined);
+  }, [isFocused, appActive, getPermission]);
   const [scanMode, setScanMode] = useState<'confirm' | 'continuous'>('confirm');
   const [scanQueue, setScanQueue] = useState<QueuedScanItem[]>([]);
   const [showQueueReview, setShowQueueReview] = useState(false);
@@ -746,9 +750,35 @@ export default function ScanScreen() {
             </>
           ) : (
             <View style={styles.permissionBox}>
-              <Text style={styles.permissionText}>ISBNスキャンにはカメラ権限が必要です。</Text>
-              <Pressable style={[styles.primaryButton, { backgroundColor: colors.primary }]} onPress={requestPermission}>
-                <Text style={styles.primaryButtonText}>カメラを許可</Text>
+              <Text style={styles.permissionText}>
+                {!permission
+                  ? 'カメラの状態を確認中です。'
+                  : permission.canAskAgain
+                    ? 'ISBNバーコードの読み取りにカメラを使用します。カメラを使用せずに手動登録することもできます。'
+                    : 'カメラへのアクセスはオフになっています。手動登録を利用できます。スキャンを使う場合は、端末の設定からカメラへのアクセスを変更できます。'}
+              </Text>
+              {permission && (
+                <Pressable
+                  accessibilityRole="button"
+                  style={[styles.primaryButton, styles.permissionAction, { backgroundColor: colors.primary }]}
+                  onPress={() => {
+                    const action = permission.canAskAgain ? requestPermission() : Linking.openSettings();
+                    void action.catch(() => Alert.alert('操作を完了できませんでした', 'しばらくしてからもう一度お試しください。手動登録も利用できます。'));
+                  }}
+                >
+                  <Text style={styles.primaryButtonText}>{permission.canAskAgain ? '次へ' : '設定を開く'}</Text>
+                </Pressable>
+              )}
+              <Pressable
+                accessibilityRole="button"
+                style={styles.permissionManualButton}
+                onPress={() => {
+                  setShowManualForm(true);
+                  setIsScanning(false);
+                  setManualLookupNotice(null);
+                }}
+              >
+                <Text style={styles.permissionManualText}>手動登録する</Text>
               </Pressable>
             </View>
           )}
@@ -1234,6 +1264,9 @@ const styles = StyleSheet.create({
   },
   permissionBox: { alignItems: 'center', flex: 1, justifyContent: 'center', padding: 24 },
   permissionText: { color: '#ffffff', fontSize: 15, marginBottom: 16, textAlign: 'center' },
+  permissionAction: { alignSelf: 'stretch', paddingHorizontal: 20 },
+  permissionManualButton: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 16, marginTop: 8 },
+  permissionManualText: { color: '#ffffff', fontSize: 15, textDecorationLine: 'underline' },
   notice: { borderRadius: 8, marginTop: 12, minHeight: 44, padding: 12 },
   noticeText: { fontSize: 13, fontWeight: '700', lineHeight: 18 },
   scanControls: { gap: 10, paddingVertical: 14 },
